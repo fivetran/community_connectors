@@ -14,42 +14,11 @@
   <a href="https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md" target="_blank"><img src="https://img.shields.io/badge/Managed-Yes-green/" alt="Managed"></a>
 </p>
 
-# Fivetran Connector SDK - Connector Catalog
+# Overview
 
-Explore practical examples and ready-to-use connectors for building custom data connectors with the Fivetran [Connector SDK](https://fivetran.com/docs/connectors/connector-sdk). This repository contains 100+ community-contributed connectors and helpful resources to extend Fivetran's capabilities to fit your data integration needs.
-
-## Overview
-
-This repository is a comprehensive catalog of connector examples demonstrating how to integrate various data sources with Fivetran using the Connector SDK. Whether you're looking to connect to a specific database, API, or data source, you'll find practical examples and patterns to get started quickly.
+This repository contains 100+ community-contributed connectors built with the [Fivetran Connector SDK](https://fivetran.com/docs/connectors/connector-sdk). Each connector is designed to work with minimal modification, so you can quickly adapt it to your source. Browse by category or search for your specific data source.
 
 For SDK installation and setup, visit the main [Fivetran Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk).
-
-## Why Connector SDK?
-
-Fivetran Connector SDK allows you to code a custom data connector using Python and deploy it as an extension of Fivetran. Fivetran automatically manages running Connector SDK connections on your scheduled frequency and manages the required compute resources, eliminating the need for a third-party provider.
-
-Connector SDK provides native support for many Fivetran features and relies on existing Fivetran technology. It also eliminates timeout and data size limitations seen in AWS Lambda.
-
-## Requirements
-
-- Python version ≥3.10 and ≤3.14
-- Operating system:
-  - Windows: 10 or later (64-bit only)
-  - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
-  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
-
-## Getting Started
-
-1. **Install the Connector SDK**: See [Setup guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
-2. **Choose a connector example**: Browse the [community connectors](#community-connectors) below to find an example similar to your use case.
-3. **Customize and deploy**: Modify the connector code to fit your requirements and deploy using the Fivetran CLI.
-
-Run the `.github/scripts/setup-hooks.sh` script from the root of the repository to set up pre-commit hooks. This ensures that your code is formatted correctly and passes all tests before you commit them.
-## Community Connectors
-
-> Note: To simplify the processes of building and maintaining connectors with Connector SDK, we've removed the need to use the Python generator pattern with Connector SDK operations, `yield`, starting with Connector SDK version 2.0.0. This change is fully backward compatible, so your existing Connector SDK connections will continue to function without modification. For more information, refer to our [Connector SDK release notes](https://fivetran.com/docs/connector-sdk/changelog#august2025).
-
-These are ready-to-use connectors, requiring minimal modifications to get started. Browse by category or search for your specific data source:
 
 <details class="details-heading" open="open">
 <summary>📋 Full List of Connectors (99 connectors)</summary>
