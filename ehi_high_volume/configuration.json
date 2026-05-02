@@ -1,0 +1,12 @@
+{
+      "mssql_server": "ehi-test.cp0rdhwjbsae.us-east-1.rds.amazonaws.com",
+      "mssql_cert_server": "",
+      "mssql_port": "1433",
+      "mssql_database": "EHITest1",
+      "mssql_user": "admin",
+      "mssql_password": "AWStesting",
+      "mssql_schema": "dbo",
+      "incremental_column": "_LastUpdatedInstant",
+      "table_list": "",
+      "table_exclusion_list": ""
+  }
