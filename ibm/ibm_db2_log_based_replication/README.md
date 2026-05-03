@@ -25,16 +25,16 @@ Db2 transaction log
 
 ## Getting started
 
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/setup-guide) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
 ```bash
-fivetran init <project-path> --template connectors/ibm/ibm_db2_log_based_replication
+fivetran init --template connectors/ibm/ibm_db2_log_based_replication
 ```
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`.
-If you do not specify a project path, Fivetran creates the project in your current directory.
-For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connectors/connector-sdk/setup-guide#createyourcustomconnector).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 
 ## Features
@@ -69,7 +69,10 @@ The configuration parameters are:
 - `user_id` – username used to authenticate with Db2
 - `password` – password used to authenticate with Db2
 - `schema_name` – schema that owns the source `EMPLOYEE` table
-- `cd_schema_name` _(optional)_ – schema that owns the ASN Change Data (CD) table (`CDEMPLOYEE`). Defaults to `schema_name` when omitted. 
+- `cd_schema_name` _(optional)_ – schema that owns the ASN Change Data (CD) table (`CDEMPLOYEE`). Defaults to `schema_name` when omitted.
+
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_connector_sdk/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/fivetran_connector_sdk/tree/main/examples) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
+When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -79,7 +82,7 @@ The `requirements.txt` file specifies the Python library required by the connect
 ibm_db==3.2.6
 ```
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 
 ## Authentication

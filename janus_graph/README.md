@@ -15,7 +15,7 @@ Key capabilities include:
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_connector_sdk/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
 - Operating system:
     - Windows: 10 or later (64-bit only)
     - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -24,6 +24,16 @@ Key capabilities include:
 ## Getting started
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```bash
+fivetran init --template janus_graph
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ## Features
 
@@ -61,13 +71,13 @@ For production (with authentication):
 - `username` (optional): Username for authenticated connections to the Gremlin Server
 - `password` (optional): Password for authenticated connections to the Gremlin Server
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
 The connector requires the `gremlinpython` package to communicate with the Gremlin Server API:
 
-```
+```txt
 gremlinpython
 ```
 
@@ -76,25 +86,18 @@ The `gremlinpython` library provides:
 - GraphSON serialization for query requests and responses
 - Support for graph traversal queries and management operations
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 
 This connector supports both authenticated and unauthenticated connections to the Gremlin Server API using WebSocket connections.
 
-- Development mode (no authentication):
-- JanusGraph's Gremlin Server runs without authentication by default
-- Use `ws://` protocol in `gremlin_server_url`
-- Omit `username` and `password` from configuration
+- Development mode (no authentication) — JanusGraph's Gremlin Server runs without authentication by default. Use `ws://` protocol in `gremlin_server_url` and omit `username` and `password` from configuration.
 
 - Production mode (with authentication):
-1. Configure authentication on your JanusGraph Gremlin Server by editing `gremlin-server.yaml`:
-    - Add authentication handler (e.g., Simple Authentication)
-    - Configure username and password credentials
 
-2. Add authentication credentials to your `configuration.json`:
-    - Use `wss://` protocol for secure connections
-    - Include `username` and `password` parameters
+1. Configure authentication on your JanusGraph Gremlin Server by editing `gremlin-server.yaml` — add an authentication handler (e.g., Simple Authentication) and configure username and password credentials.
+2. Add authentication credentials to your `configuration.json` — use `wss://` protocol for secure connections and include `username` and `password` parameters.
 
 The connector automatically detects authentication credentials in the configuration and establishes authenticated connections when provided (refer to the `create_gremlin_client()` function in connector.py).
 

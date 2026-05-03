@@ -6,7 +6,7 @@ This connector syncs health and wellness data from the Oura Ring API v2 into you
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_connector_sdk/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -20,11 +20,9 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
 ```bash
-fivetran init <project-path> --template connectors/oura_ring
+fivetran init --template oura_ring
 ```
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`.
-If you do not specify a project path, Fivetran creates the project in your current directory.
-For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/setup-guide#createyourcustomconnector).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
@@ -51,15 +49,15 @@ The `configuration.json` file contains the parameters needed to connect to the O
 - `personal_access_token` (required): Your Oura Personal Access Token generated from the Oura developer portal
 - `lookback_days` (optional): Number of days to look back on the initial sync, defaults to 90
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
 
 This connector uses Bearer token authentication with a Personal Access Token. To generate your token:
 
-1. Log in to the Oura developer portal at https://cloud.ouraring.com/personal-access-tokens
-2. Click **Create New Personal Access Token**
-3. Copy the generated token and add it to your `configuration.json` file as the `personal_access_token` value
+1. Log in to the Oura developer portal at https://cloud.ouraring.com/personal-access-tokens.
+2. Click **Create New Personal Access Token**.
+3. Copy the generated token and add it to your `configuration.json` file as the `personal_access_token` value.
 
 The token is sent in the `Authorization` header as `Bearer <token>` on every API request via a persistent `requests.Session`.
 
@@ -85,7 +83,7 @@ Authentication and authorization failures (HTTP 401/403) surface immediately wit
 
 ## Tables created
 
-### DAILY_ACTIVITY
+### Daily activity
 
 The `DAILY_ACTIVITY` table consists of the following columns:
 
@@ -122,7 +120,7 @@ The `DAILY_ACTIVITY` table consists of the following columns:
 - `contributors_training_frequency` (INTEGER): Contributor score for training frequency (1-100)
 - `contributors_training_volume` (INTEGER): Contributor score for training volume (1-100)
 
-### DAILY_SLEEP
+### Daily sleep
 
 The `DAILY_SLEEP` table consists of the following columns:
 
@@ -138,7 +136,7 @@ The `DAILY_SLEEP` table consists of the following columns:
 - `contributors_timing` (INTEGER): Contributor score for sleep timing (1-100)
 - `contributors_total_sleep` (INTEGER): Contributor score for total sleep (1-100)
 
-### DAILY_READINESS
+### Daily readiness
 
 The `DAILY_READINESS` table consists of the following columns:
 
@@ -158,7 +156,7 @@ The `DAILY_READINESS` table consists of the following columns:
 - `contributors_sleep_balance` (INTEGER): Contributor score for sleep balance (1-100)
 - `contributors_sleep_regularity` (INTEGER): Contributor score for sleep regularity (1-100)
 
-### DAILY_STRESS
+### Daily stress
 
 The `DAILY_STRESS` table consists of the following columns:
 
@@ -168,7 +166,7 @@ The `DAILY_STRESS` table consists of the following columns:
 - `recovery_high` (INTEGER): Seconds of high recovery during the day
 - `day_summary` (STRING): Overall day classification (restored, normal, or stressful)
 
-### HEART_RATE
+### Heart rate
 
 The `HEART_RATE` table consists of the following columns:
 

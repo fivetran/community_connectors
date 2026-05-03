@@ -5,7 +5,7 @@ This connector fetches core accounting data from the Rillet API and syncs it int
 Supported resources: accounts, subsidiaries, products, customers, contracts, invoices, invoice payments, credit memos, vendors, vendor credits, bills, charges, reimbursements, journal entries, bank accounts, bank transactions, tax rates, and fields.
 
 ## Requirements
-- [Supported Python versions](https://github.com/fivetran/fivetran_connector_sdk/blob/main/README.md#requirements)   
+- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -14,9 +14,19 @@ Supported resources: accounts, subsidiaries, products, customers, contracts, inv
 ## Getting started
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```bash
+fivetran init --template rillet
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+
 1. Obtain an API key following the steps in the [Authentication](#authentication) section.
-2. Copy `connectors/rillet/configuration.json` and populate `api_key` with your generated API key.
-3. Run the connector locally using `fivetran debug --connector connectors/rillet/connector.py`
+2. Copy `configuration.json` and populate `api_key` with your generated API key.
+3. Run the connector locally using `fivetran debug`.
 
 ## Features
 - Cursor-based pagination (`pagination.next_cursor`) across Rillet endpoints.
@@ -36,7 +46,7 @@ The connector requires the following configuration parameters:
 }
 ```
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
 
@@ -44,11 +54,11 @@ This connector uses API key authentication to connect to the Rillet API. The API
 
 To set up authentication:
 
-1. **Request Access**: Contact your Rillet Account Manager or Customer Success representative to enable API access for your organization. API keys cannot be generated until this access is activated.
-2. **Navigate to Settings**: Once enabled, log in to the Rillet Dashboard and go to Organization Settings.
-3. **Access API Management**: Select the API Access or API Keys section within the settings.
-4. **Generate the Key**: Click on Create API Key or the Add button. You will be prompted to give your key a descriptive name to identify its purpose.
-5. **Configure the Connector**: Copy `connectors/rillet/configuration.json` and populate `api_key` with your generated API key.
+1. Request access: Contact your Rillet Account Manager or Customer Success representative to enable API access for your organization. API keys cannot be generated until this access is activated.
+2. Navigate to settings: Once enabled, log in to the Rillet Dashboard and go to Organization Settings.
+3. Access API management: Select the API Access or API Keys section within the settings.
+4. Generate the key: Click on Create API Key or the Add button. You will be prompted to give your key a descriptive name to identify its purpose.
+5. Configure the connector: Copy `configuration.json` and populate `api_key` with your generated API key.
 
 ## Data handling
 - `schema()` defines the table names and primary keys.
@@ -85,7 +95,7 @@ The connector defines destination tables in `schema()` and creates one table per
 | `tax_rate` | `id` | Records from `/tax-rates` |
 | `field` | `id` | Records from `/fields` |
 
-Refer to the `schema()` function in `connectors/rillet/connector.py` for the table definitions.
+Refer to the `schema()` function in `connector.py` for the table definitions.
 
 ## Additional considerations
 - `base_url` defaults to `https://api.rillet.com` if omitted.
