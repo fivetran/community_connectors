@@ -1,0 +1,23 @@
+ibm/ibm_db2_log_based_replication/README.md
+  ee9baae88aca5208 19,28,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "022a2c6a264eb05eaf5542bcb77e9238b52f4230",
+  "prompts": {
+    "ee9baae88aca5208": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc72a96b-d7aa-4a1d-85bb-bdd2c99eac8a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 5,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
