@@ -1,7 +1,7 @@
 """
 Constants for EHI high-volume connector.
-Tune these values for your environment. Table filtering and max_workers
-are configured in configuration.json, not here.
+Tune these values for your environment. Table filtering is configured
+in configuration.json; all other tuning is done here.
 """
 
 BATCH_SIZE = 1_000

@@ -25,11 +25,11 @@ class TableSchema:
 
     @property
     def primary_keys(self) -> list:
-        return [col.name for col in self.columns if col.is_primary_key]
+        return [column.name for column in self.columns if column.is_primary_key]
 
     @property
     def selectable_columns(self) -> list:
-        return [col for col in self.columns if not col.is_computed]
+        return [column for column in self.columns if not column.is_computed]
 
 
 
@@ -43,7 +43,7 @@ class SchemaDetector:
                 c.COLUMN_NAME,
                 'IsComputed'
             ) AS is_computed,
-            CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS is_pk
+            CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS is_primary_key
         FROM INFORMATION_SCHEMA.COLUMNS c
         LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
             ON  tc.TABLE_SCHEMA = c.TABLE_SCHEMA
@@ -62,21 +62,22 @@ class SchemaDetector:
         self._pool = pool
 
     def detect_table(self, schema_name: str, table_name: str, config: dict = None) -> TableSchema:
-        with self._pool.acquire() as conn:
-            cur = conn.execute_with_retry(self._METADATA_SQL, (schema_name, table_name))
+        with self._pool.acquire() as connection:
+            cursor = connection.execute_with_retry(self._METADATA_SQL, (schema_name, table_name))
             try:
-                rows = cur.fetchall()
+                rows = cursor.fetchall()
             finally:
-                cur.close()
+                cursor.close()
 
         columns = []
-        for col_name, data_type, is_computed, is_pk in rows:
+        for column_name, data_type, is_computed, is_primary_key in rows:
             columns.append(
+                # ColumnInfo -> (name, sql_type, python_type, is_primary_key, is_computed)
                 ColumnInfo(
-                    name=col_name,
+                    name=column_name,
                     sql_type=data_type,
                     python_type=SchemaDetector.map_sql_type_to_python(data_type),
-                    is_primary_key=bool(is_pk),
+                    is_primary_key=bool(is_primary_key),
                     is_computed=bool(is_computed),
                 )
             )
@@ -84,9 +85,10 @@ class SchemaDetector:
         if not columns:
             log.warning(f"No columns found for {schema_name}.{table_name}")
 
-        ts = TableSchema(table_name=table_name, schema_name=schema_name, columns=columns)
-        ts.replication_key = SchemaDetector.detect_replication_key(columns, config or {})
-        return ts
+        # TableSchema -> (table_name, schema_name, columns)
+        table_schema = TableSchema(table_name=table_name, schema_name=schema_name, columns=columns)
+        table_schema.replication_key = SchemaDetector.detect_replication_key(columns, config or {})
+        return table_schema
 
     def detect_all_tables(
         self, schema_name: str, table_names: list = None, config: dict = None, max_workers: int = 4
@@ -116,55 +118,55 @@ class SchemaDetector:
             "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' "
             "ORDER BY TABLE_NAME"
         )
-        with self._pool.acquire() as conn:
-            cur = conn.execute_with_retry(sql, (schema_name,))
+        with self._pool.acquire() as connection:
+            cursor = connection.execute_with_retry(sql, (schema_name,))
             try:
-                rows = cur.fetchall()
+                rows = cursor.fetchall()
             finally:
-                cur.close()
+                cursor.close()
         return [row[0] for row in rows]
 
     @staticmethod
     def detect_replication_key(columns: list, config: dict):
         # Priority 1: user-specified column name overrides auto-detection entirely
-        overrided_incremental_column = (config.get("incremental_column") or "").strip()
-        if overrided_incremental_column:
-            for col in columns:
-                if col.name.lower() == overrided_incremental_column.lower():
-                    log.fine(f"Using overrided_incremental_column: {col.name}")
-                    return col
+        configured_incremental_column = (config.get("incremental_column") or "").strip()
+        if configured_incremental_column:
+            for column in columns:
+                if column.name.lower() == configured_incremental_column.lower():
+                    log.fine(f"Using configured incremental column: {column.name}")
+                    return column
             log.warning(
-                f"overrided_incremental_column '{overrided_incremental_column}' not found in table columns — "
+                f"Configured incremental column '{configured_incremental_column}' not found in table columns — "
                 "falling back to pattern-based auto-detection"
             )
 
         # Priority 2: match column name against known EHI replication key patterns
-        col_map = {col.name.lower(): col for col in columns}
+        column_by_lower_name = {column.name.lower(): column for column in columns}
         for pattern in KNOWN_REPLICATION_KEY_PATTERNS:
-            if pattern.lower() in col_map:
-                matched_col = col_map[pattern.lower()]
-                log.fine(f"Replication key matched pattern '{pattern}': {matched_col.name}")
-                return matched_col
+            if pattern.lower() in column_by_lower_name:
+                matched_column = column_by_lower_name[pattern.lower()]
+                log.fine(f"Replication key matched pattern '{pattern}': {matched_column.name}")
+                return matched_column
 
         return None
 
     @staticmethod
     def map_sql_type_to_python(sql_type: str):
-        t = sql_type.lower().strip()
-        if t in {"int", "bigint", "smallint", "tinyint"}:
+        normalized_sql_type = sql_type.lower().strip()
+        if normalized_sql_type in {"int", "bigint", "smallint", "tinyint"}:
             return int
-        if t in {"float", "real", "decimal", "numeric", "money", "smallmoney"}:
+        if normalized_sql_type in {"float", "real", "decimal", "numeric", "money", "smallmoney"}:
             return float
-        if t in {
+        if normalized_sql_type in {
             "varchar", "nvarchar", "char", "nchar", "text", "ntext",
             "uniqueidentifier", "xml", "datetime", "datetime2", "date",
             "time", "smalldatetime", "datetimeoffset",
         }:
             return str
-        if t == "bit":
+        if normalized_sql_type == "bit":
             return bool
-        if t in {"varbinary", "binary", "image", "geography", "geometry",
-                 "hierarchyid", "timestamp", "rowversion"}:
+        if normalized_sql_type in {"varbinary", "binary", "image", "geography", "geometry",
+                                   "hierarchyid", "timestamp", "rowversion"}:
             return bytes
         log.fine(f"Unknown SQL type '{sql_type}' mapped to str")
         return str

@@ -66,44 +66,44 @@ class MSSQLConnection:
 
     def __init__(self, configuration: dict) -> None:
         self._configuration = configuration
-        self._conn = None
+        self._connection = None
         self._connected_at = None
 
-    def _build_conn_str(self) -> str:
+    def _build_connection_string(self) -> str:
         """Construct an ODBC connection string from the configuration dict."""
         server = self._configuration["mssql_server"].strip()
         port = self._configuration["mssql_port"].strip()
-        cert_server = self._configuration.get("mssql_cert_server", "").strip()
+        certificate_server_name = self._configuration.get("mssql_cert_server", "").strip()
         database = self._configuration["mssql_database"].strip()
         user = self._configuration["mssql_user"].strip()
         password = self._configuration["mssql_password"]
 
         # TrustServerCertificate=yes when no explicit cert hostname is provided
         # (e.g., AWS RDS with self-signed certs).
-        trust_cert = "yes" if not cert_server else "no"
+        trust_server_certificate = "yes" if not certificate_server_name else "no"
 
-        conn_str = (
+        connection_string = (
             f"DRIVER={{ODBC Driver 18 for SQL Server}};"
             f"SERVER={server},{port};"
             f"DATABASE={database};"
             f"UID={user};"
             f"PWD={password};"
             f"Encrypt=yes;"
-            f"TrustServerCertificate={trust_cert};"
+            f"TrustServerCertificate={trust_server_certificate};"
         )
-        if cert_server:
-            conn_str += f"HostNameInCertificate={cert_server};"
-        return conn_str
+        if certificate_server_name:
+            connection_string += f"HostNameInCertificate={certificate_server_name};"
+        return connection_string
 
     def _open(self) -> None:
         """Open a new connection using the built connection string and set isolation level."""
-        conn_str = self._build_conn_str()
+        connection_string = self._build_connection_string()
         # autocommit=True: no implicit transaction wraps our SELECTs, so no shared locks are held
-        self._conn = pyodbc.connect(conn_str, autocommit=True)
+        self._connection = pyodbc.connect(connection_string, autocommit=True)
         # Session-level command: tells SQL Server not to acquire shared locks on reads for this
         # connection, allowing SELECTs to run without blocking or being blocked by writers.
         # Cursor is closed immediately after since this command returns no rows.
-        cursor = self._conn.cursor()
+        cursor = self._connection.cursor()
         cursor.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
         cursor.close()
         self._connected_at = datetime.now()
@@ -111,13 +111,13 @@ class MSSQLConnection:
 
     def _close(self) -> None:
         """Close the connection if it exists, and reset tracking variables."""
-        if self._conn is not None:
+        if self._connection is not None:
             try:
-                self._conn.close()
+                self._connection.close()
             except Exception as exc:
                 log.warning(f"error on connection close: {exc}")
             finally:
-                self._conn = None
+                self._connection = None
                 self._connected_at = None
 
     def _needs_reconnect(self) -> bool:
@@ -128,31 +128,31 @@ class MSSQLConnection:
         return elapsed > CONNECTION_TIMEOUT_HOURS * 3600
 
     def ensure_open(self) -> None:
-        if self._conn is None or self._needs_reconnect():
+        if self._connection is None or self._needs_reconnect():
             self._close()
             self._open()
 
-    def execute_with_retry(self, sql: str, params=()) -> pyodbc.Cursor:
+    def execute_with_retry(self, sql: str, parameters=()) -> pyodbc.Cursor:
         """
         Execute SQL with exponential backoff on transient errors.
         On a retryable SQLSTATE the connection is closed, the thread sleeps
         with jitter, the connection is reopened, and the query retried.
         Non-retryable errors are re-raised immediately.
         """
-        last_exc = None
+        last_exception = None
         for attempt in range(MAX_RETRIES):
             try:
                 self.ensure_open()
-                cur = self._conn.cursor()
-                cur.execute(sql, params)
-                return cur
+                cursor = self._connection.cursor()
+                cursor.execute(sql, parameters)
+                return cursor
             except Exception as exc:
                 if not _is_retryable_error(exc):
                     log.severe(f"Non-retryable SQL error: {exc}")
                     self._close()
                     raise
 
-                last_exc = exc
+                last_exception = exc
                 delay = min(BASE_RETRY_DELAY * (2**attempt), MAX_RETRY_DELAY)
                 sleep_time = delay + random.uniform(0, delay * 0.2)
                 log.warning(
@@ -162,8 +162,8 @@ class MSSQLConnection:
                 self._close()
                 time.sleep(sleep_time)
 
-        log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exc}")
-        raise last_exc
+        log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
+        raise last_exception
 
     def close(self) -> None:
         self._close()
@@ -179,27 +179,29 @@ class ConnectionPool:
     def __init__(self, configuration: dict, size: int) -> None:
         log.info(f"Initialising connection pool with {size} connection(s)")
         self._queue = queue.Queue(maxsize=size)
-        self._all: list = []
-        for _ in range(size):
+        self._all_connections: list = []
+        for connection_index in range(size):
             try:
-                conn = MSSQLConnection(configuration)
-                conn.ensure_open()
-                self._all.append(conn)
-                self._queue.put(conn)
+                # MSSQLConnection -> (configuration)
+                connection = MSSQLConnection(configuration)
+                connection.ensure_open()
+                self._all_connections.append(connection)
+                self._queue.put(connection)
             except Exception as exc:
                 log.warning(
                     f"Failed to open a pool connection: {exc}. Continuing with fewer connections."
                 )
-        opened = len(self._all)
-        if opened == 0:
+        opened_connection_count = len(self._all_connections)
+        if opened_connection_count == 0:
             raise RuntimeError(
                 "Could not open any database connections. Check credentials and network connectivity."
             )
-        if opened < size:
+        if opened_connection_count < size:
             log.warning(
-                f"Connection pool started with {opened}/{size} connection(s); some connections failed."
+                f"Connection pool started with {opened_connection_count}/{size} "
+                "connection(s); some connections failed."
             )
-        log.info(f"Connection pool ready with {opened} connection(s)")
+        log.info(f"Connection pool ready with {opened_connection_count} connection(s)")
 
     @contextmanager
     def acquire(self, timeout: float = 30.0):
@@ -208,20 +210,20 @@ class ConnectionPool:
         Always returns the connection to the pool in the finally block.
         """
         try:
-            conn = self._queue.get(timeout=timeout)
+            connection = self._queue.get(timeout=timeout)
         except queue.Empty:
             raise RuntimeError(f"No connection available from pool within {timeout}s timeout")
         try:
-            conn.ensure_open()
-            yield conn
+            connection.ensure_open()
+            yield connection
         except Exception as exc:
-            conn.close()  # reset so the next acquire gets a fresh connection
+            connection.close()  # reset so the next acquire gets a fresh connection
             log.warning(f"Connection error during acquire: {exc}")
             raise
         finally:
-            self._queue.put(conn)
+            self._queue.put(connection)
 
     def close_all(self) -> None:
-        for conn in self._all:
-            conn.close()
+        for connection in self._all_connections:
+            connection.close()
         log.info("All pool connections closed")

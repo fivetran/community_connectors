@@ -1,10 +1,4 @@
-"""
-Readers for full-table and incremental reads using keyset or offset pagination.
-
-KeysetReader    — O(n) keyset pagination ordered by (repl_col[, pk_tiebreak]).
-PKKeysetReader  — O(n) full load for tables with a single PK but no replication key.
-OffsetReader    — O(n²) last-resort fallback for tables with no PK and no replication key.
-"""
+"""Readers for SQL Server table pagination."""
 
 import base64
 from datetime import datetime, date, time as _time
@@ -17,70 +11,79 @@ from models import TableSchema
 
 _DATETIME_TYPES = (datetime, date, _time)
 
-# uniqueidentifier excluded: SQL Server internal sort order doesn't match lexicographic order,
-# so > comparisons produce an unreliable keyset cursor.
+# Keep string PK tiebreaks to types with predictable SQL ordering.
 _TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar", "text", "ntext"})
 
-# datetime2/datetimeoffset store 7 decimal places; Python datetime only holds 6.
-# KeysetReader selects these as strings (style 127) to preserve full precision and
-# prevent the truncated cursor from matching the same row on every page (infinite loop).
+# SQL Server stores 7 decimals for these; Python datetime keeps only 6.
 _DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
 
 
 def convert_value(value, python_type):
-    """Convert a raw pyodbc value to a JSON-serialisable Python scalar."""
+    """Convert a raw pyodbc value into an SDK-friendly scalar."""
     if value is None:
         return None
+
     if python_type is str:
         if isinstance(value, _DATETIME_TYPES):
             return value.isoformat()
         return str(value)
+
     if python_type is int:
         return int(value)
     if python_type is float:
         return float(value)
     if python_type is bool:
         return bool(value)
+
     if python_type is bytes:
         if isinstance(value, (bytes, bytearray, memoryview)):
             return base64.b64encode(bytes(value)).decode("ascii")
         return str(value)
+
     return None
 
 
-def _get_tiebreak_pk_col(schema: TableSchema, pk_cols: list, use_pk_tiebreak: bool):
-    """Return the single PK column name eligible for tiebreaking, or None."""
-    if not use_pk_tiebreak or len(pk_cols) != 1:
-        if use_pk_tiebreak and len(pk_cols) > 1:
+def _get_tiebreak_primary_key_column(
+    schema: TableSchema,
+    primary_key_columns: list,
+    use_primary_key_tiebreak: bool,
+):
+    """
+    Return the single PK column that can safely break replication-key ties.
+    """
+    if not use_primary_key_tiebreak or len(primary_key_columns) != 1:
+        if use_primary_key_tiebreak and len(primary_key_columns) > 1:
             log.warning(
                 f"{schema.table_name}: tiebreak requested but table has a "
-                f"{len(pk_cols)}-column composite PK — tiebreak disabled"
+                f"{len(primary_key_columns)}-column composite PK — tiebreak disabled"
             )
         return None
-    pk_name = pk_cols[0]
-    for col in schema.columns:
-        if col.name != pk_name:
+
+    primary_key_name = primary_key_columns[0]
+    for column in schema.columns:
+        if column.name != primary_key_name:
             continue
-        if col.python_type is int:
-            return pk_name
-        if col.python_type is str and col.sql_type.lower() in _TIEBREAK_ELIGIBLE_STR_TYPES:
-            return pk_name
+
+        # Only numeric and simple string PKs are safe for `pk > ?`.
+        if column.python_type is int:
+            return primary_key_name
+        if column.python_type is str and column.sql_type.lower() in _TIEBREAK_ELIGIBLE_STR_TYPES:
+            return primary_key_name
+
         log.warning(
-            f"{schema.table_name}: PK column '{pk_name}' has SQL type '{col.sql_type}' "
+            f"{schema.table_name}: PK column '{primary_key_name}' has SQL type '{column.sql_type}' "
             "which is not eligible for tiebreaking — tiebreak disabled"
         )
         return None
     return None
 
 
-class KeysetReader:
+class ReplicationKeysetReader:
     """
-    Keyset (seek) pagination ordered by (repl_col[, pk_tiebreak]). O(n) cost.
+    Read a table using replication-key keyset pagination.
 
-    last_seen_value=None → fresh full load from beginning.
-    last_seen_value=<cursor> → incremental or resumed full load from that cursor.
-
-    Yields (batch, last_repl_value, last_pk_value) 3-tuples.
+    Uses `(replication_key, primary_key)` when possible so duplicate timestamps
+    do not skip rows. Yields `(batch, replication_marker, primary_key_marker)`.
     """
 
     def __init__(
@@ -89,242 +92,348 @@ class KeysetReader:
         schema: TableSchema,
         last_seen_value,
         batch_size: int = BATCH_SIZE,
-        use_pk_tiebreak: bool = True,
-        pk_cols: list = None,
-        last_seen_pk=None,
+        use_primary_key_tiebreak: bool = True,
+        primary_key_columns: list = None,
+        last_seen_primary_key=None,
     ) -> None:
         self._pool = pool
         self._schema = schema
         self._last_seen = last_seen_value
         self._batch_size = batch_size
-        self._pk_cols = pk_cols or []
-        self._last_seen_pk = last_seen_pk
-        self._tiebreak_pk = _get_tiebreak_pk_col(schema, self._pk_cols, use_pk_tiebreak)
+        self._primary_key_columns = primary_key_columns or []
+        self._last_seen_primary_key = last_seen_primary_key
+        self._tiebreak_primary_key_column = _get_tiebreak_primary_key_column(
+            schema,
+            self._primary_key_columns,
+            use_primary_key_tiebreak,
+        )
 
     def read_batches(self):
-        repl_col = self._schema.replication_key.name
-        sel_cols = self._schema.selectable_columns
-        col_sql = ", ".join(f"[{c.name}]" for c in sel_cols)
-        tbl = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
-        tb_pk = self._tiebreak_pk
-        fetch = f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
+        """
+        Read SQL Server rows using replication-key keyset pagination.
+        Uses self._last_seen for first sync vs incremental/resume behavior.
+        Uses self._last_seen_primary_key when a PK tiebreak cursor is available.
+        Yields:
+            A tuple of (batch, replication_marker, primary_key_marker), where batch
+            is a list of records ready for upsert, replication_marker is the last
+            replication key in the batch, and primary_key_marker is the last PK
+            tiebreak value in the batch.
+        """
+        replication_key_column = self._schema.replication_key.name
+        selectable_columns = self._schema.selectable_columns
+        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
+        table_sql = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
+        tiebreak_primary_key_column = self._tiebreak_primary_key_column
+        pagination_clause = (
+            f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
+        )
 
-        repl_col_type = self._schema.replication_key.sql_type.lower()
-        _needs_str_cursor = repl_col_type in _DATETIME2_SQL_TYPES
-        if _needs_str_cursor:
-            col_sql_select = col_sql + f", CONVERT(NVARCHAR(50), [{repl_col}], 127)"
-            _repl_str_idx = len(sel_cols)
+        # Select datetime2/datetimeoffset cursors as strings to keep all 7 decimals.
+        replication_key_sql_type = self._schema.replication_key.sql_type.lower()
+        needs_string_cursor = replication_key_sql_type in _DATETIME2_SQL_TYPES
+        if needs_string_cursor:
+            select_with_cursor_sql = (
+                select_column_sql + f", CONVERT(NVARCHAR(50), [{replication_key_column}], 127)"
+            )
+            replication_key_string_index = len(selectable_columns)
         else:
-            col_sql_select = col_sql
-            _repl_str_idx = None
+            select_with_cursor_sql = select_column_sql
+            replication_key_string_index = None
 
-        repl_idx = next((i for i, c in enumerate(sel_cols) if c.name == repl_col), None)
-        if repl_idx is None:
+        # next() returns the first matching replication-key index, or None if not found.
+        replication_key_index = next(
+            (
+                index
+                for index, column in enumerate(selectable_columns)
+                if column.name == replication_key_column
+            ),
+            None,
+        )
+        if replication_key_index is None:
             raise ValueError(
-                f"{self._schema.table_name}: replication key '{repl_col}' is not in "
+                f"{self._schema.table_name}: replication key '{replication_key_column}' is not in "
                 "selectable_columns (may be a computed column). Set incremental_column "
                 "in configuration.json to a non-computed column."
             )
-        pk_idx = (
-            next((i for i, c in enumerate(sel_cols) if c.name == tb_pk), None) if tb_pk else None
+
+        # next() returns the first matching PK column index, or None if not found.
+        primary_key_index = (
+            next(
+                (
+                    index
+                    for index, column in enumerate(selectable_columns)
+                    if column.name == tiebreak_primary_key_column
+                ),
+                None,
+            )
+            if tiebreak_primary_key_column
+            else None
         )
 
-        if tb_pk:
+        # Build the SQL variants once; the loop only changes parameters.
+        if tiebreak_primary_key_column:
+            # First sync: start from the earliest non-null replication key.
             sql_start = (
-                f"SELECT {col_sql_select} FROM {tbl} WITH (NOLOCK) "
-                f"WHERE [{repl_col}] IS NOT NULL "
-                f"ORDER BY [{repl_col}], [{tb_pk}] {fetch}"
+                f"SELECT {select_with_cursor_sql} FROM {table_sql} WITH (NOLOCK) "
+                f"WHERE [{replication_key_column}] IS NOT NULL "
+                f"ORDER BY [{replication_key_column}], [{tiebreak_primary_key_column}] "
+                f"{pagination_clause}"
             )
+            # Incremental sync: read rows after the saved replication key.
             sql_from = (
-                f"SELECT {col_sql_select} FROM {tbl} WITH (NOLOCK) "
-                f"WHERE [{repl_col}] > ? "
-                f"ORDER BY [{repl_col}], [{tb_pk}] {fetch}"
+                f"SELECT {select_with_cursor_sql} FROM {table_sql} WITH (NOLOCK) "
+                f"WHERE [{replication_key_column}] > ? "
+                f"ORDER BY [{replication_key_column}], [{tiebreak_primary_key_column}] "
+                f"{pagination_clause}"
             )
+            # Resume inside duplicate timestamps using the PK as the tiebreak.
             sql_composite = (
-                f"SELECT {col_sql_select} FROM {tbl} WITH (NOLOCK) "
-                f"WHERE ([{repl_col}] > ?) OR ([{repl_col}] = ? AND [{tb_pk}] > ?) "
-                f"ORDER BY [{repl_col}], [{tb_pk}] {fetch}"
+                f"SELECT {select_with_cursor_sql} FROM {table_sql} WITH (NOLOCK) "
+                f"WHERE ([{replication_key_column}] > ?) "
+                f"OR ([{replication_key_column}] = ? AND [{tiebreak_primary_key_column}] > ?) "
+                f"ORDER BY [{replication_key_column}], [{tiebreak_primary_key_column}] "
+                f"{pagination_clause}"
             )
         else:
+            # First sync: no saved cursor yet.
             sql_start = (
-                f"SELECT {col_sql_select} FROM {tbl} WITH (NOLOCK) "
-                f"WHERE [{repl_col}] IS NOT NULL "
-                f"ORDER BY [{repl_col}] {fetch}"
+                f"SELECT {select_with_cursor_sql} FROM {table_sql} WITH (NOLOCK) "
+                f"WHERE [{replication_key_column}] IS NOT NULL "
+                f"ORDER BY [{replication_key_column}] {pagination_clause}"
             )
+            # Incremental sync: continue after the saved replication key.
             sql_from = (
-                f"SELECT {col_sql_select} FROM {tbl} WITH (NOLOCK) "
-                f"WHERE [{repl_col}] > ? "
-                f"ORDER BY [{repl_col}] {fetch}"
+                f"SELECT {select_with_cursor_sql} FROM {table_sql} WITH (NOLOCK) "
+                f"WHERE [{replication_key_column}] > ? "
+                f"ORDER BY [{replication_key_column}] {pagination_clause}"
             )
             sql_composite = sql_from
 
         current_last = self._last_seen
-        current_last_pk = self._last_seen_pk
+        current_last_primary_key = self._last_seen_primary_key
         page = 0
 
         while True:
             if current_last is None:
-                sql, params = sql_start, (self._batch_size,)
-            elif not tb_pk or current_last_pk is None:
-                sql, params = sql_from, (current_last, self._batch_size)
+                # First sync or fresh full resync.
+                sql, parameters = sql_start, (self._batch_size,)
+            elif not tiebreak_primary_key_column or current_last_primary_key is None:
+                # Incremental sync or resumed full sync without a PK tiebreak.
+                sql, parameters = sql_from, (current_last, self._batch_size)
             else:
+                # Incremental sync or resumed full sync with timestamp + PK cursor.
                 sql = sql_composite
-                params = (current_last, current_last, current_last_pk, self._batch_size)
+                parameters = (
+                    current_last,
+                    current_last,
+                    current_last_primary_key,
+                    self._batch_size,
+                )
 
-            with self._pool.acquire() as conn:
-                cur = conn.execute_with_retry(sql, params)
+            with self._pool.acquire() as connection:
+                cursor = connection.execute_with_retry(sql, parameters)
                 try:
-                    rows = cur.fetchmany(self._batch_size)
+                    rows = cursor.fetchmany(self._batch_size)
                 finally:
-                    cur.close()
+                    cursor.close()
 
             if not rows:
                 log.fine(f"{self._schema.table_name}: page {page} returned 0 rows — done")
                 return
 
+            # Warn because NULL replication keys are permanently skipped by this cursor.
             if page == 0 and current_last is None:
                 null_count_sql = (
-                    f"SELECT COUNT(*) FROM {tbl} WITH (NOLOCK) WHERE [{repl_col}] IS NULL"
+                    f"SELECT COUNT(*) FROM {table_sql} WITH (NOLOCK) "
+                    f"WHERE [{replication_key_column}] IS NULL"
                 )
-                with self._pool.acquire() as _conn:
-                    _cur = _conn.execute_with_retry(null_count_sql, ())
+                with self._pool.acquire() as count_connection:
+                    count_cursor = count_connection.execute_with_retry(null_count_sql, ())
                     try:
-                        null_count = _cur.fetchone()[0] or 0
+                        null_count = count_cursor.fetchone()[0] or 0
                     finally:
-                        _cur.close()
+                        count_cursor.close()
                 if null_count:
                     log.warning(
                         f"{self._schema.table_name}: {null_count} row(s) have a NULL "
-                        f"replication key ('{repl_col}') and will never be synced."
+                        f"replication key ('{replication_key_column}') and will never be synced."
                     )
 
-            if not tb_pk and page > 0 and current_last is not None:
-                first_rk = convert_value(rows[0][repl_idx], sel_cols[repl_idx].python_type)
-                if first_rk == current_last:
+            # Without a PK tiebreak, duplicate replication keys can skip rows.
+            if not tiebreak_primary_key_column and page > 0 and current_last is not None:
+                first_replication_key_value = convert_value(
+                    rows[0][replication_key_index],
+                    selectable_columns[replication_key_index].python_type,
+                )
+                if first_replication_key_value == current_last:
                     log.warning(
                         f"{self._schema.table_name}: duplicate replication key values at "
                         f"page boundary (value={current_last}). Rows may be skipped."
                     )
 
-            last_rk = current_last
-            last_pk = current_last_pk
+            last_replication_key_value = current_last
+            last_primary_key_value = current_last_primary_key
             batch = []
             for row in rows:
+                # selectable_columns -> ColumnInfo(name, sql_type, python_type, is_primary_key, is_computed)
                 record = {
-                    c.name: convert_value(raw, c.python_type) for c, raw in zip(sel_cols, row)
+                    column.name: convert_value(raw_value, column.python_type)
+                    for column, raw_value in zip(selectable_columns, row)
                 }
                 batch.append(record)
-                if _needs_str_cursor:
-                    last_rk = row[_repl_str_idx]
-                else:
-                    rk = convert_value(row[repl_idx], sel_cols[repl_idx].python_type)
-                    last_rk = rk if rk is not None else str(row[repl_idx])
-                if tb_pk and pk_idx is not None:
-                    pk = convert_value(row[pk_idx], sel_cols[pk_idx].python_type)
-                    if pk is not None:
-                        last_pk = pk
 
-            current_last = last_rk
-            current_last_pk = last_pk
+                if needs_string_cursor:
+                    last_replication_key_value = row[replication_key_string_index]
+                else:
+                    # Normal cursor path: convert the raw replication key value.
+                    replication_key_value = convert_value(
+                        row[replication_key_index],
+                        selectable_columns[replication_key_index].python_type,
+                    )
+                    # Fallback to string so the cursor never becomes None.
+                    last_replication_key_value = (
+                        replication_key_value
+                        if replication_key_value is not None
+                        else str(row[replication_key_index])
+                    )
+
+                if tiebreak_primary_key_column and primary_key_index is not None:
+                    primary_key_value = convert_value(
+                        row[primary_key_index],
+                        selectable_columns[primary_key_index].python_type,
+                    )
+                    if primary_key_value is not None:
+                        last_primary_key_value = primary_key_value
+
+            # Update the page cursor before returning this batch to the caller.
+            current_last = last_replication_key_value
+            current_last_primary_key = last_primary_key_value
             page += 1
             log.fine(
                 f"{self._schema.table_name}: page {page} — "
                 f"{len(batch)} rows, last_value={current_last}"
             )
-            yield batch, current_last, current_last_pk
+            # Yield streams one batch at a time instead of loading the whole table.
+            yield batch, current_last, current_last_primary_key
 
 
-class PKKeysetReader:
+class PrimaryKeyOnlyKeysetReader:
     """
-    Keyset pagination by primary key for tables that have a single PK but no replication key.
-    O(n) cost; resumable from last committed PK value.
+    Read a table by primary-key keyset pagination when no replication key exists.
 
-    Yields (batch, last_pk_value) pairs.
+    Used for full loads and resume only. It cannot detect updates without a
+    replication key. Yields `(batch, primary_key_marker)`.
     """
 
     def __init__(
         self,
         pool: ConnectionPool,
         schema: TableSchema,
-        last_seen_pk=None,
+        last_seen_primary_key=None,
         batch_size: int = BATCH_SIZE,
     ) -> None:
         self._pool = pool
         self._schema = schema
-        self._last_seen_pk = last_seen_pk
+        self._last_seen_primary_key = last_seen_primary_key
         self._batch_size = batch_size
-        self._pk_col = schema.primary_keys[0]
+        self._primary_key_column = schema.primary_keys[0]
 
     def read_batches(self):
-        pk_col = self._pk_col
-        sel_cols = self._schema.selectable_columns
-        col_sql = ", ".join(f"[{col.name}]" for col in sel_cols)
+        """
+        Read SQL Server rows using single-primary-key keyset pagination.
+        Uses self._last_seen_primary_key to resume an interrupted full sync.
+        Yields:
+            A tuple of (batch, primary_key_marker), where batch is a list of
+            records ready for upsert and primary_key_marker is the last primary
+            key value in the batch.
+        """
+        primary_key_column = self._primary_key_column
+        selectable_columns = self._schema.selectable_columns
+        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
         schema_table = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
-        fetch = f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
+        pagination_clause = (
+            f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
+        )
 
+        # First sync: scan from the beginning of the PK order.
         sql_first = (
-            f"SELECT {col_sql} FROM {schema_table} WITH (NOLOCK) ORDER BY [{pk_col}] {fetch}"
+            f"SELECT {select_column_sql} FROM {schema_table} WITH (NOLOCK) "
+            f"ORDER BY [{primary_key_column}] {pagination_clause}"
         )
+        # Resume sync: continue after the last checkpointed PK.
         sql_next = (
-            f"SELECT {col_sql} FROM {schema_table} WITH (NOLOCK) "
-            f"WHERE [{pk_col}] > ? ORDER BY [{pk_col}] {fetch}"
+            f"SELECT {select_column_sql} FROM {schema_table} WITH (NOLOCK) "
+            f"WHERE [{primary_key_column}] > ? "
+            f"ORDER BY [{primary_key_column}] {pagination_clause}"
         )
 
-        pk_col_idx = next((i for i, col in enumerate(sel_cols) if col.name == pk_col), None)
-        if pk_col_idx is None:
+        # next() returns the first matching PK column index, or None if not found.
+        primary_key_index = next(
+            (
+                index
+                for index, column in enumerate(selectable_columns)
+                if column.name == primary_key_column
+            ),
+            None,
+        )
+        if primary_key_index is None:
             raise ValueError(
-                f"{self._schema.table_name}: PK column '{pk_col}' is not in selectable_columns "
+                f"{self._schema.table_name}: PK column '{primary_key_column}' "
+                "is not in selectable_columns "
                 "(may be a computed column). Cannot use PK-keyset pagination."
             )
-        pk_python_type = sel_cols[pk_col_idx].python_type
-        current_last = self._last_seen_pk
+        primary_key_python_type = selectable_columns[primary_key_index].python_type
+        current_last = self._last_seen_primary_key
 
         while True:
             if current_last is None:
-                sql, params = sql_first, (self._batch_size,)
+                # First full sync for a table with no replication key.
+                sql, parameters = sql_first, (self._batch_size,)
             else:
-                sql, params = sql_next, (current_last, self._batch_size)
+                # Resume an interrupted full sync from the saved PK.
+                sql, parameters = sql_next, (current_last, self._batch_size)
 
-            with self._pool.acquire() as conn:
-                cur = conn.execute_with_retry(sql, params)
+            with self._pool.acquire() as connection:
+                cursor = connection.execute_with_retry(sql, parameters)
                 try:
-                    rows = cur.fetchmany(self._batch_size)
+                    rows = cursor.fetchmany(self._batch_size)
                 finally:
-                    cur.close()
+                    cursor.close()
 
             if not rows:
                 log.fine(f"{self._schema.table_name}: PK-keyset page returned 0 rows — done")
                 return
 
-            last_pk_value = current_last
+            last_primary_key_value = current_last
             batch = []
             for row in rows:
                 record = {
-                    col.name: convert_value(raw, col.python_type)
-                    for col, raw in zip(sel_cols, row)
+                    column.name: convert_value(raw_value, column.python_type)
+                    for column, raw_value in zip(selectable_columns, row)
                 }
                 batch.append(record)
-                pk_converted = convert_value(row[pk_col_idx], pk_python_type)
-                if pk_converted is not None:
-                    last_pk_value = pk_converted
 
-            current_last = last_pk_value
+                primary_key_converted = convert_value(
+                    row[primary_key_index],
+                    primary_key_python_type,
+                )
+                if primary_key_converted is not None:
+                    last_primary_key_value = primary_key_converted
+
+            current_last = last_primary_key_value
             log.fine(
                 f"{self._schema.table_name}: PK-keyset page — "
-                f"{len(batch)} rows, last_pk={current_last}"
+                f"{len(batch)} rows, last_primary_key={current_last}"
             )
             yield batch, current_last
 
 
 class OffsetReader:
     """
-    SQL OFFSET/FETCH pagination. O(n²) database cost.
+    Read a table with SQL OFFSET/FETCH pagination.
 
-    Used only as a last resort for tables with no replication key and no single-column PK.
-    These tables are deferred and run after all keyset tables complete to avoid blocking
-    high-volume tables.
-
-    Yields (batch, next_offset) pairs.
+    This is the slow fallback for tables with no replication key or single-column
+    PK. Yields `(batch, next_offset)`.
     """
 
     def __init__(
@@ -338,27 +447,37 @@ class OffsetReader:
         self._schema = schema
         self._last_offset = last_offset
         self._batch_size = batch_size
-        pk_cols = schema.primary_keys
-        if pk_cols:
-            self._order_clause = "ORDER BY " + ", ".join(f"[{pk}]" for pk in pk_cols)
-            self._has_pk_order = True
+        primary_key_columns = schema.primary_keys
+        if primary_key_columns:
+            self._order_clause = "ORDER BY " + ", ".join(
+                f"[{primary_key}]" for primary_key in primary_key_columns
+            )
+            self._has_primary_key_order = True
         else:
             self._order_clause = "ORDER BY (SELECT NULL)"
-            self._has_pk_order = False
+            self._has_primary_key_order = False
 
     def read_batches(self):
-        sel_cols = self._schema.selectable_columns
-        col_sql = ", ".join(f"[{col.name}]" for col in sel_cols)
+        """
+        Read SQL Server rows using OFFSET/FETCH pagination.
+        Uses self._last_offset to resume from the last checkpointed row offset.
+        Yields:
+            A tuple of (batch, next_offset), where batch is a list of records
+            ready for upsert and next_offset is the next row offset to read.
+        """
+        selectable_columns = self._schema.selectable_columns
+        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
         schema_table = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
 
-        if not self._has_pk_order:
+        if not self._has_primary_key_order:
             log.warning(
                 f"{self._schema.table_name}: no primary key — row order is non-deterministic. "
                 "Rows may be skipped or duplicated if the table is modified during sync."
             )
 
+        # Offset pagination: skip saved rows and fetch the next batch.
         sql = (
-            f"SELECT {col_sql} FROM {schema_table} WITH (NOLOCK) "
+            f"SELECT {select_column_sql} FROM {schema_table} WITH (NOLOCK) "
             f"{self._order_clause} "
             f"OFFSET ? ROWS FETCH NEXT ? ROWS ONLY "
             f"OPTION (FAST {self._batch_size})"
@@ -366,18 +485,22 @@ class OffsetReader:
 
         offset = self._last_offset
         while True:
-            with self._pool.acquire() as conn:
-                cur = conn.execute_with_retry(sql, (offset, self._batch_size))
+            # First sync uses offset 0; resume uses the saved offset.
+            with self._pool.acquire() as connection:
+                cursor = connection.execute_with_retry(sql, (offset, self._batch_size))
                 try:
-                    rows = cur.fetchmany(self._batch_size)
+                    rows = cursor.fetchmany(self._batch_size)
                 finally:
-                    cur.close()
+                    cursor.close()
 
             if not rows:
                 return
 
             batch = [
-                {col.name: convert_value(raw, col.python_type) for col, raw in zip(sel_cols, row)}
+                {
+                    column.name: convert_value(raw_value, column.python_type)
+                    for column, raw_value in zip(selectable_columns, row)
+                }
                 for row in rows
             ]
             offset += len(batch)
