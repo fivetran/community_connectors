@@ -21,7 +21,7 @@ This repository contains 100+ community-contributed connectors built with the [F
 For SDK installation and setup, visit the main [Fivetran Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk).
 
 <details class="details-heading" open="open">
-<summary>📋 Full List of Connectors (99 connectors)</summary>
+<summary>📋 Full List of Connectors</summary>
 
 ### Databases
 
