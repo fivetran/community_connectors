@@ -1,0 +1,25 @@
+temporal_cloud/README.md
+  ee9baae88aca5208 14,23,62
+weights_and_biases/README.md
+  ee9baae88aca5208 11,19,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "1fc29730cb2384a809f65e3799f129ac3e6e224c",
+  "prompts": {
+    "ee9baae88aca5208": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc72a96b-d7aa-4a1d-85bb-bdd2c99eac8a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 10,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
