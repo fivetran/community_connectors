@@ -1,12 +1,12 @@
 {
-      "mssql_server": "ehi-test.cp0rdhwjbsae.us-east-1.rds.amazonaws.com",
-      "mssql_cert_server": "",
-      "mssql_port": "1433",
-      "mssql_database": "EHITest1",
-      "mssql_user": "admin",
-      "mssql_password": "AWStesting",
-      "mssql_schema": "dbo",
-      "incremental_column": "_LastUpdatedInstant",
-      "table_list": "",
-      "table_exclusion_list": ""
+      "mssql_server": "<MSSQL_SERVER>",
+      "mssql_cert_server": "<MSSQL_CERT_SERVER>",
+      "mssql_port": "<MSSQL_PORT>",
+      "mssql_database": "<MSSQL_DATABASE>",
+      "mssql_user": "<MSSQL_USER>",
+      "mssql_password": "<MSSQL_PASSWORD>",
+      "mssql_schema": "<MSSQL_SCHEMA>",
+      "incremental_column": "<INCREMENTAL_COLUMN>",
+      "table_list": "<TABLE_LIST>",
+      "table_exclusion_list": "<TABLE_EXCLUSION_LIST>"
   }

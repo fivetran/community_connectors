@@ -91,10 +91,21 @@ class SchemaDetector:
         return table_schema
 
     def detect_all_tables(
-        self, schema_name: str, table_names: list = None, config: dict = None, max_workers: int = 4
+        self,
+        schema_name: str,
+        table_names: list = None,
+        table_exclude: frozenset = None,
+        config: dict = None,
+        max_workers: int = 4,
     ) -> dict:
         if table_names is None:
             table_names = self._list_tables(schema_name)
+        if table_exclude:
+            table_names = [
+                table_name
+                for table_name in table_names
+                if table_name.lower() not in table_exclude
+            ]
 
         results: dict = {}
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

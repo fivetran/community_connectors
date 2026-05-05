@@ -82,14 +82,12 @@ def _discover_table_schemas(
     # SchemaDetector -> (pool)
     detector = SchemaDetector(pool)
     table_schemas = detector.detect_all_tables(
-        schema_name, table_include, config=config, max_workers=max_workers
+        schema_name,
+        table_include,
+        table_exclude=table_exclude,
+        config=config,
+        max_workers=max_workers,
     )
-    if table_exclude:
-        table_schemas = {
-            table_name: table_schema
-            for table_name, table_schema in table_schemas.items()
-            if table_name.lower() not in table_exclude
-        }
     return table_schemas
 
 
