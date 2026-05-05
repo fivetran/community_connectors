@@ -9,13 +9,13 @@ from constants import BATCH_SIZE
 from client import ConnectionPool
 from models import TableSchema
 
-__DATETIME_TYPES = (datetime, date, _time)
+_DATETIME_TYPES = (datetime, date, _time)
 
 # Keep string PK tiebreaks to types with predictable SQL ordering.
-__TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar", "text", "ntext"})
+_TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar", "text", "ntext"})
 
 # SQL Server stores 7 decimals for these; Python datetime keeps only 6.
-__DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
+_DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
 
 
 def convert_value(value, python_type):
@@ -24,7 +24,7 @@ def convert_value(value, python_type):
         return None
 
     if python_type is str:
-        if isinstance(value, __DATETIME_TYPES):
+        if isinstance(value, _DATETIME_TYPES):
             return value.isoformat()
         return str(value)
 
@@ -67,7 +67,7 @@ def _get_tiebreak_primary_key_column(
         # Only numeric and simple string PKs are safe for `pk > ?`.
         if column.python_type is int:
             return primary_key_name
-        if column.python_type is str and column.sql_type.lower() in __TIEBREAK_ELIGIBLE_STR_TYPES:
+        if column.python_type is str and column.sql_type.lower() in _TIEBREAK_ELIGIBLE_STR_TYPES:
             return primary_key_name
 
         log.warning(
@@ -142,7 +142,7 @@ class ReplicationKeysetReader:
 
         # Select datetime2/datetimeoffset cursors as strings to keep all 7 decimals.
         replication_key_sql_type = self._schema.replication_key.sql_type.lower()
-        needs_string_cursor = replication_key_sql_type in __DATETIME2_SQL_TYPES
+        needs_string_cursor = replication_key_sql_type in _DATETIME2_SQL_TYPES
         if needs_string_cursor:
             select_with_cursor_sql = (
                 select_column_sql + f", CONVERT(NVARCHAR(50), [{replication_key_column}], 127)"
