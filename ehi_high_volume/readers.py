@@ -9,13 +9,13 @@ from constants import BATCH_SIZE
 from client import ConnectionPool
 from models import TableSchema
 
-_DATETIME_TYPES = (datetime, date, _time)
+__DATETIME_TYPES = (datetime, date, _time)
 
 # Keep string PK tiebreaks to types with predictable SQL ordering.
-_TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar", "text", "ntext"})
+__TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar", "text", "ntext"})
 
 # SQL Server stores 7 decimals for these; Python datetime keeps only 6.
-_DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
+__DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
 
 
 def convert_value(value, python_type):
@@ -24,7 +24,7 @@ def convert_value(value, python_type):
         return None
 
     if python_type is str:
-        if isinstance(value, _DATETIME_TYPES):
+        if isinstance(value, __DATETIME_TYPES):
             return value.isoformat()
         return str(value)
 
@@ -67,7 +67,7 @@ def _get_tiebreak_primary_key_column(
         # Only numeric and simple string PKs are safe for `pk > ?`.
         if column.python_type is int:
             return primary_key_name
-        if column.python_type is str and column.sql_type.lower() in _TIEBREAK_ELIGIBLE_STR_TYPES:
+        if column.python_type is str and column.sql_type.lower() in __TIEBREAK_ELIGIBLE_STR_TYPES:
             return primary_key_name
 
         log.warning(
@@ -96,6 +96,18 @@ class ReplicationKeysetReader:
         primary_key_columns: list = None,
         last_seen_primary_key=None,
     ) -> None:
+        """
+        Set up the reader with the connection pool, table schema, and resume cursors.
+        Args:
+            pool: shared connection pool for SQL Server.
+            schema: table schema including column info and replication key.
+            last_seen_value: last committed replication key value (None for a fresh sync).
+            batch_size: number of rows to fetch per query page.
+            use_primary_key_tiebreak: enable composite (replication_key, pk) ordering to
+                                      handle duplicate replication key values correctly.
+            primary_key_columns: list of PK column names for tiebreak ordering.
+            last_seen_primary_key: last committed PK tiebreak value (for mid-page resume).
+        """
         self._pool = pool
         self._schema = schema
         self._last_seen = last_seen_value
@@ -130,7 +142,7 @@ class ReplicationKeysetReader:
 
         # Select datetime2/datetimeoffset cursors as strings to keep all 7 decimals.
         replication_key_sql_type = self._schema.replication_key.sql_type.lower()
-        needs_string_cursor = replication_key_sql_type in _DATETIME2_SQL_TYPES
+        needs_string_cursor = replication_key_sql_type in __DATETIME2_SQL_TYPES
         if needs_string_cursor:
             select_with_cursor_sql = (
                 select_column_sql + f", CONVERT(NVARCHAR(50), [{replication_key_column}], 127)"
@@ -338,6 +350,15 @@ class PrimaryKeyOnlyKeysetReader:
         last_seen_primary_key=None,
         batch_size: int = BATCH_SIZE,
     ) -> None:
+        """
+        Set up the reader with the connection pool, table schema, and resume cursor.
+        Args:
+            pool: shared connection pool for SQL Server.
+            schema: table schema; must have exactly one primary key column.
+            last_seen_primary_key: last committed PK value to resume an interrupted full sync
+                                   (None to start from the beginning of the table).
+            batch_size: number of rows to fetch per query page.
+        """
         self._pool = pool
         self._schema = schema
         self._last_seen_primary_key = last_seen_primary_key
@@ -449,6 +470,14 @@ class OffsetReader:
         last_offset: int,
         batch_size: int = BATCH_SIZE,
     ) -> None:
+        """
+        Set up the reader with the connection pool, table schema, and resume offset.
+        Args:
+            pool: shared connection pool for SQL Server.
+            schema: table schema; used for column list and optional PK ordering.
+            last_offset: row offset to resume from (0 for a fresh sync).
+            batch_size: number of rows to fetch per query page.
+        """
         self._pool = pool
         self._schema = schema
         self._last_offset = last_offset

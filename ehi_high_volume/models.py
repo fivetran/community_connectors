@@ -25,10 +25,12 @@ class TableSchema:
 
     @property
     def primary_keys(self) -> list:
+        """Return a list of column names that make up the primary key."""
         return [column.name for column in self.columns if column.is_primary_key]
 
     @property
     def selectable_columns(self) -> list:
+        """Return all columns that can appear in a SELECT list (excludes computed columns)."""
         return [column for column in self.columns if not column.is_computed]
 
 
@@ -62,6 +64,7 @@ class SchemaDetector:
         self._pool = pool
 
     def detect_table(self, schema_name: str, table_name: str, config: dict = None) -> TableSchema:
+        """Query INFORMATION_SCHEMA for one table and return its TableSchema."""
         with self._pool.acquire() as connection:
             cursor = connection.execute_with_retry(self._METADATA_SQL, (schema_name, table_name))
             try:
@@ -98,6 +101,7 @@ class SchemaDetector:
         config: dict = None,
         max_workers: int = 4,
     ) -> dict:
+        """Detect schemas for all tables in scope in parallel and return {table_name: TableSchema}."""
         if table_names is None:
             table_names = self._list_tables(schema_name)
         if table_exclude:
@@ -124,6 +128,7 @@ class SchemaDetector:
         return results
 
     def _list_tables(self, schema_name: str) -> list:
+        """Query INFORMATION_SCHEMA.TABLES and return all base table names in the given schema."""
         sql = (
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
             "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' "
@@ -139,6 +144,8 @@ class SchemaDetector:
 
     @staticmethod
     def detect_replication_key(columns: list, config: dict):
+        """Return the ColumnInfo to use as the replication key, or None if no suitable column is found.
+        Checks incremental_column config first, then pattern-matches known column name suffixes."""
         # Priority 1: user-specified column name overrides auto-detection entirely
         configured_incremental_column = (config.get("incremental_column") or "").strip()
         if configured_incremental_column:
@@ -163,6 +170,7 @@ class SchemaDetector:
 
     @staticmethod
     def map_sql_type_to_python(sql_type: str):
+        """Map a SQL Server data type string to the closest Python type for use in convert_value()."""
         normalized_sql_type = sql_type.lower().strip()
         if normalized_sql_type in {"int", "bigint", "smallint", "tinyint"}:
             return int

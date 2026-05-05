@@ -65,6 +65,7 @@ class MSSQLConnection:
     """
 
     def __init__(self, configuration: dict) -> None:
+        """Store configuration and initialise connection tracking variables."""
         self._configuration = configuration
         self._connection = None
         self._connected_at = None
@@ -121,6 +122,7 @@ class MSSQLConnection:
                 self._connected_at = None
 
     def _needs_reconnect(self) -> bool:
+        """Return True if the connection has never been opened or has exceeded the max age."""
         # Never connected yet, or connection was reset after a failure
         if self._connected_at is None:
             return True
@@ -128,6 +130,7 @@ class MSSQLConnection:
         return elapsed > CONNECTION_TIMEOUT_HOURS * 3600
 
     def ensure_open(self) -> None:
+        """Open (or reopen) the connection if it is closed or has expired."""
         if self._connection is None or self._needs_reconnect():
             self._close()
             self._open()
@@ -166,6 +169,7 @@ class MSSQLConnection:
         raise last_exception
 
     def close(self) -> None:
+        """Close the underlying pyodbc connection and reset tracking state."""
         self._close()
 
 
@@ -177,6 +181,7 @@ class ConnectionPool:
     """
 
     def __init__(self, configuration: dict, size: int) -> None:
+        """Open `size` connections upfront and place them in a thread-safe queue."""
         log.info(f"Initialising connection pool with {size} connection(s)")
         self._queue = queue.Queue(maxsize=size)
         self._all_connections: list = []
@@ -224,6 +229,7 @@ class ConnectionPool:
             self._queue.put(connection)
 
     def close_all(self) -> None:
+        """Close every connection in the pool — called once when the sync finishes."""
         for connection in self._all_connections:
             connection.close()
         log.info("All pool connections closed")

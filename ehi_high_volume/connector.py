@@ -6,24 +6,54 @@ Syncs 100M+ row tables from Microsoft SQL Server using:
 - OFFSET pagination (O(n²), deferred) for tables with neither — runs after all keyset tables
 - One thread per keyset/PK-keyset table; MAX_WORKERS threads (set in constants.py)
 - READ UNCOMMITTED isolation on all connections to avoid lock contention
+See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details.
 """
 
+# For reading configuration from a JSON file
 import json
+
+# For structured error context in logs
 import traceback
+
+# For running keyset/PK-keyset tables in parallel
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# For timestamping sync start and checkpoint completion times
 from datetime import datetime, timezone
 
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
+# Tunable batch and concurrency settings
 from constants import BATCH_SIZE, CHECKPOINT_INTERVAL, MAX_WORKERS
+
+# Connection pool for managing pyodbc connections to SQL Server
 from client import ConnectionPool
+
+# Schema detection and data models
 from models import SchemaDetector, TableSchema
+
+# Keyset, PK-keyset, and offset pagination readers
 from readers import ReplicationKeysetReader, PrimaryKeyOnlyKeysetReader, OffsetReader
 
 
 def validate_configuration(configuration: dict) -> None:
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    This function is called at the start of the schema and update methods to ensure that
+    the connector has all necessary configuration values before attempting a database connection.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Raises:
+        ValueError: if any required configuration parameter is missing or invalid.
+    """
     required_fields = [
         "mssql_server",
         "mssql_port",
@@ -79,6 +109,7 @@ def _discover_table_schemas(
     config: dict,
     max_workers: int,
 ) -> dict:
+    """Detect the schema for every table in scope and return a dict of {table_name: TableSchema}."""
     # SchemaDetector -> (pool)
     detector = SchemaDetector(pool)
     table_schemas = detector.detect_all_tables(
@@ -131,6 +162,7 @@ def _save_checkpoint(
     primary_key_marker=None,
     use_primary_key_cursor: bool = False,
 ) -> None:
+    """Write the current cursor and row count into state and emit a Fivetran checkpoint."""
     if has_replication_key:
         if marker is not None:
             table_state["last_seen_replication_value"] = marker
@@ -147,6 +179,11 @@ def _save_checkpoint(
         datetime.now(timezone.utc).isoformat() if completed else None
     )
     state[table_name] = table_state
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync
+    # process can resume from the correct position in case of interruptions.
+    # For large datasets, checkpoint regularly (every CHECKPOINT_INTERVAL rows) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
 
@@ -199,6 +236,8 @@ def _sync_table(
         for batch, progress_marker, progress_primary_key_marker in reader.read_batches():
             # Sync one replication-key page and checkpoint its cursor.
             for row in batch:
+                # The 'upsert' operation inserts a new row or updates an existing one in the
+                # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
                 if rows_synced % CHECKPOINT_INTERVAL == 0:
@@ -231,12 +270,15 @@ def _sync_table(
             table_state.pop("rows_synced", None)
             rows_synced = 0
         last_marker = None if prior_completed else table_state.get("last_seen_pk_cursor")
+        # PrimaryKeyOnlyKeysetReader -> (pool, table_schema, last_seen_primary_key, batch_size)
         reader = PrimaryKeyOnlyKeysetReader(pool, table_schema, last_marker, BATCH_SIZE)
         log.info(f"{table_name}: starting full PK-keyset sync (last_primary_key={last_marker})")
 
         for batch, progress_marker in reader.read_batches():
             # Sync one PK-keyset page and checkpoint the latest PK.
             for row in batch:
+                # The 'upsert' operation inserts a new row or updates an existing one in the
+                # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
                 if rows_synced % CHECKPOINT_INTERVAL == 0:
@@ -265,12 +307,15 @@ def _sync_table(
             table_state.pop("rows_synced", None)
             rows_synced = 0
         last_marker = 0 if prior_completed else int(table_state.get("last_offset", 0))
+        # OffsetReader -> (pool, table_schema, last_offset, batch_size)
         reader = OffsetReader(pool, table_schema, last_marker, BATCH_SIZE)
         log.info(f"{table_name}: starting full offset sync (last_offset={last_marker})")
 
         for batch, progress_marker in reader.read_batches():
             # Sync one OFFSET page and checkpoint the next offset.
             for row in batch:
+                # The 'upsert' operation inserts a new row or updates an existing one in the
+                # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
                 if rows_synced % CHECKPOINT_INTERVAL == 0:
@@ -323,8 +368,13 @@ def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionP
 
 def schema(configuration: dict):
     """
-    Returns the list of tables and their primary keys for Fivetran to create destination tables.
+    Define the schema function which lets you configure the schema your connector delivers.
+    Queries the SQL Server INFORMATION_SCHEMA to discover all tables and their primary keys
+    dynamically — no tables are hardcoded.
+    See the technical reference documentation for more details on the schema function:
     https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
     """
     validate_configuration(configuration)
     schema_name = configuration.get("mssql_schema", "dbo")
@@ -352,10 +402,16 @@ def schema(configuration: dict):
 
 def update(configuration: dict, state: dict):
     """
-    Called by Fivetran on every sync. Syncs all discovered tables using the best available
-    pagination strategy. Keyset and PK-keyset tables run in parallel; offset tables (no PK,
-    no replication key) are deferred and run sequentially after all parallel work completes.
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    Syncs all discovered tables using the best available pagination strategy.
+    Keyset and PK-keyset tables run in parallel; offset tables (no PK, no replication key)
+    are deferred and run sequentially after all parallel work completes.
+    See the technical reference documentation for more details on the update function:
     https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: a dictionary containing connection details and sync settings.
+        state: a dictionary containing cursor state from the previous sync run.
+               The state dictionary is empty for the first sync or for any full re-sync.
     """
     log.warning("Example: Connectors - EHI High Volume")
     schema_name = configuration.get("mssql_schema", "dbo")
@@ -422,6 +478,10 @@ def update(configuration: dict, state: dict):
                 log.severe(f"{table_name}: offset sync failed: {exc}")
                 failed_tables.append(table_name)
 
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync
+        # process can resume from the correct position in case of interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran
+        # it is safe to write to the destination.
         op.checkpoint(state)
 
         total = len(table_schemas)
@@ -438,10 +498,23 @@ def update(configuration: dict, state: dict):
         pool.close_all()
 
 
-# Connector -> (update, schema)
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
-    with open("configuration.json", "r") as configuration_file:
-        configuration = json.load(configuration_file)
+    # Open the configuration.json file and load its contents
+    with open("configuration.json", "r") as f:
+        configuration = json.load(f)
+
+    # Test the connector locally
     connector.debug(configuration=configuration)
