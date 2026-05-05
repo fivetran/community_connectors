@@ -213,6 +213,12 @@ class ReplicationKeysetReader:
         current_last_primary_key = self._last_seen_primary_key
         page = 0
 
+        if not tiebreak_primary_key_column:
+            log.warning(
+                f"{self._schema.table_name}: no eligible single-column primary key "
+                "tiebreaker found. Rows with duplicate replication-key values may be skipped."
+            )
+
         while True:
             if current_last is None:
                 # First sync or fresh full resync.
