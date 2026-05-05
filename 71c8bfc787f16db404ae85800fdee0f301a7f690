@@ -1,0 +1,31 @@
+ehi_high_volume/README.md
+  6fe512423a9c03a8 1,5,10,23,25-34,40,43,59-61,75-76,78,89,91,105,107,116-118,136,149-150
+ehi_high_volume/connector.py
+  6fe512423a9c03a8 9-10,13,15-16,18-19,21-22,25,27-28,30-31,34,36-37,39-40,42-43,48-56,112,165,182-186,239-240,273,280-281,310,317-318,371-374,376-377,405,409,411-414,481-484,501,504-513,515-519
+ehi_high_volume/client.py
+  6fe512423a9c03a8 68,125,133,172,184,232
+ehi_high_volume/models.py
+  6fe512423a9c03a8 28,33,67,104,131,147-148,173
+ehi_high_volume/readers.py
+  6fe512423a9c03a8 12,15,18,27,70,99-110,145,353-361,473-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "71c8bfc787f16db404ae85800fdee0f301a7f690",
+  "prompts": {
+    "6fe512423a9c03a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f0d29e6-e478-4ed3-a806-442a581ee801",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 162,
+      "total_deletions": 33,
+      "accepted_lines": 158,
+      "overriden_lines": 0
+    }
+  }
+}
