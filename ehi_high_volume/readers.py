@@ -64,6 +64,15 @@ def _get_tiebreak_primary_key_column(
         if column.name != primary_key_name:
             continue
 
+        # Computed columns are excluded from selectable_columns so they cannot appear in the
+        # SELECT list — using one as a tiebreak would reference an unselected column in ORDER BY.
+        if column.is_computed:
+            log.warning(
+                f"{schema.table_name}: PK column '{primary_key_name}' is a computed column "
+                "and cannot be used as a tiebreak — tiebreak disabled"
+            )
+            return None
+
         # Only numeric and simple string PKs are safe for `pk > ?`.
         if column.python_type is int:
             return primary_key_name

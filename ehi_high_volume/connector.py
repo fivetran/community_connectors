@@ -16,8 +16,9 @@ import json
 # For structured error context in logs
 import traceback
 
-# For running keyset/PK-keyset tables in parallel
+# For running keyset/PK-keyset tables in parallel and serialising checkpoint writes
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # For timestamping sync start and checkpoint completion times
 from datetime import datetime, timezone
@@ -32,7 +33,7 @@ from fivetran_connector_sdk import Logging as log
 from fivetran_connector_sdk import Operations as op
 
 # Tunable batch and concurrency settings
-from constants import BATCH_SIZE, CHECKPOINT_INTERVAL, MAX_WORKERS
+from constants import BATCH_SIZE, MAX_WORKERS
 
 # Connection pool for managing pyodbc connections to SQL Server
 from client import ConnectionPool
@@ -42,6 +43,9 @@ from models import SchemaDetector, TableSchema
 
 # Keyset, PK-keyset, and offset pagination readers
 from readers import ReplicationKeysetReader, PrimaryKeyOnlyKeysetReader, OffsetReader
+
+# Serialises op.checkpoint() calls across worker threads — the SDK output stream is not thread-safe.
+__checkpoint_lock = threading.Lock()
 
 
 def validate_configuration(configuration: dict) -> None:
@@ -56,23 +60,27 @@ def validate_configuration(configuration: dict) -> None:
     """
     required_fields = [
         "mssql_server",
-        "mssql_port",
         "mssql_database",
         "mssql_user",
         "mssql_password",
-        "mssql_schema",
     ]
     for field in required_fields:
         value = configuration.get(field)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Configuration field '{field}' must be a non-empty string.")
 
-    port = configuration["mssql_port"].strip()
+    # mssql_port defaults to 1433 if omitted — only validate when explicitly provided.
+    port = configuration.get("mssql_port", "1433").strip()
     try:
         if int(port) <= 0:
             raise ValueError()
     except (ValueError, TypeError):
         raise ValueError(f"Configuration field 'mssql_port' must be a positive integer, got '{port}'.")
+
+    # mssql_schema defaults to 'dbo' if omitted — only validate when explicitly provided.
+    schema_value = configuration.get("mssql_schema")
+    if schema_value is not None and (not isinstance(schema_value, str) or not schema_value.strip()):
+        raise ValueError("Configuration field 'mssql_schema' must be a non-empty string if provided.")
 
     optional_str_fields = ["mssql_cert_server", "incremental_column", "table_list", "table_exclusion_list"]
     for field in optional_str_fields:
@@ -179,12 +187,15 @@ def _save_checkpoint(
         datetime.now(timezone.utc).isoformat() if completed else None
     )
     state[table_name] = table_state
-    # Save the progress by checkpointing the state. This is important for ensuring that the sync
-    # process can resume from the correct position in case of interruptions.
-    # For large datasets, checkpoint regularly (every CHECKPOINT_INTERVAL rows) not only at the end.
-    # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state)
+    # Serialises concurrent checkpoint writes from worker threads so that the SDK
+    # output stream is never written by two threads at the same time.
+    with __checkpoint_lock:
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync
+        # process can resume from the correct position in case of interruptions.
+        # For large datasets, checkpoint regularly (every CHECKPOINT_INTERVAL rows) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+        op.checkpoint(state)
 
 
 def _sync_table(
@@ -234,26 +245,20 @@ def _sync_table(
         log.info(f"{table_name}: starting {mode} keyset sync (cursor={last_marker})")
 
         for batch, progress_marker, progress_primary_key_marker in reader.read_batches():
-            # Sync one replication-key page and checkpoint its cursor.
+            # Sync one replication-key page and checkpoint its cursor only after the full
+            # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
                 # The 'upsert' operation inserts a new row or updates an existing one in the
                 # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
-                if rows_synced % CHECKPOINT_INTERVAL == 0:
-                    last_marker = progress_marker
-                    last_primary_key_marker = progress_primary_key_marker
-                    _save_checkpoint(
-                        state, table_name, table_state, mode, True,
-                        last_marker, rows_synced, primary_key_marker=last_primary_key_marker,
-                    )
-                    log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
             last_marker = progress_marker
             last_primary_key_marker = progress_primary_key_marker
             _save_checkpoint(
                 state, table_name, table_state, mode, True,
                 last_marker, rows_synced, primary_key_marker=last_primary_key_marker,
             )
+            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, mode, True,
@@ -275,24 +280,19 @@ def _sync_table(
         log.info(f"{table_name}: starting full PK-keyset sync (last_primary_key={last_marker})")
 
         for batch, progress_marker in reader.read_batches():
-            # Sync one PK-keyset page and checkpoint the latest PK.
+            # Sync one PK-keyset page and checkpoint the latest PK only after the full
+            # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
                 # The 'upsert' operation inserts a new row or updates an existing one in the
                 # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
-                if rows_synced % CHECKPOINT_INTERVAL == 0:
-                    last_marker = progress_marker
-                    _save_checkpoint(
-                        state, table_name, table_state, "full", False,
-                        last_marker, rows_synced, use_primary_key_cursor=True,
-                    )
-                    log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
             last_marker = progress_marker
             _save_checkpoint(
                 state, table_name, table_state, "full", False,
                 last_marker, rows_synced, use_primary_key_cursor=True,
             )
+            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, "full", False,
@@ -312,23 +312,18 @@ def _sync_table(
         log.info(f"{table_name}: starting full offset sync (last_offset={last_marker})")
 
         for batch, progress_marker in reader.read_batches():
-            # Sync one OFFSET page and checkpoint the next offset.
+            # Sync one OFFSET page and checkpoint the next offset only after the full
+            # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
                 # The 'upsert' operation inserts a new row or updates an existing one in the
                 # destination table, matched by primary key. Use this for most sync operations.
                 op.upsert(table_name, row)
                 rows_synced += 1
-                if rows_synced % CHECKPOINT_INTERVAL == 0:
-                    last_marker = progress_marker
-                    _save_checkpoint(
-                        state, table_name, table_state, "full", False,
-                        last_marker, rows_synced,
-                    )
-                    log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
             last_marker = progress_marker
             _save_checkpoint(
                 state, table_name, table_state, "full", False, last_marker, rows_synced,
             )
+            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, "full", False, last_marker, rows_synced, completed=True,
@@ -353,10 +348,25 @@ def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionP
             return
 
         table_state = dict(state.get(table_name, {}))
-        if "replication_key_col" not in table_state:
-            table_state["replication_key_col"] = (
-                table_schema.replication_key.name if table_schema.replication_key else None
+
+        # Detect replication key changes between syncs.
+        # If the user changes incremental_column or auto-detection picks a different column,
+        # the saved last_seen_replication_value belongs to the OLD column. Resuming with it
+        # against the new column would run WHERE new_col > old_value — skipping or duplicating
+        # large ranges of data. Wiping state here forces a clean full resync on key change.
+        current_replication_key = (
+            table_schema.replication_key.name if table_schema.replication_key else None
+        )
+        saved_replication_key = table_state.get("replication_key_col")
+        if table_state and saved_replication_key != current_replication_key:
+            log.warning(
+                f"{table_name}: replication key changed "
+                f"'{saved_replication_key}' → '{current_replication_key}' — resetting state for full resync"
             )
+            # Clear all cursor state so _determine_mode starts fresh.
+            table_state = {}
+        if "replication_key_col" not in table_state:
+            table_state["replication_key_col"] = current_replication_key
 
         _sync_table(table_schema, state, table_state, pool)
 
@@ -414,6 +424,8 @@ def update(configuration: dict, state: dict):
                The state dictionary is empty for the first sync or for any full re-sync.
     """
     log.warning("Example: Connectors - EHI High Volume")
+
+    validate_configuration(configuration)
     schema_name = configuration.get("mssql_schema", "dbo")
     table_include, table_exclude = _parse_table_filter(configuration)
 
@@ -436,15 +448,30 @@ def update(configuration: dict, state: dict):
         primary_key_tables = []
         offset_tables = []
 
+        selectable_column_names = {
+            table_name: {col.name for col in table_schema.selectable_columns}
+            for table_name, table_schema in table_schemas.items()
+        }
+
         for table_name, table_schema in table_schemas.items():
             if table_schema.replication_key is not None:
                 keyset_tables.append(table_name)
-            elif len(table_schema.primary_keys) == 1:
+            elif (
+                len(table_schema.primary_keys) == 1
+                # Only use PK-keyset if the single PK is selectable — computed PKs are excluded
+                # from the SELECT list and would cause PrimaryKeyOnlyKeysetReader to fail.
+                and table_schema.primary_keys[0] in selectable_column_names[table_name]
+            ):
                 primary_key_tables.append(table_name)
             else:
                 offset_tables.append(table_name)
+                reason = (
+                    f"single primary key '{table_schema.primary_keys[0]}' is a computed column"
+                    if len(table_schema.primary_keys) == 1
+                    else "no replication key and no single-column primary key"
+                )
                 log.warning(
-                    f"{table_name}: no replication key and no single-column primary key — "
+                    f"{table_name}: {reason} — "
                     "using OFFSET pagination (O(n²), full sync only, no incremental). "
                     "This may be slow for large tables. Deferred until after keyset tables complete."
                 )

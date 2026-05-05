@@ -93,7 +93,17 @@ pyodbc==5.2.0
 
 ## Authentication
 
-The connector authenticates using SQL Server username and password credentials supplied in `configuration.json`. The connection always uses TLS encryption (`Encrypt=yes`).
+This connector uses SQL Server username and password authentication with credentials supplied in `configuration.json`. The connection always uses TLS encryption (`Encrypt=yes`).
+
+To set up authentication:
+
+1. Create or identify a SQL Server login that the connector will use to connect to the database.
+2. Grant that login `SELECT` permission on the target schema and all tables that need to be synced.
+3. Collect the SQL Server hostname, port, database name, username, and password for that login.
+4. If your SQL Server uses a TLS certificate issued to a specific hostname, determine that certificate hostname and set `mssql_cert_server` in `configuration.json` to that value.
+5. If you are connecting to a cloud-hosted SQL Server instance (AWS RDS, Azure SQL) that uses a self-signed certificate, leave `mssql_cert_server` empty in `configuration.json`.
+6. Allowlist [Fivetran's egress IP addresses](https://fivetran.com/docs/using-fivetran/fivetran-ip-addresses) for your account region in your SQL Server's firewall so the Fivetran cloud platform can reach it. If your SQL Server is on a private network, use [Fivetran Hybrid Deployment](https://fivetran.com/docs/using-fivetran/hybrid-deployment) instead.
+7. Add all connection details and credentials to `configuration.json` before running `fivetran debug` or deploying the connector.
 
 When `mssql_cert_server` is set, the connector validates the server's TLS certificate against that hostname (`TrustServerCertificate=no`, `HostNameInCertificate=<value>`). This is the recommended setting for production environments where the SQL Server has a valid certificate issued to a known hostname.
 

@@ -151,6 +151,16 @@ class SchemaDetector:
         if configured_incremental_column:
             for column in columns:
                 if column.name.lower() == configured_incremental_column.lower():
+                    # Computed columns are excluded from the SELECT list, so using one as the
+                    # replication key would cause ReplicationKeysetReader to raise a ValueError
+                    # instead of falling back to PK-keyset or offset pagination.
+                    if column.is_computed:
+                        log.warning(
+                            f"Configured incremental_column '{column.name}' is a computed column "
+                            "and cannot be used as a replication key — "
+                            "table will fall back to PK-keyset or offset pagination"
+                        )
+                        return None
                     log.fine(f"Using configured incremental column: {column.name}")
                     return column
             log.warning(
@@ -158,8 +168,14 @@ class SchemaDetector:
                 "falling back to pattern-based auto-detection"
             )
 
-        # Priority 2: match column name against known EHI replication key patterns
-        column_by_lower_name = {column.name.lower(): column for column in columns}
+        # Priority 2: match column name against known EHI replication key patterns.
+        # Exclude computed columns — they are not in the SELECT list so the reader cannot
+        # use them as a cursor, and the table would fail instead of falling back gracefully.
+        column_by_lower_name = {
+            column.name.lower(): column
+            for column in columns
+            if not column.is_computed
+        }
         for pattern in KNOWN_REPLICATION_KEY_PATTERNS:
             if pattern.lower() in column_by_lower_name:
                 matched_column = column_by_lower_name[pattern.lower()]
@@ -174,8 +190,13 @@ class SchemaDetector:
         normalized_sql_type = sql_type.lower().strip()
         if normalized_sql_type in {"int", "bigint", "smallint", "tinyint"}:
             return int
-        if normalized_sql_type in {"float", "real", "decimal", "numeric", "money", "smallmoney"}:
+        if normalized_sql_type in {"float", "real"}:
             return float
+        # decimal, numeric, money, smallmoney mapped to str to preserve full precision —
+        # Python float is IEEE 754 64-bit (~15 digits) while SQL Server supports up to 38.
+        # pyodbc returns decimal.Decimal for these types; str(Decimal) gives the exact representation.
+        if normalized_sql_type in {"decimal", "numeric", "money", "smallmoney"}:
+            return str
         if normalized_sql_type in {
             "varchar", "nvarchar", "char", "nchar", "text", "ntext",
             "uniqueidentifier", "xml", "datetime", "datetime2", "date",
