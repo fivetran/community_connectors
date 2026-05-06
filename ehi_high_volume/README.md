@@ -83,7 +83,7 @@ The configuration keys are:
 The `requirements.txt` file specifies the Python library required by the connector beyond those pre-installed in the Fivetran environment.
 
 ```
-pyodbc==5.2.0
+pyodbc==5.3.0
 ```
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.

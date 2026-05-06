@@ -187,15 +187,33 @@ def _save_checkpoint(
         datetime.now(timezone.utc).isoformat() if completed else None
     )
     state[table_name] = table_state
+
+    if has_replication_key:
+        marker_name = "replication_value"
+        checkpoint_type = "replication-key"
+    elif use_primary_key_cursor:
+        marker_name = "primary_key_cursor"
+        checkpoint_type = "PK-only"
+    else:
+        marker_name = "offset"
+        checkpoint_type = "offset"
+
     # Serialises concurrent checkpoint writes from worker threads so that the SDK
     # output stream is never written by two threads at the same time.
+    log.info(f"{table_name}: checkpoint lock waiting ({checkpoint_type})")
     with __checkpoint_lock:
+        log.info(f"{table_name}: checkpoint lock enabled ({checkpoint_type})")
         # Save the progress by checkpointing the state. This is important for ensuring that the sync
         # process can resume from the correct position in case of interruptions.
         # For large datasets, checkpoint regularly (every CHECKPOINT_INTERVAL rows) not only at the end.
         # Learn more about how and where to checkpoint by reading our best practices documentation
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state)
+        log.info(
+            f"{table_name}: checkpoint saved "
+            f"(mode={mode}, rows={rows_synced:,}, {marker_name}={marker}, completed={completed})"
+        )
+    log.info(f"{table_name}: checkpoint unlocked ({checkpoint_type})")
 
 
 def _sync_table(
@@ -258,7 +276,6 @@ def _sync_table(
                 state, table_name, table_state, mode, True,
                 last_marker, rows_synced, primary_key_marker=last_primary_key_marker,
             )
-            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, mode, True,
@@ -292,7 +309,6 @@ def _sync_table(
                 state, table_name, table_state, "full", False,
                 last_marker, rows_synced, use_primary_key_cursor=True,
             )
-            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, "full", False,
@@ -323,7 +339,6 @@ def _sync_table(
             _save_checkpoint(
                 state, table_name, table_state, "full", False, last_marker, rows_synced,
             )
-            log.info(f"{table_name}: checkpoint at {rows_synced:,} rows")
 
         _save_checkpoint(
             state, table_name, table_state, "full", False, last_marker, rows_synced, completed=True,
@@ -403,7 +418,19 @@ def schema(configuration: dict):
     for table_name, table_schema in sorted(table_schemas.items()):
         entry = {"table": table_name}
         if table_schema.primary_keys:
-            entry["primary_key"] = table_schema.primary_keys
+            selectable_names = {col.name for col in table_schema.selectable_columns}
+            computed_pks = [pk for pk in table_schema.primary_keys if pk not in selectable_names]
+            if computed_pks:
+                # Computed PK columns are excluded from op.upsert() because they are not in
+                # selectable_columns. Publishing them would tell Fivetran to expect a key column
+                # that never arrives, causing silent duplicate rows in the destination.
+                # Omitting primary_key entirely lets Fivetran fall back to _fivetran_id.
+                log.warning(
+                    f"{table_name}: primary key contains computed column(s) {computed_pks} — "
+                    "omitting primary_key from schema; Fivetran will use _fivetran_id"
+                )
+            else:
+                entry["primary_key"] = table_schema.primary_keys
         schema_list.append(entry)
 
     log.info(f"schema(): returning {len(schema_list)} table(s)")
@@ -509,7 +536,12 @@ def update(configuration: dict, state: dict):
         # process can resume from the correct position in case of interruptions.
         # You should checkpoint even if you are not using incremental sync, as it tells Fivetran
         # it is safe to write to the destination.
-        op.checkpoint(state)
+        log.info("connector: checkpoint lock waiting (final)")
+        with __checkpoint_lock:
+            log.info("connector: checkpoint lock enabled (final)")
+            op.checkpoint(state)
+            log.info("connector: final checkpoint saved")
+        log.info("connector: checkpoint unlocked (final)")
 
         total = len(table_schemas)
         passed = total - len(failed_tables)

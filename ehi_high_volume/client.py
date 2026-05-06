@@ -70,10 +70,16 @@ class MSSQLConnection:
         self._connection = None
         self._connected_at = None
 
+    @staticmethod
+    def _odbc_escape(value: str) -> str:
+        """Wrap an ODBC value in braces and escape any literal } so ; and } in credentials are safe."""
+        return "{" + value.replace("}", "}}") + "}"
+
     def _build_connection_string(self) -> str:
         """Construct an ODBC connection string from the configuration dict."""
         server = self._configuration["mssql_server"].strip()
-        port = self._configuration["mssql_port"].strip()
+        # mssql_port defaults to 1433 if omitted, consistent with validate_configuration().
+        port = self._configuration.get("mssql_port", "1433").strip()
         certificate_server_name = self._configuration.get("mssql_cert_server", "").strip()
         database = self._configuration["mssql_database"].strip()
         user = self._configuration["mssql_user"].strip()
@@ -86,14 +92,14 @@ class MSSQLConnection:
         connection_string = (
             f"DRIVER={{ODBC Driver 18 for SQL Server}};"
             f"SERVER={server},{port};"
-            f"DATABASE={database};"
-            f"UID={user};"
-            f"PWD={password};"
+            f"DATABASE={self._odbc_escape(database)};"
+            f"UID={self._odbc_escape(user)};"
+            f"PWD={self._odbc_escape(password)};"
             f"Encrypt=yes;"
             f"TrustServerCertificate={trust_server_certificate};"
         )
         if certificate_server_name:
-            connection_string += f"HostNameInCertificate={certificate_server_name};"
+            connection_string += f"HostNameInCertificate={self._odbc_escape(certificate_server_name)};"
         return connection_string
 
     def _open(self) -> None:
@@ -160,6 +166,42 @@ class MSSQLConnection:
                 sleep_time = delay + random.uniform(0, delay * 0.2)
                 log.warning(
                     f"Retryable error (attempt {attempt + 1}/{MAX_RETRIES}): {exc}. "
+                    f"Sleeping {sleep_time:.1f}s before retry."
+                )
+                self._close()
+                time.sleep(sleep_time)
+
+        log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
+        raise last_exception
+
+    def execute_and_fetch_with_retry(self, sql: str, parameters=(), fetch_size: int = 1000) -> list:
+        """
+        Execute SQL and fetch up to fetch_size rows, retrying both phases on transient errors.
+        Wrapping both execute and fetch is necessary because long-running fetches on high-volume
+        tables can fail with the same transient errors retry was designed for. Re-executing with
+        the same parameters is safe — keyset/PK-keyset/offset queries return the same page.
+        """
+        last_exception = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                self.ensure_open()
+                cursor = self._connection.cursor()
+                try:
+                    cursor.execute(sql, parameters)
+                    return cursor.fetchmany(fetch_size)
+                finally:
+                    cursor.close()
+            except Exception as exc:
+                if not _is_retryable_error(exc):
+                    log.severe(f"Non-retryable SQL error: {exc}")
+                    self._close()
+                    raise
+
+                last_exception = exc
+                delay = min(BASE_RETRY_DELAY * (2**attempt), MAX_RETRY_DELAY)
+                sleep_time = delay + random.uniform(0, delay * 0.2)
+                log.warning(
+                    f"Retryable error during execute/fetch (attempt {attempt + 1}/{MAX_RETRIES}): {exc}. "
                     f"Sleeping {sleep_time:.1f}s before retry."
                 )
                 self._close()

@@ -18,6 +18,22 @@ _TIEBREAK_ELIGIBLE_STR_TYPES = frozenset({"varchar", "nvarchar", "char", "nchar"
 _DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
 
 
+def _build_select_columns(selectable_columns) -> str:
+    """
+    Build a comma-separated SELECT column list that preserves datetime2/datetimeoffset precision.
+    SQL Server datetime2(7)/datetimeoffset(7) carry 7 fractional digits, but pyodbc materialises
+    them as Python datetime which only holds 6 (microseconds). Wrapping these columns in
+    CONVERT(NVARCHAR(50), col, 127) makes SQL Server emit the ISO 8601 string directly, so the
+    7th digit is preserved end-to-end.
+    """
+    return ", ".join(
+        f"CONVERT(NVARCHAR(50), [{column.name}], 127) AS [{column.name}]"
+        if column.sql_type.lower() in _DATETIME2_SQL_TYPES
+        else f"[{column.name}]"
+        for column in selectable_columns
+    )
+
+
 def convert_value(value, python_type):
     """Convert a raw pyodbc value into an SDK-friendly scalar."""
     if value is None:
@@ -142,24 +158,15 @@ class ReplicationKeysetReader:
         """
         replication_key_column = self._schema.replication_key.name
         selectable_columns = self._schema.selectable_columns
-        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
+        # _build_select_columns wraps any datetime2/datetimeoffset columns (including the
+        # replication key, if applicable) in CONVERT(NVARCHAR(50), ..., 127) so the full
+        # 7-digit precision is preserved both in the row data and in the cursor value.
+        select_with_cursor_sql = _build_select_columns(selectable_columns)
         table_sql = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
         tiebreak_primary_key_column = self._tiebreak_primary_key_column
         pagination_clause = (
             f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
         )
-
-        # Select datetime2/datetimeoffset cursors as strings to keep all 7 decimals.
-        replication_key_sql_type = self._schema.replication_key.sql_type.lower()
-        needs_string_cursor = replication_key_sql_type in _DATETIME2_SQL_TYPES
-        if needs_string_cursor:
-            select_with_cursor_sql = (
-                select_column_sql + f", CONVERT(NVARCHAR(50), [{replication_key_column}], 127)"
-            )
-            replication_key_string_index = len(selectable_columns)
-        else:
-            select_with_cursor_sql = select_column_sql
-            replication_key_string_index = None
 
         # next() returns the first matching replication-key index, or None if not found.
         replication_key_index = next(
@@ -258,11 +265,9 @@ class ReplicationKeysetReader:
                 )
 
             with self._pool.acquire() as connection:
-                cursor = connection.execute_with_retry(sql, parameters)
-                try:
-                    rows = cursor.fetchmany(self._batch_size)
-                finally:
-                    cursor.close()
+                # execute_and_fetch_with_retry runs both execute and fetchmany inside the retry
+                # loop so transient errors during fetch are recovered the same as during execute.
+                rows = connection.execute_and_fetch_with_retry(sql, parameters, self._batch_size)
 
             if not rows:
                 log.fine(f"{self._schema.table_name}: page {page} returned 0 rows — done")
@@ -275,11 +280,9 @@ class ReplicationKeysetReader:
                     f"WHERE [{replication_key_column}] IS NULL"
                 )
                 with self._pool.acquire() as count_connection:
-                    count_cursor = count_connection.execute_with_retry(null_count_sql, ())
-                    try:
-                        null_count = count_cursor.fetchone()[0] or 0
-                    finally:
-                        count_cursor.close()
+                    # COUNT(*) returns a single row — fetch_size=1 is enough.
+                    count_rows = count_connection.execute_and_fetch_with_retry(null_count_sql, (), 1)
+                    null_count = (count_rows[0][0] if count_rows else 0) or 0
                 if null_count:
                     log.warning(
                         f"{self._schema.table_name}: {null_count} row(s) have a NULL "
@@ -309,20 +312,19 @@ class ReplicationKeysetReader:
                 }
                 batch.append(record)
 
-                if needs_string_cursor:
-                    last_replication_key_value = row[replication_key_string_index]
-                else:
-                    # Normal cursor path: convert the raw replication key value.
-                    replication_key_value = convert_value(
-                        row[replication_key_index],
-                        selectable_columns[replication_key_index].python_type,
-                    )
-                    # Fallback to string so the cursor never becomes None.
-                    last_replication_key_value = (
-                        replication_key_value
-                        if replication_key_value is not None
-                        else str(row[replication_key_index])
-                    )
+                # Convert the raw replication key value through convert_value. For datetime2/
+                # datetimeoffset columns this is already a full-precision string (see
+                # _build_select_columns); for other types it's normalised here.
+                replication_key_value = convert_value(
+                    row[replication_key_index],
+                    selectable_columns[replication_key_index].python_type,
+                )
+                # Fallback to string so the cursor never becomes None.
+                last_replication_key_value = (
+                    replication_key_value
+                    if replication_key_value is not None
+                    else str(row[replication_key_index])
+                )
 
                 if tiebreak_primary_key_column and primary_key_index is not None:
                     primary_key_value = convert_value(
@@ -385,7 +387,8 @@ class PrimaryKeyOnlyKeysetReader:
         """
         primary_key_column = self._primary_key_column
         selectable_columns = self._schema.selectable_columns
-        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
+        # Wrap datetime2/datetimeoffset columns in CONVERT to preserve full 7-digit precision.
+        select_column_sql = _build_select_columns(selectable_columns)
         schema_table = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
         pagination_clause = (
             f"OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY OPTION (FAST {self._batch_size})"
@@ -430,11 +433,9 @@ class PrimaryKeyOnlyKeysetReader:
                 sql, parameters = sql_next, (current_last, self._batch_size)
 
             with self._pool.acquire() as connection:
-                cursor = connection.execute_with_retry(sql, parameters)
-                try:
-                    rows = cursor.fetchmany(self._batch_size)
-                finally:
-                    cursor.close()
+                # execute_and_fetch_with_retry runs both execute and fetchmany inside the retry
+                # loop so transient errors during fetch are recovered the same as during execute.
+                rows = connection.execute_and_fetch_with_retry(sql, parameters, self._batch_size)
 
             if not rows:
                 log.fine(f"{self._schema.table_name}: PK-keyset page returned 0 rows — done")
@@ -510,7 +511,8 @@ class OffsetReader:
             ready for upsert and next_offset is the next row offset to read.
         """
         selectable_columns = self._schema.selectable_columns
-        select_column_sql = ", ".join(f"[{column.name}]" for column in selectable_columns)
+        # Wrap datetime2/datetimeoffset columns in CONVERT to preserve full 7-digit precision.
+        select_column_sql = _build_select_columns(selectable_columns)
         schema_table = f"[{self._schema.schema_name}].[{self._schema.table_name}]"
 
         if not self._has_primary_key_order:
@@ -531,11 +533,11 @@ class OffsetReader:
         while True:
             # First sync uses offset 0; resume uses the saved offset.
             with self._pool.acquire() as connection:
-                cursor = connection.execute_with_retry(sql, (offset, self._batch_size))
-                try:
-                    rows = cursor.fetchmany(self._batch_size)
-                finally:
-                    cursor.close()
+                # execute_and_fetch_with_retry runs both execute and fetchmany inside the retry
+                # loop so transient errors during fetch are recovered the same as during execute.
+                rows = connection.execute_and_fetch_with_retry(
+                    sql, (offset, self._batch_size), self._batch_size
+                )
 
             if not rows:
                 return
