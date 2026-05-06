@@ -1,0 +1,23 @@
+README.md
+  67456508db659a24 55,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "46a373a9c4e1c1aea7744e30c4daaa3b98a6227c",
+  "prompts": {
+    "67456508db659a24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdbbf240-0dd1-4933-9e9f-486527b6b37d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
