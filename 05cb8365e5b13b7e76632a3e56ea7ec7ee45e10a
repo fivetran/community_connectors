@@ -1,0 +1,23 @@
+ehi_high_volume/connector.py
+  67456508db659a24 540,546-547,553-554
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "05cb8365e5b13b7e76632a3e56ea7ec7ee45e10a",
+  "prompts": {
+    "67456508db659a24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdbbf240-0dd1-4933-9e9f-486527b6b37d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 8,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
