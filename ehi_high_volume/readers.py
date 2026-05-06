@@ -27,9 +27,11 @@ def _build_select_columns(selectable_columns) -> str:
     7th digit is preserved end-to-end.
     """
     return ", ".join(
-        f"CONVERT(NVARCHAR(50), [{column.name}], 127) AS [{column.name}]"
-        if column.sql_type.lower() in _DATETIME2_SQL_TYPES
-        else f"[{column.name}]"
+        (
+            f"CONVERT(NVARCHAR(50), [{column.name}], 127) AS [{column.name}]"
+            if column.sql_type.lower() in _DATETIME2_SQL_TYPES
+            else f"[{column.name}]"
+        )
         for column in selectable_columns
     )
 
@@ -281,7 +283,9 @@ class ReplicationKeysetReader:
                 )
                 with self._pool.acquire() as count_connection:
                     # COUNT(*) returns a single row — fetch_size=1 is enough.
-                    count_rows = count_connection.execute_and_fetch_with_retry(null_count_sql, (), 1)
+                    count_rows = count_connection.execute_and_fetch_with_retry(
+                        null_count_sql, (), 1
+                    )
                     null_count = (count_rows[0][0] if count_rows else 0) or 0
                 if null_count:
                     log.warning(

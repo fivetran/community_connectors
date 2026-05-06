@@ -34,7 +34,6 @@ class TableSchema:
         return [column for column in self.columns if not column.is_computed]
 
 
-
 class SchemaDetector:
     _METADATA_SQL = """
         SELECT
@@ -106,9 +105,7 @@ class SchemaDetector:
             table_names = self._list_tables(schema_name)
         if table_exclude:
             table_names = [
-                table_name
-                for table_name in table_names
-                if table_name.lower() not in table_exclude
+                table_name for table_name in table_names if table_name.lower() not in table_exclude
             ]
 
         results: dict = {}
@@ -172,9 +169,7 @@ class SchemaDetector:
         # Exclude computed columns — they are not in the SELECT list so the reader cannot
         # use them as a cursor, and the table would fail instead of falling back gracefully.
         column_by_lower_name = {
-            column.name.lower(): column
-            for column in columns
-            if not column.is_computed
+            column.name.lower(): column for column in columns if not column.is_computed
         }
         for pattern in KNOWN_REPLICATION_KEY_PATTERNS:
             if pattern.lower() in column_by_lower_name:
@@ -198,15 +193,34 @@ class SchemaDetector:
         if normalized_sql_type in {"decimal", "numeric", "money", "smallmoney"}:
             return str
         if normalized_sql_type in {
-            "varchar", "nvarchar", "char", "nchar", "text", "ntext",
-            "uniqueidentifier", "xml", "datetime", "datetime2", "date",
-            "time", "smalldatetime", "datetimeoffset",
+            "varchar",
+            "nvarchar",
+            "char",
+            "nchar",
+            "text",
+            "ntext",
+            "uniqueidentifier",
+            "xml",
+            "datetime",
+            "datetime2",
+            "date",
+            "time",
+            "smalldatetime",
+            "datetimeoffset",
         }:
             return str
         if normalized_sql_type == "bit":
             return bool
-        if normalized_sql_type in {"varbinary", "binary", "image", "geography", "geometry",
-                                   "hierarchyid", "timestamp", "rowversion"}:
+        if normalized_sql_type in {
+            "varbinary",
+            "binary",
+            "image",
+            "geography",
+            "geometry",
+            "hierarchyid",
+            "timestamp",
+            "rowversion",
+        }:
             return bytes
         log.fine(f"Unknown SQL type '{sql_type}' mapped to str")
         return str

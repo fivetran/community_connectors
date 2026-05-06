@@ -99,7 +99,9 @@ class MSSQLConnection:
             f"TrustServerCertificate={trust_server_certificate};"
         )
         if certificate_server_name:
-            connection_string += f"HostNameInCertificate={self._odbc_escape(certificate_server_name)};"
+            connection_string += (
+                f"HostNameInCertificate={self._odbc_escape(certificate_server_name)};"
+            )
         return connection_string
 
     def _open(self) -> None:
@@ -174,7 +176,9 @@ class MSSQLConnection:
         log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
         raise last_exception
 
-    def execute_and_fetch_with_retry(self, sql: str, parameters=(), fetch_size: int = 1000) -> list:
+    def execute_and_fetch_with_retry(
+        self, sql: str, parameters=(), fetch_size: int = 1000
+    ) -> list:
         """
         Execute SQL and fetch up to fetch_size rows, retrying both phases on transient errors.
         Wrapping both execute and fetch is necessary because long-running fetches on high-volume

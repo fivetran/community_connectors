@@ -75,14 +75,25 @@ def validate_configuration(configuration: dict) -> None:
         if int(port) <= 0:
             raise ValueError()
     except (ValueError, TypeError):
-        raise ValueError(f"Configuration field 'mssql_port' must be a positive integer, got '{port}'.")
+        raise ValueError(
+            f"Configuration field 'mssql_port' must be a positive integer, got '{port}'."
+        )
 
     # mssql_schema defaults to 'dbo' if omitted — only validate when explicitly provided.
     schema_value = configuration.get("mssql_schema")
-    if schema_value is not None and (not isinstance(schema_value, str) or not schema_value.strip()):
-        raise ValueError("Configuration field 'mssql_schema' must be a non-empty string if provided.")
+    if schema_value is not None and (
+        not isinstance(schema_value, str) or not schema_value.strip()
+    ):
+        raise ValueError(
+            "Configuration field 'mssql_schema' must be a non-empty string if provided."
+        )
 
-    optional_str_fields = ["mssql_cert_server", "incremental_column", "table_list", "table_exclusion_list"]
+    optional_str_fields = [
+        "mssql_cert_server",
+        "incremental_column",
+        "table_list",
+        "table_exclusion_list",
+    ]
     for field in optional_str_fields:
         value = configuration.get(field)
         if value is not None and not isinstance(value, str):
@@ -104,7 +115,8 @@ def _parse_table_filter(configuration: dict) -> tuple:
             for table_name in include_list_raw.split(",")
             if table_name.strip() and table_name.strip().lower() not in table_exclude
         ]
-        if include_list_raw else None
+        if include_list_raw
+        else None
     )
     return table_include, table_exclude
 
@@ -273,13 +285,26 @@ def _sync_table(
             last_marker = progress_marker
             last_primary_key_marker = progress_primary_key_marker
             _save_checkpoint(
-                state, table_name, table_state, mode, True,
-                last_marker, rows_synced, primary_key_marker=last_primary_key_marker,
+                state,
+                table_name,
+                table_state,
+                mode,
+                True,
+                last_marker,
+                rows_synced,
+                primary_key_marker=last_primary_key_marker,
             )
 
         _save_checkpoint(
-            state, table_name, table_state, mode, True,
-            last_marker, rows_synced, completed=True, primary_key_marker=last_primary_key_marker,
+            state,
+            table_name,
+            table_state,
+            mode,
+            True,
+            last_marker,
+            rows_synced,
+            completed=True,
+            primary_key_marker=last_primary_key_marker,
         )
 
     elif len(primary_key_columns) == 1:
@@ -306,13 +331,26 @@ def _sync_table(
                 rows_synced += 1
             last_marker = progress_marker
             _save_checkpoint(
-                state, table_name, table_state, "full", False,
-                last_marker, rows_synced, use_primary_key_cursor=True,
+                state,
+                table_name,
+                table_state,
+                "full",
+                False,
+                last_marker,
+                rows_synced,
+                use_primary_key_cursor=True,
             )
 
         _save_checkpoint(
-            state, table_name, table_state, "full", False,
-            last_marker, rows_synced, completed=True, use_primary_key_cursor=True,
+            state,
+            table_name,
+            table_state,
+            "full",
+            False,
+            last_marker,
+            rows_synced,
+            completed=True,
+            use_primary_key_cursor=True,
         )
 
     else:
@@ -337,11 +375,24 @@ def _sync_table(
                 rows_synced += 1
             last_marker = progress_marker
             _save_checkpoint(
-                state, table_name, table_state, "full", False, last_marker, rows_synced,
+                state,
+                table_name,
+                table_state,
+                "full",
+                False,
+                last_marker,
+                rows_synced,
             )
 
         _save_checkpoint(
-            state, table_name, table_state, "full", False, last_marker, rows_synced, completed=True,
+            state,
+            table_name,
+            table_state,
+            "full",
+            False,
+            last_marker,
+            rows_synced,
+            completed=True,
         )
 
     log.info(f"{table_name}: sync complete — {rows_synced:,} row(s)")
@@ -461,7 +512,12 @@ def update(configuration: dict, state: dict):
 
     try:
         table_schemas = _discover_table_schemas(
-            pool, schema_name, table_include, table_exclude, config=configuration, max_workers=MAX_WORKERS,
+            pool,
+            schema_name,
+            table_include,
+            table_exclude,
+            config=configuration,
+            max_workers=MAX_WORKERS,
         )
 
         if not table_schemas:
@@ -511,7 +567,9 @@ def update(configuration: dict, state: dict):
         if parallel_tables:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_table = {
-                    executor.submit(_sync_table_thread, table_schemas[table_name], state, pool): table_name
+                    executor.submit(
+                        _sync_table_thread, table_schemas[table_name], state, pool
+                    ): table_name
                     for table_name in parallel_tables
                 }
                 for future in as_completed(future_to_table):
