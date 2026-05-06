@@ -537,20 +537,21 @@ def update(configuration: dict, state: dict):
         }
 
         for table_name, table_schema in table_schemas.items():
+            pks = table_schema.primary_keys
             if table_schema.replication_key is not None:
                 keyset_tables.append(table_name)
             elif (
-                len(table_schema.primary_keys) == 1
                 # Only use PK-keyset if the single PK is selectable — computed PKs are excluded
                 # from the SELECT list and would cause PrimaryKeyOnlyKeysetReader to fail.
-                and table_schema.primary_keys[0] in selectable_column_names[table_name]
+                len(pks) == 1
+                and pks[0] in selectable_column_names[table_name]  # noqa: W503
             ):
                 primary_key_tables.append(table_name)
             else:
                 offset_tables.append(table_name)
                 reason = (
-                    f"single primary key '{table_schema.primary_keys[0]}' is a computed column"
-                    if len(table_schema.primary_keys) == 1
+                    f"single primary key '{pks[0]}' is a computed column"
+                    if len(pks) == 1
                     else "no replication key and no single-column primary key"
                 )
                 log.warning(
