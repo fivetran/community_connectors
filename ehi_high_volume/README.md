@@ -62,7 +62,7 @@ fivetran init --template ehi_high_volume
 }
 ```
 
-The configuration keys are:
+Configuration parameters:
 
 - `mssql_server` (required): Hostname or IP address of the SQL Server instance
 - `mssql_cert_server` (optional): Hostname to validate in the server's TLS certificate; leave empty to trust the server certificate without hostname verification, which is suitable for AWS RDS and other cloud-hosted SQL Servers with self-signed certificates
