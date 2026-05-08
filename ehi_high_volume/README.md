@@ -64,16 +64,16 @@ fivetran init --template ehi_high_volume
 
 The configuration keys are:
 
-- `mssql_server`: hostname or IP address of the SQL Server instance
-- `mssql_cert_server` (optional): hostname to validate in the server's TLS certificate; leave empty to trust the server certificate without hostname verification, which is suitable for AWS RDS and other cloud-hosted SQL Servers with self-signed certificates
-- `mssql_port`: TCP port for the SQL Server instance; defaults to `1433`
-- `mssql_database`: name of the database to connect to
-- `mssql_user`: SQL Server login username
-- `mssql_password`: SQL Server login password
-- `mssql_schema`: schema to discover and sync tables from; defaults to `dbo`
-- `incremental_column` (optional): column name to use as the replication key for all tables
-- `table_list` (optional): comma-separated list of table names to sync; if omitted, all tables in the schema are synced
-- `table_exclusion_list` (optional): comma-separated list of table names to exclude from the sync
+- `mssql_server` (required): Hostname or IP address of the SQL Server instance
+- `mssql_cert_server` (optional): Hostname to validate in the server's TLS certificate; leave empty to trust the server certificate without hostname verification, which is suitable for AWS RDS and other cloud-hosted SQL Servers with self-signed certificates
+- `mssql_port` (required): TCP port for the SQL Server instance; defaults to `1433`
+- `mssql_database` (required): Name of the database to connect to
+- `mssql_user` (required): SQL Server login username
+- `mssql_password` (required): SQL Server login password
+- `mssql_schema` (required): Schema to discover and sync tables from; defaults to `dbo`
+- `incremental_column` (optional): Column name to use as the replication key for all tables
+- `table_list` (optional): Comma-separated list of table names to sync; if omitted, all tables in the schema are synced
+- `table_exclusion_list` (optional): Comma-separated list of table names to exclude from the sync
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -121,11 +121,11 @@ When many rows share the same replication key value (for example, batch-inserted
 
 Schema detection queries `INFORMATION_SCHEMA.COLUMNS` and `COLUMNPROPERTY` for each table to determine column names, SQL Server data types, primary key membership, identity columns, and computed columns. Computed columns are excluded from `SELECT` lists because SQL Server rejects them in explicit column lists under certain schema configurations. Schema discovery runs in parallel using a thread pool.
 
-The replication key for each table is selected using the following priority order:
+The connector select the replication key for each table using the following priority order:
 
-1. `incremental_column` key in `configuration.json` — applies the specified column name to every table, overriding auto-detection.
-2. Column name matches a known pattern (e.g. `_LastUpdatedInstant`, `UpdatedAt`, `ModifiedDate`) — checked case-insensitively against `KNOWN_REPLICATION_KEY_PATTERNS` in `constants.py`.
-3. None — no replication key detected; the table uses PK-keyset or offset pagination and has no incremental mode.
+1. `incremental_column` key in `configuration.json` — Applies the specified column name to every table, overriding auto-detection.
+2. Column name matches a known pattern (e.g. `_LastUpdatedInstant`, `UpdatedAt`, `ModifiedDate`) — Checked case-insensitively against `KNOWN_REPLICATION_KEY_PATTERNS` in `constants.py`.
+3. None — No replication key detected; the table uses PK-keyset or offset pagination and has no incremental mode.
 
 Refer to `class SchemaDetector` in `models.py` and `def convert_value` in `readers.py`.
 
@@ -143,9 +143,9 @@ Refer to `def _is_retryable_error` and `def execute_with_retry` in `client.py`.
 
 ## Tables created
 
-Tables are discovered dynamically from the SQL Server schema specified in `mssql_schema`. No tables are hardcoded in the connector. The set of tables synced is the full contents of the schema, subject to the `table_list` and `table_exclusion_list` configuration keys.
+The connector discovers tables dynamically from the SQL Server schema specified in `mssql_schema`. No tables are hardcoded in the connector. The set of tables synced is the full contents of the schema, subject to the `table_list` and `table_exclusion_list` configuration keys.
 
-Each table is created in the destination with:
+The connector creates each table in the destination with:
 
 - Column names and Fivetran-inferred types based on the mapped Python types
 - Primary keys as detected from `INFORMATION_SCHEMA.KEY_COLUMN_USAGE`
@@ -154,10 +154,10 @@ Each table is created in the destination with:
 
 ## Additional files
 
-- `client.py` – defines `MSSQLConnection` (single pyodbc connection with retry logic and `READ UNCOMMITTED` isolation) and `ConnectionPool` (fixed-size queue-based pool for multi-threaded access)
-- `models.py` – defines `ColumnInfo` and `TableSchema` dataclasses and `SchemaDetector` (queries `INFORMATION_SCHEMA` to build per-table schemas and detect replication keys)
-- `readers.py` – defines `ReplicationKeysetReader` (keyset pagination ordered by replication key, with optional PK tiebreak), `PrimaryKeyOnlyKeysetReader` (keyset pagination ordered by primary key for tables without a replication key), and `OffsetReader` (offset pagination fallback) generators that stream table data in bounded batches, and `convert_value()` for type-safe row serialisation
-- `constants.py` – tunable parameters: batch size, checkpoint interval, worker thread count, retry settings, and replication key detection patterns
+- `client.py` – Defines `MSSQLConnection` (single pyodbc connection with retry logic and `READ UNCOMMITTED` isolation) and `ConnectionPool` (fixed-size queue-based pool for multi-threaded access)
+- `models.py` – Defines `ColumnInfo` and `TableSchema` dataclasses and `SchemaDetector` (queries `INFORMATION_SCHEMA` to build per-table schemas and detect replication keys)
+- `readers.py` – Defines `ReplicationKeysetReader` (keyset pagination ordered by replication key, with optional PK tiebreak), `PrimaryKeyOnlyKeysetReader` (keyset pagination ordered by primary key for tables without a replication key), and `OffsetReader` (offset pagination fallback) generators that stream table data in bounded batches, and `convert_value()` for type-safe row serialisation
+- `constants.py` – Has tunable parameters, such as batch size, checkpoint interval, worker thread count, retry settings, and replication key detection patterns
 
 
 ## Additional considerations
