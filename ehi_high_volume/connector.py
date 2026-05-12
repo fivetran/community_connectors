@@ -333,7 +333,7 @@ def _sync_table(
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
                 # The second argument is a dictionary containing the record to be upserted.
-                op.upsert(table_name, row)
+                op.upsert(table=table_name, data=row)
                 rows_synced += 1
             last_marker = progress_marker
             last_primary_key_marker = progress_primary_key_marker
