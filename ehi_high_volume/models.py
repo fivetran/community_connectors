@@ -67,10 +67,24 @@ class SchemaDetector:
     """
 
     def __init__(self, pool: ConnectionPool) -> None:
+        """
+        Args:
+            pool: A ConnectionPool for executing schema detection queries.
+        """
         self._pool = pool
 
     def detect_table(self, schema_name: str, table_name: str, config: dict = None) -> TableSchema:
-        """Query INFORMATION_SCHEMA for one table and return its TableSchema."""
+        """
+        Query INFORMATION_SCHEMA for one table and return its TableSchema.
+
+        Args:
+            schema_name: SQL Server schema name.
+            table_name: Name of the table to detect.
+            config: Optional configuration dict (default: None).
+
+        Returns:
+            A TableSchema with column metadata and detected replication key.
+        """
         with self._pool.acquire() as connection:
             cursor = connection.execute_with_retry(self._METADATA_SQL, (schema_name, table_name))
             try:
@@ -107,7 +121,19 @@ class SchemaDetector:
         config: dict = None,
         max_workers: int = 4,
     ) -> dict:
-        """Detect schemas for all tables in scope in parallel and return {table_name: TableSchema}."""
+        """
+        Detect schemas for all tables in scope in parallel and return {table_name: TableSchema}.
+
+        Args:
+            schema_name: SQL Server schema name.
+            table_names: Optional list of specific tables to detect (None = discover all).
+            table_exclude: Optional frozenset of lowercase table names to exclude.
+            config: Optional configuration dict (default: None).
+            max_workers: Number of parallel threads for schema detection (default: 4).
+
+        Returns:
+            A dictionary mapping table names to TableSchema objects.
+        """
         if table_names is None:
             table_names = self._list_tables(schema_name)
         if table_exclude:
@@ -132,7 +158,15 @@ class SchemaDetector:
         return results
 
     def _list_tables(self, schema_name: str) -> list:
-        """Query INFORMATION_SCHEMA.TABLES and return all base table names in the given schema."""
+        """
+        Query INFORMATION_SCHEMA.TABLES and return all base table names in the given schema.
+
+        Args:
+            schema_name: SQL Server schema name.
+
+        Returns:
+            List of base table names in the schema, sorted alphabetically.
+        """
         sql = (
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
             "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' "
@@ -148,8 +182,17 @@ class SchemaDetector:
 
     @staticmethod
     def detect_replication_key(columns: list, config: dict):
-        """Return the ColumnInfo to use as the replication key, or None if no suitable column is found.
-        Checks incremental_column config first, then pattern-matches known column name suffixes."""
+        """
+        Return the ColumnInfo to use as the replication key, or None if no suitable column is found.
+        Checks `incremental_column` config first, then matches column names case-insensitively against `KNOWN_REPLICATION_KEY_PATTERNS`.
+
+        Args:
+            columns: List of ColumnInfo objects for the table.
+            config: Configuration dict that may contain 'incremental_column'.
+
+        Returns:
+            ColumnInfo for the replication key, or None if not found.
+        """
         # Priority 1: user-specified column name overrides auto-detection entirely
         configured_incremental_column = (config.get("incremental_column") or "").strip()
         if configured_incremental_column:
@@ -188,7 +231,16 @@ class SchemaDetector:
 
     @staticmethod
     def map_sql_type_to_python(sql_type: str):
-        """Map a SQL Server data type string to the closest Python type for use in convert_value()."""
+        """
+        Map a SQL Server data type string to the closest Python type for use in convert_value().
+
+        Args:
+            sql_type: A SQL Server data type name (e.g. 'int', 'varchar', 'datetime2').
+
+        Returns:
+            A Python type (int, float, str, bool, or bytes) that best represents the SQL type.
+            Falls back to str for unknown types.
+        """
         normalized_sql_type = sql_type.lower().strip()
         if normalized_sql_type in {"int", "bigint", "smallint", "tinyint"}:
             return int

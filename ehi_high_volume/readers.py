@@ -175,6 +175,9 @@ class ReplicationKeysetReader:
                 handle duplicate replication key values correctly.
             primary_key_columns: list of PK column names for tiebreak ordering.
             last_seen_primary_key: last committed PK tiebreak value (for mid-page resume).
+
+        Returns:
+            None.
         """
         self._pool = pool
         self._schema = schema
@@ -417,6 +420,9 @@ class PrimaryKeyOnlyKeysetReader:
             last_seen_primary_key: last committed PK value to resume an interrupted full sync
                 (None to start from the beginning of the table).
             batch_size: number of rows to fetch per query page.
+
+        Returns:
+            None.
         """
         self._pool = pool
         self._schema = schema
@@ -538,6 +544,9 @@ class OffsetReader:
             schema: table schema; used for column list and optional PK ordering.
             last_offset: row offset to resume from (0 for a fresh sync).
             batch_size: number of rows to fetch per query page.
+
+        Returns:
+            None.
         """
         self._pool = pool
         self._schema = schema

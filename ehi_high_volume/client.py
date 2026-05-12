@@ -43,6 +43,9 @@ def _is_retryable_error(exc: Exception) -> bool:
     substring-matching the human-readable error message.
     Args:
         exc: The exception to evaluate, expected to be a pyodbc.Error.
+
+    Returns:
+        True if the exception is a transient error that can be retried, False otherwise.
     """
     if not isinstance(exc, pyodbc.Error) or not exc.args:
         return False
@@ -65,18 +68,37 @@ class MSSQLConnection:
     """
 
     def __init__(self, configuration: dict) -> None:
-        """Store configuration and initialise connection tracking variables."""
+        """
+        Store configuration and initialise connection tracking variables.
+
+        Args:
+            configuration: Dictionary containing SQL Server connection settings.
+        """
         self._configuration = configuration
         self._connection = None
         self._connected_at = None
 
     @staticmethod
     def _odbc_escape(value: str) -> str:
-        """Wrap an ODBC value in braces and escape any literal } so ; and } in credentials are safe."""
+        """
+        Wrap an ODBC value in braces and escape any literal } so ; and } in credentials are safe.
+
+        Args:
+            value: The string value to escape for use in an ODBC connection string.
+
+        Returns:
+            The escaped string wrapped in braces.
+        """
         return "{" + value.replace("}", "}}") + "}"
 
     def _build_connection_string(self) -> str:
-        """Construct an ODBC connection string from the configuration dict."""
+        """
+        Construct an ODBC connection string from the configuration dict.
+
+        Returns:
+            An ODBC connection string with all driver, server, database, credentials,
+            and TLS settings included.
+        """
         server = self._configuration["mssql_server"].strip()
         # mssql_port defaults to 1433 if omitted, consistent with validate_configuration().
         port = self._configuration.get("mssql_port", "1433").strip()
@@ -105,7 +127,12 @@ class MSSQLConnection:
         return connection_string
 
     def _open(self) -> None:
-        """Open a new connection using the built connection string and set isolation level."""
+        """
+        Open a new connection using the built connection string and set isolation level.
+
+        Returns:
+            None.
+        """
         connection_string = self._build_connection_string()
         # autocommit=True: no implicit transaction wraps our SELECTs, so no shared locks are held
         self._connection = pyodbc.connect(connection_string, autocommit=True)
@@ -119,7 +146,12 @@ class MSSQLConnection:
         log.fine(f"connection opened at {self._connected_at.isoformat()}")
 
     def _close(self) -> None:
-        """Close the connection if it exists, and reset tracking variables."""
+        """
+        Close the connection if it exists, and reset tracking variables.
+
+        Returns:
+            None.
+        """
         if self._connection is not None:
             try:
                 self._connection.close()
@@ -130,7 +162,12 @@ class MSSQLConnection:
                 self._connected_at = None
 
     def _needs_reconnect(self) -> bool:
-        """Return True if the connection has never been opened or has exceeded the max age."""
+        """
+        Return True if the connection has never been opened or has exceeded the max age.
+
+        Returns:
+            True if reconnection is needed, False if the connection is current and valid.
+        """
         # Never connected yet, or connection was reset after a failure
         if self._connected_at is None:
             return True
@@ -138,7 +175,12 @@ class MSSQLConnection:
         return elapsed > CONNECTION_TIMEOUT_HOURS * 3600
 
     def ensure_open(self) -> None:
-        """Open (or reopen) the connection if it is closed or has expired."""
+        """
+        Open (or reopen) the connection if it is closed or has expired.
+
+        Returns:
+            None.
+        """
         if self._connection is None or self._needs_reconnect():
             self._close()
             self._open()
@@ -149,6 +191,13 @@ class MSSQLConnection:
         On a retryable SQLSTATE the connection is closed, the thread sleeps
         with jitter, the connection is reopened, and the query retried.
         Non-retryable errors are re-raised immediately.
+
+        Args:
+            sql: The SQL query string to execute.
+            parameters: Parameters to bind to the query (default: empty tuple).
+
+        Returns:
+            A pyodbc Cursor with the query executed.
         """
         last_exception = None
         for attempt in range(MAX_RETRIES):
@@ -184,6 +233,14 @@ class MSSQLConnection:
         Wrapping both execute and fetch is necessary because long-running fetches on high-volume
         tables can fail with the same transient errors retry was designed for. Re-executing with
         the same parameters is safe — keyset/PK-keyset/offset queries return the same page.
+
+        Args:
+            sql: The SQL query string to execute.
+            parameters: Parameters to bind to the query (default: empty tuple).
+            fetch_size: Maximum number of rows to fetch (default: 1000).
+
+        Returns:
+            A list of tuples representing the fetched rows.
         """
         last_exception = None
         for attempt in range(MAX_RETRIES):
@@ -215,7 +272,12 @@ class MSSQLConnection:
         raise last_exception
 
     def close(self) -> None:
-        """Close the underlying pyodbc connection and reset tracking state."""
+        """
+        Close the underlying pyodbc connection and reset tracking state.
+
+        Returns:
+            None.
+        """
         self._close()
 
 
@@ -227,7 +289,16 @@ class ConnectionPool:
     """
 
     def __init__(self, configuration: dict, size: int) -> None:
-        """Open `size` connections upfront and place them in a thread-safe queue."""
+        """
+        Open `size` connections upfront and place them in a thread-safe queue.
+
+        Args:
+            configuration: Dictionary containing SQL Server connection settings.
+            size: Number of connections to create in the pool.
+
+        Returns:
+            None.
+        """
         log.info(f"Initialising connection pool with {size} connection(s)")
         self._queue = queue.Queue(maxsize=size)
         self._all_connections: list = []
@@ -259,6 +330,12 @@ class ConnectionPool:
         """
         Acquire a connection from the pool as a context manager.
         Always returns the connection to the pool in the finally block.
+
+        Args:
+            timeout: Maximum seconds to wait for an available connection (default: 30.0).
+
+        Returns:
+            Context manager yielding an MSSQLConnection.
         """
         try:
             connection = self._queue.get(timeout=timeout)
@@ -275,7 +352,12 @@ class ConnectionPool:
             self._queue.put(connection)
 
     def close_all(self) -> None:
-        """Close every connection in the pool — called once when the sync finishes."""
+        """
+        Close every connection in the pool — called once when the sync finishes.
+
+        Returns:
+            None.
+        """
         for connection in self._all_connections:
             connection.close()
         log.info("All pool connections closed")

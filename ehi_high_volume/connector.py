@@ -101,7 +101,12 @@ def validate_configuration(configuration: dict) -> None:
 
 
 def _parse_table_filter(configuration: dict) -> tuple:
-    """Read table_list and table_exclusion_list from configuration and return (include, exclude)."""
+    """
+    Read table_list and table_exclusion_list from configuration and return (include, exclude).
+
+    Args:
+        configuration: A dictionary containing connector configuration settings.
+    """
     exclusion_list_raw = configuration.get("table_exclusion_list", "").strip()
     table_exclude = frozenset(
         table_name.strip().lower()
@@ -111,7 +116,7 @@ def _parse_table_filter(configuration: dict) -> tuple:
     include_list_raw = configuration.get("table_list", "").strip()
     table_include = (
         [
-            table_name.strip()
+            table_name.strip().lower()
             for table_name in include_list_raw.split(",")
             if table_name.strip() and table_name.strip().lower() not in table_exclude
         ]
@@ -129,7 +134,20 @@ def _discover_table_schemas(
     config: dict,
     max_workers: int,
 ) -> dict:
-    """Detect the schema for every table in scope and return a dict of {table_name: TableSchema}."""
+    """
+    Detect the schema for every table in scope.
+
+    Args:
+        pool: Connection pool for executing schema detection queries.
+        schema_name: The SQL Server schema name to query.
+        table_include: Optional list of table names to include (None for all).
+        table_exclude: Frozenset of lowercase table names to exclude.
+        config: Configuration dictionary passed to SchemaDetector.
+        max_workers: Number of parallel threads for schema detection.
+
+    Returns:
+        A dictionary mapping table names to TableSchema objects.
+    """
     # SchemaDetector -> (pool)
     detector = SchemaDetector(pool)
     table_schemas = detector.detect_all_tables(
@@ -149,6 +167,13 @@ def _determine_mode(table_state: dict, table_schema: TableSchema) -> str:
     - Prior state is full, incomplete → full (resume)
     - Prior is full, completed → incremental if replication key exists, else full
     - Prior is incremental → incremental (guard: fall back to full if cursor or key missing)
+
+    Args:
+        table_state: State dictionary for this table from the previous sync.
+        table_schema: TableSchema containing column and replication key metadata.
+
+    Returns:
+        "full" or "incremental".
     """
     has_replication_key = table_schema.replication_key is not None
 
@@ -182,7 +207,24 @@ def _save_checkpoint(
     primary_key_marker=None,
     use_primary_key_cursor: bool = False,
 ) -> None:
-    """Write the current cursor and row count into state and emit a Fivetran checkpoint."""
+    """
+    Write the current cursor and row count into state and emit a Fivetran checkpoint.
+
+    Args:
+        state: Top-level state dictionary shared across all tables.
+        table_name: Name of the table being checkpointed.
+        table_state: Per-table state dictionary to update.
+        mode: Current sync mode ("full" or "incremental").
+        has_replication_key: Whether the table has a replication key.
+        marker: The cursor value to save (replication value, PK cursor, or offset depending on mode).
+        rows_synced: Cumulative row count for this sync run.
+        completed: If True, sets sync_completed_at to the current UTC time; if False, sets it to None.
+        primary_key_marker: Optional PK tiebreak cursor for replication-key tables.
+        use_primary_key_cursor: If True, saves marker as a PK-only cursor.
+
+    Returns:
+        None.
+    """
     if has_replication_key:
         if marker is not None:
             table_state["last_seen_replication_value"] = marker
@@ -248,6 +290,15 @@ def _sync_table(
       updates to existing rows are not silently missed.
     - Offset tables: same policy as PK-only — resume interrupted syncs, restart from offset 0
       after a completed sync.
+
+    Args:
+        table_schema: TableSchema containing column and replication key metadata.
+        state: Top-level state dictionary shared across all tables.
+        table_state: Per-table state dictionary.
+        pool: Connection pool for executing SQL queries.
+
+    Returns:
+        None.
     """
     table_name = table_schema.table_name
     has_replication_key = table_schema.replication_key is not None
@@ -321,7 +372,7 @@ def _sync_table(
         last_marker = None if prior_completed else table_state.get("last_seen_pk_cursor")
         # PrimaryKeyOnlyKeysetReader -> (pool, table_schema, last_seen_primary_key, batch_size)
         reader = PrimaryKeyOnlyKeysetReader(pool, table_schema, last_marker, BATCH_SIZE)
-        log.info(f"{table_name}: starting full PK-keyset sync (last_primary_key={last_marker})")
+        log.info(f"{table_name}: starting full PK-keyset sync (last_pk_cursor={last_marker})")
 
         for batch, progress_marker in reader.read_batches():
             # Sync one PK-keyset page and checkpoint the latest PK only after the full
@@ -400,11 +451,20 @@ def _sync_table(
     log.info(f"{table_name}: sync complete — {rows_synced:,} row(s)")
 
 
-def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionPool) -> None:
+def _sync_table_thread  (table_schema: TableSchema, state: dict, pool: ConnectionPool) -> None:
     """
     Entry point for each worker thread. Each thread exclusively owns state[table_name]
-    — no locking needed because the GIL serialises dict writes and no two threads
-    touch the same key.
+    — no locking needed for per-table state because the GIL serialises dict writes
+    and no two threads touch the same key. Checkpoint writes are coordinated via
+    __checkpoint_lock to prevent concurrent calls to update().
+
+    Args:
+        table_schema: TableSchema for the table to sync.
+        state: Top-level state dictionary shared across all tables.
+        pool: Connection pool for executing SQL queries.
+
+    Returns:
+        None. Raises an exception on non-retryable failure.
     """
     table_name = table_schema.table_name
     try:
