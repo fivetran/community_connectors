@@ -119,7 +119,7 @@ When a replication-key table has a single eligible primary key column, the conne
 
 ## Data handling
 
-Schema detection queries `INFORMATION_SCHEMA.COLUMNS` and `COLUMNPROPERTY` for each table to determine column names, SQL Server data types, primary key membership, and computed columns. Computed columns are excluded from `SELECT` lists because they cannot be explicitly selected in SQL Server and, if included in primary key definitions, would cause silent duplicate rows in the destination. Schema discovery runs in parallel using a thread pool.
+Schema detection queries `INFORMATION_SCHEMA.COLUMNS` and `COLUMNPROPERTY` for each table to determine column names, SQL Server data types, primary key membership, and computed columns. Computed columns are excluded from this connector's `SELECT` lists because they are unsafe for cursor and primary-key handling in this example; if a computed column is part of a primary key, the connector omits that primary key from the destination schema so Fivetran can fall back to `_fivetran_id`. Schema discovery runs in parallel using a thread pool.
 
 The connector selects the replication key for each table using the following priority order:
 

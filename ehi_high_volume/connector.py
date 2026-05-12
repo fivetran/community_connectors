@@ -423,9 +423,10 @@ def _sync_table(
             # Sync one OFFSET page and checkpoint the next offset only after the full
             # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
-                # The 'upsert' operation inserts a new row or updates an existing one in the
-                # destination table, matched by primary key. Use this for most sync operations.
-                op.upsert(table_name, row)
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
+                op.upsert(table=table_name, data=row)
                 rows_synced += 1
             last_marker = progress_marker
             _save_checkpoint(
@@ -559,7 +560,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
-    log.warning("Example: Connectors - EHI High Volume")
+    log.warning("Example: Connectors : EHI High Volume")
 
     validate_configuration(configuration)
     schema_name = configuration.get("mssql_schema", "dbo")
