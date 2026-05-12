@@ -1,0 +1,29 @@
+ehi_high_volume/models.py
+  bcad5ad802883988 70-73,77-87,124-136,161-169,185-195,234-243
+ehi_high_volume/connector.py
+  bcad5ad802883988 104-109,137-150,170-176,210-227,293-301,375,457-467
+ehi_high_volume/client.py
+  bcad5ad802883988 46-48,71-76,83-91,95-101,130-135,149-154,165-170,178-183,194-200,236-243,275-280,292-301,333-338,355-360
+ehi_high_volume/readers.py
+  bcad5ad802883988 178-180,423-425,547-549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "53b1d2b15599b92e213cfad20e481043d0510db1",
+  "prompts": {
+    "bcad5ad802883988": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11614134-7a91-472b-bb9b-dd53b57d6609",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 239,
+      "total_deletions": 36,
+      "accepted_lines": 235,
+      "overriden_lines": 0
+    }
+  }
+}
