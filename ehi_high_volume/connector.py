@@ -451,7 +451,7 @@ def _sync_table(
     log.info(f"{table_name}: sync complete — {rows_synced:,} row(s)")
 
 
-def _sync_table_thread  (table_schema: TableSchema, state: dict, pool: ConnectionPool) -> None:
+def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionPool) -> None:
     """
     Entry point for each worker thread. Each thread exclusively owns state[table_name]
     — no locking needed for per-table state because the GIL serialises dict writes
