@@ -198,7 +198,6 @@ def _save_checkpoint(
     table_state["sync_completed_at"] = (
         datetime.now(timezone.utc).isoformat() if completed else None
     )
-    state[table_name] = table_state
 
     if has_replication_key:
         marker_name = "replication_value"
@@ -210,14 +209,16 @@ def _save_checkpoint(
         marker_name = "offset"
         checkpoint_type = "offset"
 
-    # Serialises concurrent checkpoint writes from worker threads so that the SDK
-    # output stream is never written by two threads at the same time.
+    # Hold the lock for both the state mutation and op.checkpoint() so that no other
+    # thread can modify state between the two operations, preventing inconsistent snapshots.
     log.info(f"{table_name}: checkpoint lock waiting ({checkpoint_type})")
     with __checkpoint_lock:
+        state[table_name] = table_state
         log.info(f"{table_name}: checkpoint lock enabled ({checkpoint_type})")
-        # Save the progress by checkpointing the state. This is important for ensuring that the sync
-        # process can resume from the correct position in case of interruptions.
-        # For large datasets, checkpoint regularly (every CHECKPOINT_INTERVAL rows) not only at the end.
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
         # Learn more about how and where to checkpoint by reading our best practices documentation
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state)
@@ -278,8 +279,9 @@ def _sync_table(
             # Sync one replication-key page and checkpoint its cursor only after the full
             # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
-                # The 'upsert' operation inserts a new row or updates an existing one in the
-                # destination table, matched by primary key. Use this for most sync operations.
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table_name, row)
                 rows_synced += 1
             last_marker = progress_marker
@@ -445,8 +447,6 @@ def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionP
 def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
-    Queries the SQL Server INFORMATION_SCHEMA to discover all tables and their primary keys
-    dynamically — no tables are hardcoded.
     See the technical reference documentation for more details on the schema function:
     https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
     Args:
@@ -491,15 +491,12 @@ def schema(configuration: dict):
 def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
-    Syncs all discovered tables using the best available pagination strategy.
-    Keyset and PK-keyset tables run in parallel; offset tables (no PK, no replication key)
-    are deferred and run sequentially after all parallel work completes.
-    See the technical reference documentation for more details on the update function:
+    See the technical reference documentation for more details on the update function
     https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
     Args:
-        configuration: a dictionary containing connection details and sync settings.
-        state: a dictionary containing cursor state from the previous sync run.
-               The state dictionary is empty for the first sync or for any full re-sync.
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
     """
     log.warning("Example: Connectors - EHI High Volume")
 
@@ -591,13 +588,15 @@ def update(configuration: dict, state: dict):
                 log.severe(f"{table_name}: offset sync failed: {exc}")
                 failed_tables.append(table_name)
 
-        # Save the progress by checkpointing the state. This is important for ensuring that the sync
-        # process can resume from the correct position in case of interruptions.
-        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran
-        # it is safe to write to the destination.
         log.info("connector: checkpoint lock waiting (final)")
         with __checkpoint_lock:
             log.info("connector: checkpoint lock enabled (final)")
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info("connector: final checkpoint saved")
         log.info("connector: checkpoint unlocked (final)")

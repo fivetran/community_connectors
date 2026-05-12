@@ -1,9 +1,16 @@
+# For defining lightweight data classes with auto-generated __init__, __repr__, etc.
 from dataclasses import dataclass, field
+
+# For running schema detection queries across tables in parallel
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
+# Column name patterns used to auto-detect replication keys
 from constants import KNOWN_REPLICATION_KEY_PATTERNS
+
+# Connection pool for managing pyodbc connections to SQL Server
 from client import ConnectionPool
 
 

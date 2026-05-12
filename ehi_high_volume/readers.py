@@ -1,12 +1,21 @@
 """Readers for SQL Server table pagination."""
 
+# For encoding binary cursor values as ASCII-safe strings in state
 import base64
+
+# For type-checking and serialising date/time column values
 from datetime import datetime, date, time as _time
 
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
+# Tunable batch and concurrency settings
 from constants import BATCH_SIZE
+
+# Connection pool for managing pyodbc connections to SQL Server
 from client import ConnectionPool
+
+# Schema detection and data models
 from models import TableSchema
 
 _DATETIME_TYPES = (datetime, date, _time)
@@ -21,10 +30,17 @@ _DATETIME2_SQL_TYPES = frozenset({"datetime2", "datetimeoffset"})
 def _build_select_columns(selectable_columns) -> str:
     """
     Build a comma-separated SELECT column list that preserves datetime2/datetimeoffset precision.
+
     SQL Server datetime2(7)/datetimeoffset(7) carry 7 fractional digits, but pyodbc materialises
     them as Python datetime which only holds 6 (microseconds). Wrapping these columns in
     CONVERT(NVARCHAR(50), col, 127) makes SQL Server emit the ISO 8601 string directly, so the
     7th digit is preserved end-to-end.
+
+    Args:
+        selectable_columns: iterable of ColumnInfo objects representing the columns to select.
+
+    Returns:
+        A comma-separated string of SQL column expressions suitable for use in a SELECT clause.
     """
     return ", ".join(
         (
@@ -37,7 +53,20 @@ def _build_select_columns(selectable_columns) -> str:
 
 
 def convert_value(value, python_type):
-    """Convert a raw pyodbc value into an SDK-friendly scalar."""
+    """Convert a raw pyodbc value into an SDK-friendly scalar.
+
+    Handles None pass-through, date/time serialisation to ISO 8601 strings,
+    numeric coercions, and binary encoding to base64 ASCII.
+
+    Args:
+        value: The raw value returned by pyodbc for a column.
+        python_type: The target Python type (str, int, float, bool, or bytes)
+            as determined by the column's SQL type mapping.
+
+    Returns:
+        The converted scalar value, or None if the input is None or the
+        python_type is unrecognised.
+    """
     if value is None:
         return None
 
@@ -68,6 +97,17 @@ def _get_tiebreak_primary_key_column(
 ):
     """
     Return the single PK column that can safely break replication-key ties.
+
+    Only integer and eligible string PKs are accepted; composite, computed, or
+    unsupported-type PKs cause the tiebreak to be disabled with a warning.
+
+    Args:
+        schema: table schema used for column metadata and log messages.
+        primary_key_columns: list of PK column names for the table.
+        use_primary_key_tiebreak: whether the caller has requested tiebreak ordering.
+
+    Returns:
+        The name of the tiebreak PK column, or None if tiebreaking is not possible.
     """
     if not use_primary_key_tiebreak or len(primary_key_columns) != 1:
         if use_primary_key_tiebreak and len(primary_key_columns) > 1:
@@ -125,13 +165,14 @@ class ReplicationKeysetReader:
     ) -> None:
         """
         Set up the reader with the connection pool, table schema, and resume cursors.
+
         Args:
             pool: shared connection pool for SQL Server.
             schema: table schema including column info and replication key.
             last_seen_value: last committed replication key value (None for a fresh sync).
             batch_size: number of rows to fetch per query page.
             use_primary_key_tiebreak: enable composite (replication_key, pk) ordering to
-                                      handle duplicate replication key values correctly.
+                handle duplicate replication key values correctly.
             primary_key_columns: list of PK column names for tiebreak ordering.
             last_seen_primary_key: last committed PK tiebreak value (for mid-page resume).
         """
@@ -150,13 +191,15 @@ class ReplicationKeysetReader:
     def read_batches(self):
         """
         Read SQL Server rows using replication-key keyset pagination.
-        Uses self._last_seen for first sync vs incremental/resume behavior.
+
+        Uses self._last_seen for first sync vs incremental/resume behaviour.
         Uses self._last_seen_primary_key when a PK tiebreak cursor is available.
+
         Yields:
             A tuple of (batch, replication_marker, primary_key_marker), where batch
             is a list of records ready for upsert, replication_marker is the last
-            replication key in the batch, and primary_key_marker is the last PK
-            tiebreak value in the batch.
+            replication key value in the batch, and primary_key_marker is the last
+            PK tiebreak value in the batch.
         """
         replication_key_column = self._schema.replication_key.name
         selectable_columns = self._schema.selectable_columns
@@ -367,11 +410,12 @@ class PrimaryKeyOnlyKeysetReader:
     ) -> None:
         """
         Set up the reader with the connection pool, table schema, and resume cursor.
+
         Args:
             pool: shared connection pool for SQL Server.
             schema: table schema; must have exactly one primary key column.
             last_seen_primary_key: last committed PK value to resume an interrupted full sync
-                                   (None to start from the beginning of the table).
+                (None to start from the beginning of the table).
             batch_size: number of rows to fetch per query page.
         """
         self._pool = pool
@@ -383,7 +427,9 @@ class PrimaryKeyOnlyKeysetReader:
     def read_batches(self):
         """
         Read SQL Server rows using single-primary-key keyset pagination.
+
         Uses self._last_seen_primary_key to resume an interrupted full sync.
+
         Yields:
             A tuple of (batch, primary_key_marker), where batch is a list of
             records ready for upsert and primary_key_marker is the last primary
@@ -486,6 +532,7 @@ class OffsetReader:
     ) -> None:
         """
         Set up the reader with the connection pool, table schema, and resume offset.
+
         Args:
             pool: shared connection pool for SQL Server.
             schema: table schema; used for column list and optional PK ordering.
@@ -509,7 +556,9 @@ class OffsetReader:
     def read_batches(self):
         """
         Read SQL Server rows using OFFSET/FETCH pagination.
+
         Uses self._last_offset to resume from the last checkpointed row offset.
+
         Yields:
             A tuple of (batch, next_offset), where batch is a list of records
             ready for upsert and next_offset is the next row offset to read.

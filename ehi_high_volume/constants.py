@@ -5,7 +5,6 @@ in configuration.json; all other tuning is done here.
 """
 
 BATCH_SIZE = 1_000
-CHECKPOINT_INTERVAL = 25_000
 MAX_WORKERS = 4
 
 MAX_RETRIES = 5
