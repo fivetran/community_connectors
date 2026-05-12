@@ -38,7 +38,7 @@ fivetran init --template ehi_high_volume
 - Automatic schema discovery — all tables in the target schema are discovered and synced without manual configuration
 - Automatic replication key detection using known column name patterns (e.g. `UpdatedAt`, `_LastUpdatedInstant`, `ModifiedDate`), or an explicit `incremental_column` override in `configuration.json`
 - Full load with keyset pagination when a replication key is available, primary keyset pagination for tables with a single primary key but no replication key, or offset pagination as a last resort
-- Incremental sync after a completed full load — only rows where `repl_key > last_synced_value` are fetched
+- Incremental sync after a completed full load — only rows where `repl_key > last_synced_value` are fetched. If a full load is interrupted, the next sync resumes from the saved cursor. If the replication key configuration changes, a full resync is automatically triggered.
 - Parallel table syncs via a configurable number of worker threads
 - Configurable table include and exclude lists via `table_list` and `table_exclusion_list` in `configuration.json`
 - Binary and spatial columns (`varbinary`, `geography`, `geometry`, etc.) included as base64-encoded strings
@@ -66,12 +66,12 @@ Configuration parameters:
 
 - `mssql_server` (required): Hostname or IP address of the SQL Server instance
 - `mssql_cert_server` (optional): Hostname to validate in the server's TLS certificate; leave empty to trust the server certificate without hostname verification, which is suitable for AWS RDS and other cloud-hosted SQL Servers with self-signed certificates
-- `mssql_port` (required): TCP port for the SQL Server instance; defaults to `1433`
+- `mssql_port` (optional): TCP port for the SQL Server instance; defaults to `1433`
 - `mssql_database` (required): Name of the database to connect to
 - `mssql_user` (required): SQL Server login username
 - `mssql_password` (required): SQL Server login password
-- `mssql_schema` (required): Schema to discover and sync tables from; defaults to `dbo`
-- `incremental_column` (optional): Column name to use as the replication key for all tables
+- `mssql_schema` (optional): Schema to discover and sync tables from; defaults to `dbo`
+- `incremental_column` (optional): Column name to use as the replication key for all tables; if omitted, the connector auto-detects the replication key using known column name patterns (e.g. `UpdatedAt`, `ModifiedDate`)
 - `table_list` (optional): Comma-separated list of table names to sync; if omitted, all tables in the schema are synced
 - `table_exclusion_list` (optional): Comma-separated list of table names to exclude from the sync
 
@@ -112,16 +112,16 @@ When `mssql_cert_server` is empty, the connector sets `TrustServerCertificate=ye
 
 ## Pagination
 
-The connector uses three pagination strategies depending on the available key columns for each table. Each page executes a fresh bounded query that seeks directly to `WHERE repl_col > last_value` using the table index. This is O(log n) per page and O(n) total, with no server-side cursor state. The last seen replication key value is stored in state after every checkpoint interval and used as the resume point if the sync is interrupted.
+The connector uses three pagination strategies depending on the available key columns for each table. Each page executes a fresh bounded query with no server-side cursor state: replication-key tables use `WHERE repl_col > last_value`, PK-only tables use `WHERE pk > last_pk_value`, and offset tables use `OFFSET n ROWS FETCH NEXT batch ROWS ONLY`. Replication-key pagination is O(log n) per page and O(n) total; offset pagination is O(n²). The last seen replication key value is stored in state after every completed page and used as the resume point if the sync is interrupted.
 
-When many rows share the same replication key value (for example, batch-inserted rows with the same timestamp), the connector switches to a composite keyset using the replication key and primary key together as tiebreakers. Offset pagination is O(n²) in database cost and is used only as a fallback for tables where no replication key column or single-column primary key can be detected. A warning is logged for each such table.
+When a replication-key table has a single eligible primary key column, the connector uses composite `(replication_key, primary_key)` ordering by default as a tiebreaker. If no eligible PK tiebreak column exists, a warning is logged and rows with duplicate replication key values may be skipped. Offset pagination is O(n²) in database cost and is used only as a fallback for tables where no replication key column or single-column primary key can be detected. A warning is logged for each such table.
 
 
 ## Data handling
 
-Schema detection queries `INFORMATION_SCHEMA.COLUMNS` and `COLUMNPROPERTY` for each table to determine column names, SQL Server data types, primary key membership, identity columns, and computed columns. Computed columns are excluded from `SELECT` lists because SQL Server rejects them in explicit column lists under certain schema configurations. Schema discovery runs in parallel using a thread pool.
+Schema detection queries `INFORMATION_SCHEMA.COLUMNS` and `COLUMNPROPERTY` for each table to determine column names, SQL Server data types, primary key membership, and computed columns. Computed columns are excluded from `SELECT` lists because they cannot be explicitly selected in SQL Server and, if included in primary key definitions, would cause silent duplicate rows in the destination. Schema discovery runs in parallel using a thread pool.
 
-The connector select the replication key for each table using the following priority order:
+The connector selects the replication key for each table using the following priority order:
 
 1. `incremental_column` key in `configuration.json` — Applies the specified column name to every table, overriding auto-detection.
 2. Column name matches a known pattern (e.g. `_LastUpdatedInstant`, `UpdatedAt`, `ModifiedDate`) — Checked case-insensitively against `KNOWN_REPLICATION_KEY_PATTERNS` in `constants.py`.
@@ -136,9 +136,9 @@ Transient SQL Server errors are detected using SQLSTATE codes rather than substr
 
 On a retryable error the connection is closed, the thread sleeps with exponential backoff and jitter (starting at 5 seconds, capped at 300 seconds), the connection is reopened, and the query is retried. Keyset queries are idempotent — re-executing with the same `last_seen_value` parameter returns the same page. After `MAX_RETRIES` exhausted attempts the exception is re-raised.
 
-Non-retryable errors are logged at `SEVERE` level and re-raised immediately, causing that table's thread to exit. Other tables continue syncing. Failed table names are collected and logged as a warning at the end of the sync run.
+Non-retryable errors are logged at error level and re-raised immediately, causing that table's thread to exit. Other tables continue syncing. Failed table names are collected and logged as a warning at the end of the sync run. `update()` does not raise when tables fail, so a partial sync still returns success.
 
-Refer to `def _is_retryable_error` and `def execute_with_retry` in `client.py`.
+Refer to `_is_retryable_error`, `execute_with_retry`, and `execute_and_fetch_with_retry` in `client.py`.
 
 
 ## Tables created
@@ -156,8 +156,8 @@ The connector creates each table in the destination with:
 
 - `client.py` – Defines `MSSQLConnection` (single pyodbc connection with retry logic and `READ UNCOMMITTED` isolation) and `ConnectionPool` (fixed-size queue-based pool for multi-threaded access)
 - `models.py` – Defines `ColumnInfo` and `TableSchema` dataclasses and `SchemaDetector` (queries `INFORMATION_SCHEMA` to build per-table schemas and detect replication keys)
-- `readers.py` – Defines `ReplicationKeysetReader` (keyset pagination ordered by replication key, with optional PK tiebreak), `PrimaryKeyOnlyKeysetReader` (keyset pagination ordered by primary key for tables without a replication key), and `OffsetReader` (offset pagination fallback) generators that stream table data in bounded batches, and `convert_value()` for type-safe row serialisation
-- `constants.py` – Has tunable parameters, such as batch size, checkpoint interval, worker thread count, retry settings, and replication key detection patterns
+- `readers.py` – Defines `ReplicationKeysetReader` (keyset pagination for tables with a replication key, using composite `(replication_key, primary_key)` ordering when a single eligible PK column exists), `PrimaryKeyOnlyKeysetReader` (keyset pagination for tables with a single primary key and no replication key — full load and resume only, no incremental mode), and `OffsetReader` (offset pagination fallback for tables with no replication key and no single-column primary key). The connector selects the reader based on available key columns. Also defines `convert_value()` for type-safe row serialisation.
+- `constants.py` – Has tunable parameters, such as batch size, worker thread count, retry settings, and replication key detection patterns
 
 
 ## Additional considerations
