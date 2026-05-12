@@ -378,9 +378,10 @@ def _sync_table(
             # Sync one PK-keyset page and checkpoint the latest PK only after the full
             # page has been written, so the saved cursor never advances past unwritten rows.
             for row in batch:
-                # The 'upsert' operation inserts a new row or updates an existing one in the
-                # destination table, matched by primary key. Use this for most sync operations.
-                op.upsert(table_name, row)
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
+                op.upsert(table=table_name, data=row)
                 rows_synced += 1
             last_marker = progress_marker
             _save_checkpoint(
