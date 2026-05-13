@@ -93,7 +93,7 @@ def sync_items(base_url, headers, ts_from, ts_to, start_timestamp, state):
         modified_params = {"modifiedStartDate": ts_from, "modifiedEndDate": ts_to}
         config_params = {"lastModified": ts_from}
         state["to_ts"] = ts_to
-        log.fine(f"state updated, new state: {repr(state)}")
+        log.debug(f"state updated, new state: {repr(state)}")
 
         # Get response from API call.
         response_page, next_token = get_api_response(
@@ -208,7 +208,7 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?" + param_string, headers, params=pagination
             )
-            log.fine(
+            log.debug(
                 f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
             )
             for o in response_page:
@@ -267,7 +267,7 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params=None):
 
     try:
         response_page, next_token = get_api_response(base_url + endpoint, headers, params=params)
-        log.fine(
+        log.debug(
             f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
         )
 
@@ -386,7 +386,7 @@ def process_orders(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint, headers, params=params
             )
-            log.fine(
+            log.debug(
                 f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
             )
 
@@ -751,7 +751,7 @@ def get_api_response(endpoint_path, headers, **kwargs):
         # Handle 401 Unauthorized (retry up to max retries)
         if response.status_code == 401:
             if retry_count_401 >= max_retries_401:  # Fail after max retries
-                log.severe(f"401 Unauthorized - Max retries reached for {endpoint_path}")
+                log.error(f"401 Unauthorized - Max retries reached for {endpoint_path}")
                 return None, None
 
             retry_count_401 += 1
