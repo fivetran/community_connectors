@@ -1,0 +1,39 @@
+ehi_high_volume/readers.py
+  6fe512423a9c03a8 12,15,18,21-34,43,83-90,95,161-164,268-270,283-285,315-317,321,326-327,390-391,436-438,514-515,536-539
+  67456508db659a24 35-36,91
+ehi_high_volume/connector.py
+  6fe512423a9c03a8 200,212-216,421-432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "82552b67339530f9f0d9071cf0e25b70155010d2",
+  "prompts": {
+    "67456508db659a24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdbbf240-0dd1-4933-9e9f-486527b6b37d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 135,
+      "total_deletions": 80,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "6fe512423a9c03a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f0d29e6-e478-4ed3-a806-442a581ee801",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 111,
+      "total_deletions": 55,
+      "accepted_lines": 72,
+      "overriden_lines": 0
+    }
+  }
+}
