@@ -169,7 +169,7 @@ def handle_request_error(e: Exception, endpoint: str, attempt: int) -> bool:
         time.sleep(delay)
         return True
 
-    log.severe(f"Failed to fetch {endpoint} after {__MAX_RETRIES} attempts: {e}")
+    log.error(f"Failed to fetch {endpoint} after {__MAX_RETRIES} attempts: {e}")
     return False
 
 
@@ -257,7 +257,7 @@ def process_endpoint(
             op.upsert(table=main_table, data=flattened_item_data)
             main_upserted += 1
         except Exception as e:
-            log.severe(f"Failed to upsert record in {main_table}", e)
+            log.error(f"Failed to upsert record in {main_table}", e)
 
         # Process breakout table if configured
         if breakout_config:
@@ -273,7 +273,7 @@ def process_endpoint(
                     op.upsert(table=breakout_config["table_name"], data=breakout_row)
                     breakout_upserted += 1
                 except Exception as e:
-                    log.severe(
+                    log.error(
                         f"Failed to upsert {breakout_config['source_key']} for {main_table} {item.get('id')}",
                         e,
                     )
