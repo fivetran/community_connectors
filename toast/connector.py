@@ -93,7 +93,7 @@ def sync_items(base_url, headers, ts_from, ts_to, start_timestamp, state):
         modified_params = {"modifiedStartDate": ts_from, "modifiedEndDate": ts_to}
         config_params = {"lastModified": ts_from}
         state["to_ts"] = ts_to
-        log.debug(f"state updated, new state: {repr(state)}")
+        log.fine(f"state updated, new state: {repr(state)}")
 
         # Get response from API call.
         response_page, next_token = get_api_response(
@@ -208,7 +208,7 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?" + param_string, headers, params=pagination
             )
-            log.debug(
+            log.fine(
                 f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
             )
             for o in response_page:
@@ -267,7 +267,7 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params=None):
 
     try:
         response_page, next_token = get_api_response(base_url + endpoint, headers, params=params)
-        log.debug(
+        log.fine(
             f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
         )
 
@@ -342,7 +342,7 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?businessDate=" + d, headers
             )
-            # log.debug(f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}")
+            # log.fine(f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}")
             for o in response_page:
                 o = flatten_fields(fields_to_flatten[table_name], o)
                 o["restaurant_id"] = rst_id
@@ -386,7 +386,7 @@ def process_orders(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint, headers, params=params
             )
-            log.debug(
+            log.fine(
                 f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
             )
 
@@ -553,7 +553,7 @@ def process_child(parent, table_name, id_field_name, id_field):
     }
 
     for p in parent:
-        # log.debug(f"processing {table_name}")
+        # log.fine(f"processing {table_name}")
         p[id_field_name] = id_field
         if table_name in relationships:
             for child_key, child_table_name in relationships[table_name]:
@@ -561,7 +561,7 @@ def process_child(parent, table_name, id_field_name, id_field):
                     process_child(p[child_key], child_table_name, table_name + "_id", p["guid"])
                 p.pop(child_key, None)
         if table_name in fields_to_flatten:
-            # log.debug(f"flattening fields in {table_name}")
+            # log.fine(f"flattening fields in {table_name}")
             p = flatten_fields(fields_to_flatten[table_name], p)
         # check for null guids in appliedTaxes[]
         if table_name == "orders_check_selection_applied_tax" and p.get("guid") is None:
@@ -751,7 +751,7 @@ def get_api_response(endpoint_path, headers, **kwargs):
         # Handle 401 Unauthorized (retry up to max retries)
         if response.status_code == 401:
             if retry_count_401 >= max_retries_401:  # Fail after max retries
-                log.error(f"401 Unauthorized - Max retries reached for {endpoint_path}")
+                log.severe(f"401 Unauthorized - Max retries reached for {endpoint_path}")
                 return None, None
 
             retry_count_401 += 1
