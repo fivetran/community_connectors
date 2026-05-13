@@ -1,0 +1,60 @@
+ehi_high_volume/client.py
+  bcad5ad802883988 46-48,71-76,83-91,95-101,130-135,149-154,165-170,178-183,194-200,236-243,275-280,292-301,333-338,355-360
+  6fe512423a9c03a8 81-82,92-93,103-104,117-119,231-235,244-273
+ehi_high_volume/readers.py
+  bcad5ad802883988 178-180,423-425,547-549
+  67456508db659a24 3,5-6,9,12,14-15,17-18,33,38-43,56-69,100-110,168,197-198,200,204,416,436,438,541,568,570
+  6fe512423a9c03a8 21,24,27,30-32,34-37,44-45,51-54,74,125-133,137,166-167,169-174,176-177,181,209-212,316-318,331,335,365-367,371,376-377,414-415,417-420,422,426,446-447,492-494,539-540,542-546,550,576-577,598-601
+ehi_high_volume/connector.py
+  bcad5ad802883988 104-109,137-150,170-176,210-227,293-301,375,457-467
+ehi_high_volume/models.py
+  bcad5ad802883988 70-73,77-87,124-136,161-169,185-195,234-243
+  6fe512423a9c03a8 35,40,201-210,218-220,249-253
+  67456508db659a24 1,3-4,7,10,12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "0f2ee325f19ebae3507e9a59610faa6eb3a1d6f2",
+  "prompts": {
+    "67456508db659a24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdbbf240-0dd1-4933-9e9f-486527b6b37d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 135,
+      "total_deletions": 80,
+      "accepted_lines": 59,
+      "overriden_lines": 0
+    },
+    "6fe512423a9c03a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f0d29e6-e478-4ed3-a806-442a581ee801",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 111,
+      "total_deletions": 55,
+      "accepted_lines": 144,
+      "overriden_lines": 0
+    },
+    "bcad5ad802883988": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11614134-7a91-472b-bb9b-dd53b57d6609",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 225,
+      "overriden_lines": 0
+    }
+  }
+}
