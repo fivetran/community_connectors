@@ -1,0 +1,12 @@
+{
+      "mssql_server": "<MSSQL_SERVER>",
+      "mssql_cert_server": "<YOUR_CERT_HOSTNAME_OR_EMPTY>",
+      "mssql_port": "<MSSQL_PORT>",
+      "mssql_database": "<MSSQL_DATABASE>",
+      "mssql_user": "<MSSQL_USER>",
+      "mssql_password": "<MSSQL_PASSWORD>",
+      "mssql_schema": "<MSSQL_SCHEMA>",
+      "incremental_column": "<INCREMENTAL_COLUMN_NAME_OR_EMPTY>",
+      "table_list": "<OPTIONAL_COMMA_SEPARATED_TABLE_NAMES_OR_EMPTY>",
+      "table_exclusion_list": "<OPTIONAL_COMMA_SEPARATED_TABLE_EXCLUSION_NAMES_OR_EMPTY>"
+  }
