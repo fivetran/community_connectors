@@ -150,7 +150,7 @@ Good code organization and clarity is a balance of this list. Do your best to ad
 
 - Log key steps at info level (e.g., `"Fetching page X"`).
 - Avoid logs inside loops.
-- Add logs for warnings and severe issues.
+- Add logs for warnings and errors.
 
 
 
@@ -180,4 +180,3 @@ These guidelines ensure all Fivetran examples and code reviews are:
 - Collaborative and maintainable
 
 Following these principles leads to faster reviews, cleaner merges, and more resilient code.
-

@@ -159,7 +159,7 @@ The connector implements robust error handling:
 - Rate limiting: Detects HTTP 429 responses and retries with exponential backoff (5s, 10s, 20s)
 - Request failures: Automatically retries transient errors up to 3 attempts
 - Specific exception handling: Catches and logs `KeyError`, `json.JSONDecodeError`, `requests.exceptions.HTTPError`
-- Structured logging: Uses Python logging module with appropriate levels (INFO, WARNING, ERROR, CRITICAL)
+- Structured logging: Uses the Fivetran SDK logging system with appropriate levels (`log.debug()`, `log.info()`, `log.warning()`, `log.error()`)
 - State preservation: Checkpoints every 500 records to minimize data loss on failure
 
 Refer to the `def _fetch_with_retry()` function for implementation details.
