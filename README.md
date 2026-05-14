@@ -25,6 +25,8 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 
 ### Databases
 
+- **[apache_druid/using_pydruid](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/apache_druid/using_pydruid)** - This example demonstrates syncing from Apache Druid using the PyDruid library for native query capabilities, retry logic with exponential backoff, and optimized data retrieval for enhanced performance.
+- **[apache_druid/using_sql](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/apache_druid/using_sql)** - This example shows how to sync data from Apache Druid datasources using Druid's SQL API with time-based pagination and incremental sync to efficiently replicate event and analytics data.
 - **[apache_hbase](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/apache_hbase)** - Connect and sync data from Apache HBase using happybase and thrift libraries
 - **[apache_hive/using_pyhive](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/apache_hive/using_pyhive)** - Sync data from Apache Hive using PyHive
 - **[apache_hive/using_sqlalchemy](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/apache_hive/using_sqlalchemy)** - Sync data from Apache Hive using SQLAlchemy with PyHive
@@ -37,10 +39,14 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[documentdb](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/documentdb)** - Connect to AWS DocumentDB and sync collections (Hybrid Deployment compatible)
 - **[dolphin_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/dolphin_db)** - Sync data from DolphinDB database
 - **[dragonfly_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/dragonfly_db)** - Sync high-performance in-memory data from DragonflyDB
+- **[ehi](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi)** - This example shows how to sync EHI tables such as Caboodle using Connector SDK. It connects to Microsoft SQL server to sync the data. You need to provide your server credentials for this example to work.
+- **[ehi_high_volume](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi_high_volume)** - High-volume Microsoft SQL Server connector for syncing 100M+ row tables using keyset and offset pagination with parallel processing
 - **[firebird_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/firebird_db)** - Sync data from Firebird DB
 - **[greenplum_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/greenplum_db)** - Sync data from Greenplum database
-- **[ibm_db2](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm_db2)** - Connect and sync data from IBM Db2 using ibm_db library
-- **[ibm_informix_using_ibm_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm_informix_using_ibm_db)** - Connect and sync data from IBM Informix
+- **[ibm_db2](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_db2)** - This example shows how to connect and sync data from IBM Db2 using Connector SDK. It uses the `ibm_db` library to connect to the database and fetch data.
+- **[ibm_db2_log_based_replication](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_db2_log_based_replication)** - This example demonstrates log-based Change Data Capture (CDC) for IBM Db2 using the ASN SQL Replication framework. The `asncap` daemon reads the Db2 transaction log and writes every INSERT, UPDATE, and DELETE to a Change Data table; the connector reads exclusively from that table after the initial load, making this genuine log-based replication without polling the source.
+- **[ibm_informix_using_ibm_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_informix_using_ibm_db)** - This example shows how to connect and sync data from IBM Informix using Connector SDK. This example uses the `ibm_db` library to connect to the Informix database and fetch data.
+- **[janus_graph](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/janus_graph)** - This example shows how to sync data from the Janus Graph database using the Connector SDK. You need to provide your Janus Graph credentials for this example to work.
 - **[influx_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/influx_db)** - Sync time-series data from InfluxDB
 - **[neo4j](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/neo4j)** - Extract data from Neo4j graph databases
 - **[quest_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/quest_db)** - Sync high-performance time series data from QuestDB
@@ -113,12 +119,14 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[oauth2_and_accelo_api_connector_multithreading_enabled](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/oauth2_and_accelo_api_connector_multithreading_enabled)** - Sync data from Accelo API with OAuth 2.0 and multithreading
 - **[odata_api](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/odata_api)** - Sync data from OData APIs (versions 2 and 4)
 - **[oktopost](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/oktopost)** - Sync social media exports from Oktopost BI API
+- **[oura_ring](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/oura_ring)** - This example shows how to sync health and wellness data from the Oura Ring API v2 using Connector SDK. It syncs daily activity, sleep, readiness, stress, and heart rate data with incremental syncing, cursor-based pagination, automatic flattening of nested contributor objects, and date-range chunking for high-volume heart rate data. You need to provide your Oura Personal Access Token for this example to work.
 - **[owasp_api_vulns](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/owasp_api_vulns)** - Sync OWASP API vulnerability data from NVD 2.0
 - **[partech](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/partech)** - Sync POS data from Partech (formerly Punchh)
 - **[pindrop](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/pindrop)** - Sync nightly report data from Pindrop
 - **[prefect](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/prefect)** - Sync workflow orchestration data from Prefect Cloud
 - **[prometheus](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/prometheus)** - Sync metrics and time series from Prometheus
 - **[resend](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/resend)** - Sync email data from Resend API
+- **[rillet](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/rillet)** - This example shows how to use the Connector SDK to integrate with Rillet's API and sync accounting data. You need to provide the API key for this example to work.
 - **[s3_csv_validation](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/s3_csv_validation)** - Read and validate CSV files from Amazon S3
 - **[sam_gov](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sam_gov)** - Sync government contracting opportunities from SAM.gov
 - **[sap_ariba](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sap_ariba)** - Sync procurement data from SAP Ariba
@@ -132,11 +140,13 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[suitedash](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/suitedash)** - Sync CRM data from SuiteDash API
 - **[supabase](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/supabase)** - Sync employee data from Supabase database
 - **[talon_one](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/talon_one)** - Sync events data from Talon.One
+- **[temporal_cloud](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/temporal_cloud)** - This example shows how to sync workflow execution and schedule data from Temporal Cloud using Connector SDK. It retrieves workflow metadata, as well as schedule configurations. The connector uses async operations for efficient data retrieval and implements streaming to handle large datasets. You need to provide your Temporal Cloud host, namespace, and API key for this example to work.
 - **[toast](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/toast)** - Sync POS data from Toast
 - **[tulip_interfaces](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/tulip_interfaces)** - Sync data from Tulip Tables
 - **[veeva_vault/basic_auth](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/veeva_vault/basic_auth)** - Authenticate to Veeva Vault with basic auth
 - **[veeva_vault/session_id_auth](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/veeva_vault/session_id_auth)** - Authenticate to Veeva Vault with session ID
 - **[vercel](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/vercel)** - Sync deployment data from Vercel REST API
+- **[weights_and_biases](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/weights_and_biases)** - This example shows how to sync machine learning experiment tracking data from Weights & Biases (W&B), including projects, runs (experiments), and artifacts (models and datasets), using the Fivetran Connector SDK The connector uses the W&B Python SDK to retrieve data and implements robust error handling. You need to provide your W&B API key and entity name for this example to work.
 - **[zigpoll](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/zigpoll)** - Sync polling data from Zigpoll
 
 </details>
