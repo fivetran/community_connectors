@@ -501,8 +501,8 @@ def _sync_table_thread(table_schema: TableSchema, state: dict, pool: ConnectionP
         _sync_table(table_schema, state, table_state, pool)
 
     except Exception as exc:
-        log.severe(f"{table_name}: sync failed: {exc}")
-        log.severe(traceback.format_exc())
+        log.error(f"{table_name}: sync failed: {exc}")
+        log.error(traceback.format_exc())
         raise
 
 
@@ -638,7 +638,7 @@ def update(configuration: dict, state: dict):
                         future.result()
                         log.info(f"{table_name}: thread finished successfully")
                     except Exception as exc:
-                        log.severe(f"{table_name}: thread raised unhandled exception: {exc}")
+                        log.error(f"{table_name}: thread raised unhandled exception: {exc}")
                         failed_tables.append(table_name)
 
         # Run offset tables sequentially after all parallel work completes
@@ -647,7 +647,7 @@ def update(configuration: dict, state: dict):
                 _sync_table_thread(table_schemas[table_name], state, pool)
                 log.info(f"{table_name}: offset sync finished successfully")
             except Exception as exc:
-                log.severe(f"{table_name}: offset sync failed: {exc}")
+                log.error(f"{table_name}: offset sync failed: {exc}")
                 failed_tables.append(table_name)
 
         log.info("connector: checkpoint lock waiting (final)")
