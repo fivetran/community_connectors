@@ -80,7 +80,7 @@ The connector performs the following actions for each key aspect:
 - Backs off on 429 Too Many Requests
 - Skips on 400 and 409 errors with logging
 
-Uses Fivetran SDK logging levels (`info`, `fine`, `warning`, `severe`) for detailed sync visibility.
+Uses Fivetran SDK logging levels (`info`, `debug`, `warning`, `error`) for detailed sync visibility.
 
 ## Tables created
 
