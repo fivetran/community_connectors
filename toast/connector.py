@@ -342,7 +342,7 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?businessDate=" + d, headers
             )
-            # log.fine(f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}")
+            # log.debug(f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}")
             for o in response_page:
                 o = flatten_fields(fields_to_flatten[table_name], o)
                 o["restaurant_id"] = rst_id
@@ -553,7 +553,7 @@ def process_child(parent, table_name, id_field_name, id_field):
     }
 
     for p in parent:
-        # log.fine(f"processing {table_name}")
+        # log.debug(f"processing {table_name}")
         p[id_field_name] = id_field
         if table_name in relationships:
             for child_key, child_table_name in relationships[table_name]:
@@ -561,7 +561,7 @@ def process_child(parent, table_name, id_field_name, id_field):
                     process_child(p[child_key], child_table_name, table_name + "_id", p["guid"])
                 p.pop(child_key, None)
         if table_name in fields_to_flatten:
-            # log.fine(f"flattening fields in {table_name}")
+            # log.debug(f"flattening fields in {table_name}")
             p = flatten_fields(fields_to_flatten[table_name], p)
         # check for null guids in appliedTaxes[]
         if table_name == "orders_check_selection_applied_tax" and p.get("guid") is None:
