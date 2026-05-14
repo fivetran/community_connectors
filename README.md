@@ -70,8 +70,8 @@ These are ready-to-use connectors, requiring minimal modifications to get starte
 - **[documentdb](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/documentdb)** - Connect to AWS DocumentDB and sync collections (Hybrid Deployment compatible)
 - **[dolphin_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/dolphin_db)** - Sync data from DolphinDB database
 - **[dragonfly_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/dragonfly_db)** - Sync high-performance in-memory data from DragonflyDB
-- **[ehi](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi)** - This example shows how to sync EHI tables such as Caboodle using Connector SDK. It connects to Microsoft SQL server to sync the data. You need to provide your server credentials for this example to work.
-- **[ehi_high_volume](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi_high_volume)** - High-volume Microsoft SQL Server connector for syncing 100M+ row tables using keyset and offset pagination with parallel processing
+- **[ehi/simple_ehi](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi/simple_ehi)** - This example shows how to sync EHI tables such as Caboodle using Connector SDK. It connects to Microsoft SQL server to sync the data. You need to provide your server credentials for this example to work.
+- **[ehi/high_volume_ehi](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ehi/high_volume_ehi)** - High-volume Microsoft SQL Server connector for syncing high volume EHI tables using keyset and offset pagination with parallel processing
 - **[firebird_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/firebird_db)** - Sync data from Firebird DB
 - **[greenplum_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/greenplum_db)** - Sync data from Greenplum database
 - **[ibm_db2](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_db2)** - This example shows how to connect and sync data from IBM Db2 using Connector SDK. It uses the `ibm_db` library to connect to the database and fetch data.
