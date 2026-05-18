@@ -16,7 +16,7 @@
 
 # Overview
 
-This repository contains 100+ community-contributed connectors built with the [Fivetran Connector SDK](https://fivetran.com/docs/connectors/connector-sdk). Each connector is designed to work with minimal modification, so you can quickly adapt it to your source. Browse by category or search for your specific data source.
+This repository contains 100+ connectors built with the [Fivetran Connector SDK](https://fivetran.com/docs/connectors/connector-sdk). Each connector is designed to work with minimal modification, so you can quickly adapt it to your source. Browse by category or search for your specific data source.
 
 For SDK installation and setup, visit the main [Fivetran Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk).
 
