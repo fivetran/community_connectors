@@ -52,7 +52,7 @@ Run the `.github/scripts/setup-hooks.sh` script from the root of the repository 
 These are ready-to-use connectors, requiring minimal modifications to get started. Browse by category or search for your specific data source:
 
 <details class="details-heading" open="open">
-<summary>📋 Full List of Connectors (109 connectors)</summary>
+<summary>📋 Full List of Connectors (112 connectors)</summary>
 
 ### Databases
 
@@ -77,6 +77,7 @@ These are ready-to-use connectors, requiring minimal modifications to get starte
 - **[ibm_db2](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_db2)** - This example shows how to connect and sync data from IBM Db2 using Connector SDK. It uses the `ibm_db` library to connect to the database and fetch data.
 - **[ibm_db2_log_based_replication](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_db2_log_based_replication)** - This example demonstrates log-based Change Data Capture (CDC) for IBM Db2 using the ASN SQL Replication framework. The `asncap` daemon reads the Db2 transaction log and writes every INSERT, UPDATE, and DELETE to a Change Data table; the connector reads exclusively from that table after the initial load, making this genuine log-based replication without polling the source.
 - **[ibm_informix_using_ibm_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_informix_using_ibm_db)** - This example shows how to connect and sync data from IBM Informix using Connector SDK. This example uses the `ibm_db` library to connect to the Informix database and fetch data.
+- **[ibm_infomix_using_jaydebeapi](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/ibm/ibm_infomix_using_jaydebeapi)** - This example shows how to connect and sync data from IBM Informix using Connector SDK. This example uses the `jaydebeapi` library with external JDBC Informix driver, using `installation.sh` file in the `drivers` folder, to connect to the Informix database and fetch data.
 - **[janus_graph](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/janus_graph)** - This example shows how to sync data from the Janus Graph database using the Connector SDK. You need to provide your Janus Graph credentials for this example to work.
 - **[influx_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/influx_db)** - Sync time-series data from InfluxDB
 - **[neo4j](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/neo4j)** - Extract data from Neo4j graph databases
@@ -86,6 +87,8 @@ These are ready-to-use connectors, requiring minimal modifications to get starte
 - **[rethink_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/rethink_db)** - Sync data from RethinkDB real-time database
 - **[sap_hana_sql](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sap_hana_sql)** - Connect to SAP HANA SQL Server using hdbcli
 - **[sql_server](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sql_server)** - Connect to SQL Server using pyodbc
+- **[sybase_iq](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sybase_iq)** - This example demonstrates how to connect to Sybase IQ database using the `FreeTDS` driver and `PyODBC` by writing a `installation.sh` file in the `drivers` folder.
+- **[sybase_ase](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/sybase_ase)** - This example demonstrates how to connect to Sybase ASE database using the `FreeTDS` driver and `PyODBC` by writing a `installation.sh` file in the `drivers` folder.
 - **[teradata](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/teradata)** - Sync data from Teradata Vantage database
 - **[tidb](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/tidb)** - Incremental replication from TiDB databases
 - **[timescale_db](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/timescale_db)** - Sync time-series and vector data from TimescaleDB
