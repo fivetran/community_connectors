@@ -143,7 +143,7 @@ class MSSQLConnection:
         cursor.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
         cursor.close()
         self._connected_at = datetime.now()
-        log.fine(f"connection opened at {self._connected_at.isoformat()}")
+        log.debug(f"connection opened at {self._connected_at.isoformat()}")
 
     def _close(self) -> None:
         """
@@ -208,7 +208,7 @@ class MSSQLConnection:
                 return cursor
             except Exception as exc:
                 if not _is_retryable_error(exc):
-                    log.severe(f"Non-retryable SQL error: {exc}")
+                    log.error(f"Non-retryable SQL error: {exc}")
                     self._close()
                     raise
 
@@ -222,7 +222,7 @@ class MSSQLConnection:
                 self._close()
                 time.sleep(sleep_time)
 
-        log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
+        log.error(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
         raise last_exception
 
     def execute_and_fetch_with_retry(
@@ -254,7 +254,7 @@ class MSSQLConnection:
                     cursor.close()
             except Exception as exc:
                 if not _is_retryable_error(exc):
-                    log.severe(f"Non-retryable SQL error: {exc}")
+                    log.error(f"Non-retryable SQL error: {exc}")
                     self._close()
                     raise
 
@@ -268,7 +268,7 @@ class MSSQLConnection:
                 self._close()
                 time.sleep(sleep_time)
 
-        log.severe(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
+        log.error(f"All {MAX_RETRIES} retry attempts exhausted. Last error: {last_exception}")
         raise last_exception
 
     def close(self) -> None:

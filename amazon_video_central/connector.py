@@ -133,7 +133,7 @@ def encrypt_token(token: str, fernet_key: str) -> str:
         # Return as base64 string for safe storage
         return base64.urlsafe_b64encode(encrypted_token).decode()
     except Exception as e:
-        log.severe(f"Failed to encrypt token: {str(e)}")
+        log.error(f"Failed to encrypt token: {str(e)}")
         raise RuntimeError(f"Token encryption failed: {str(e)}")
 
 
@@ -160,7 +160,7 @@ def decrypt_token(encrypted_token: str, fernet_key: str) -> str:
 
         return decrypted_token.decode()
     except Exception as e:
-        log.severe(f"Failed to decrypt token: {str(e)}")
+        log.error(f"Failed to decrypt token: {str(e)}")
         raise RuntimeError(f"Token decryption failed: {str(e)}")
 
 
@@ -200,7 +200,7 @@ def retry_with_backoff(
                 time.sleep(delay)
                 continue
             else:
-                log.severe(
+                log.error(
                     f"Max retries exceeded for {operation_name} after {max_retries + 1} attempts (status {response.status_code})"
                 )
                 raise RuntimeError(
@@ -303,7 +303,7 @@ def get_access_token(configuration: Dict[str, Any], state: Dict[str, Any]) -> tu
     )
 
     if response.status_code != 200:
-        log.severe(f"Failed to refresh token: {response.status_code} - {response.text}")
+        log.error(f"Failed to refresh token: {response.status_code} - {response.text}")
         raise RuntimeError(f"Token refresh failed: {response.status_code}")
 
     token_data = response.json()
@@ -333,10 +333,10 @@ def make_api_request(
     )
 
     if response.status_code == 401:
-        log.severe("Access token expired or invalid")
+        log.error("Access token expired or invalid")
         raise RuntimeError("Authentication failed - token may be expired")
     elif response.status_code != 200:
-        log.severe(f"API request failed: {response.status_code} - {response.text}")
+        log.error(f"API request failed: {response.status_code} - {response.text}")
         raise RuntimeError(f"API request failed: {response.status_code}")
 
     return response.json()
@@ -401,11 +401,11 @@ def download_and_parse_csv(download_url: str) -> List[Dict[str, Any]]:
         )
 
         if response.status_code != 200:
-            log.severe(f"Failed to download file: {response.status_code}")
+            log.error(f"Failed to download file: {response.status_code}")
             raise RuntimeError(f"File download failed with status code: {response.status_code}")
     except Exception as e:
         # If retry exceeded, raise runtime error for Fivetran compliance
-        log.severe(f"File download failed after retries: {str(e)}")
+        log.error(f"File download failed after retries: {str(e)}")
         raise RuntimeError(f"File download failed after retries: {str(e)}")
 
     try:
@@ -415,7 +415,7 @@ def download_and_parse_csv(download_url: str) -> List[Dict[str, Any]]:
             csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
 
             if not csv_files:
-                log.severe("No CSV files found in ZIP archive")
+                log.error("No CSV files found in ZIP archive")
                 raise RuntimeError("No CSV files found in ZIP archive")
 
             csv_filename = csv_files[0]
@@ -436,7 +436,7 @@ def download_and_parse_csv(download_url: str) -> List[Dict[str, Any]]:
             return records
 
     except Exception as e:
-        log.severe(f"Error processing ZIP file: {str(e)}")
+        log.error(f"Error processing ZIP file: {str(e)}")
         raise RuntimeError(f"Error processing ZIP file: {str(e)}")
 
 

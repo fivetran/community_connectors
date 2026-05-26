@@ -318,7 +318,7 @@ class ReplicationKeysetReader:
                 rows = connection.execute_and_fetch_with_retry(sql, parameters, self._batch_size)
 
             if not rows:
-                log.fine(f"{self._schema.table_name}: page {page} returned 0 rows — done")
+                log.debug(f"{self._schema.table_name}: page {page} returned 0 rows — done")
                 return
 
             # Warn because NULL replication keys are permanently skipped by this cursor.
@@ -388,7 +388,7 @@ class ReplicationKeysetReader:
             current_last = last_replication_key_value
             current_last_primary_key = last_primary_key_value
             page += 1
-            log.fine(
+            log.debug(
                 f"{self._schema.table_name}: page {page} — "
                 f"{len(batch)} rows, last_value={current_last}"
             )
@@ -494,7 +494,7 @@ class PrimaryKeyOnlyKeysetReader:
                 rows = connection.execute_and_fetch_with_retry(sql, parameters, self._batch_size)
 
             if not rows:
-                log.fine(f"{self._schema.table_name}: PK-keyset page returned 0 rows — done")
+                log.debug(f"{self._schema.table_name}: PK-keyset page returned 0 rows — done")
                 return
 
             last_primary_key_value = current_last
@@ -514,7 +514,7 @@ class PrimaryKeyOnlyKeysetReader:
                     last_primary_key_value = primary_key_converted
 
             current_last = last_primary_key_value
-            log.fine(
+            log.debug(
                 f"{self._schema.table_name}: PK-keyset page — "
                 f"{len(batch)} rows, last_primary_key={current_last}"
             )
@@ -612,5 +612,5 @@ class OffsetReader:
                 for row in rows
             ]
             offset += len(batch)
-            log.fine(f"{self._schema.table_name}: offset page, next_offset={offset}")
+            log.debug(f"{self._schema.table_name}: offset page, next_offset={offset}")
             yield batch, offset

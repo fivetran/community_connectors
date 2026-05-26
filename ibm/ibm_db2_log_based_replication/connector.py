@@ -139,7 +139,7 @@ def connect_to_database(configuration: dict):
         log.info("Connected to IBM Db2 successfully.")
         return connection
     except Exception as e:
-        log.severe(f"Connection failed: {e}")
+        log.error(f"Connection failed: {e}")
         raise RuntimeError("Connection failed") from e
 
 
@@ -361,8 +361,8 @@ def process_cdc_changes(
 
         if change_operation in ("I", "U"):
             # INSERT or UPDATE: asncap wrote new-image values from the transaction log.
-            # Per-row detail is logged at fine level to avoid flooding logs on high-volume streams.
-            log.fine(
+            # Per-row detail is logged at debug level to avoid flooding logs on high-volume streams.
+            log.debug(
                 f"  LOG EVENT [{change_operation}] id={record.get('id')} — sourced from Db2 transaction log via asncap"
             )
             # The 'upsert' operation is used to insert or update data in the destination table.
@@ -371,8 +371,8 @@ def process_cdc_changes(
             op.upsert("employee", record)
         elif change_operation == "D":
             # DELETE: the CD row still carries the key so we know which row to remove.
-            # Per-row detail is logged at fine level to avoid flooding logs on high-volume streams.
-            log.fine(
+            # Per-row detail is logged at debug level to avoid flooding logs on high-volume streams.
+            log.debug(
                 f"  LOG EVENT [D] id={record.get('id')} — sourced from Db2 transaction log via asncap"
             )
             # The 'delete' operation is used to delete data in the destination table.
