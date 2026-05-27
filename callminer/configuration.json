@@ -1,0 +1,11 @@
+{
+    "client_id": "your_client_id",
+    "client_secret": "your_client_secret",
+    "initial_start_date": "2025-10-27T00:00:00.000Z",
+    "increment_days": "1",
+    "max_threads": "8",
+    "max_polls": "60",
+    "email_recipients": "your_email@example.com",
+    "data_types": "Contacts,Categories,Category_components,Scores,Score_indicators,Tags,Alerts,Comments,Events,Transcripts,Ai_summaries"
+}
+
