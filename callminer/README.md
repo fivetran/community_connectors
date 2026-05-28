@@ -35,7 +35,7 @@ fivetran init --template callminer
 - Per-data-type state tracking through the `data_types` state object.
 - Pending job recovery through the `pending_job` state object when an export does not finish within the configured polling window.
 - Nested archive handling for outer ZIP files with inner `.gz` or `.zip` CSV payloads.
-- Parallel nested file processing with a configurable `max_threads` value.
+- Parallel nested archive extraction with a configurable `max_threads` value. Fivetran SDK operations run on the main thread.
 - Optional `max_records` and `test_job_id` settings for local testing.
 
 ## Configuration file
@@ -67,7 +67,7 @@ Optional parameters:
 - `increment_days`: Number of days per initial or catch-up sync period. The default is `10`.
 - `email_recipients`: Comma-separated email addresses for CallMiner export job notifications.
 - `max_records`: Maximum records to process per file for local testing. Omit this value for full syncs.
-- `max_threads`: Maximum number of parallel file processing threads. The default is `8`; valid values are `1` through `16`.
+- `max_threads`: Maximum number of parallel archive extraction threads. The default is `8`; valid values are `1` through `16`.
 - `max_polls`: Maximum number of job polling attempts. The default is `60`, with one poll per minute in normal sync mode.
 - `test_job_id`: Existing CallMiner export job ID for local testing. When set, the connector skips job creation and processes the specified job.
 
@@ -105,9 +105,9 @@ If a job times out, the connector stores the job details in `pending_job` and ch
 
 The connector downloads each completed CallMiner export as an outer ZIP file. The outer ZIP can contain metadata JSON and one or more nested `.gz` or `.zip` files with CSV data.
 
-CSV files are processed as streams with `csv.DictReader`. Table names are derived from exported filenames by removing UUID prefixes and file extensions, then normalizing names to lowercase with underscores. Records are delivered with `op.upsert`.
+CSV files are processed as streams with `csv.DictReader`. Table names are derived from exported filenames by removing UUID prefixes and file extensions, then normalizing names to lowercase with underscores. Worker threads decompress nested files into temporary CSV files without calling Fivetran SDK operations. The main thread reads those temporary CSV files and delivers records with `op.upsert`.
 
-Nested files are processed in parallel with `ThreadPoolExecutor`. Files are sorted by size before processing so larger files start earlier.
+Nested files are extracted in parallel with `ThreadPoolExecutor`. Files are sorted by size before extraction so larger files start earlier. Materialized CSV files are then upserted on the main thread in archive order and removed after processing.
 
 ## Error handling
 
