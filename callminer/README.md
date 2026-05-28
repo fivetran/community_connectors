@@ -4,8 +4,6 @@
 
 The CallMiner connector for Fivetran uses the CallMiner Bulk Export API to create export jobs, poll job status, download completed export archives, extract nested compressed CSV files, and sync the exported records to your destination.
 
-The connector supports OAuth2 client credentials authentication, incremental date-window syncing, recent-window syncing with CallMiner's `LastNHours` export option, per-data-type state tracking, job timeout recovery, and parallel processing for nested export files.
-
 ## Requirements
 
 - [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
