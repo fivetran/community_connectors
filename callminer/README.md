@@ -125,19 +125,19 @@ The connector defines primary keys for known CallMiner export tables in the `sch
 
 | Table name | Primary key |
 | ---------- | ----------- |
-| `ai_summaries` | `contact_id` |
-| `comments` | `comment_id` |
-| `contacts` | `id` |
-| `categories` | `contact_id`, `category_id`, `section_id` |
-| `category_components` | `contact_id`, `category_id`, `component_id`, `start_time` |
-| `events_delay` | `contact_id`, `start_time`, `end_time` |
-| `events_overtalk` | `contact_id`, `start_time`, `end_time` |
-| `events_redaction` | `contact_id`, `start_time`, `end_time` |
-| `events_silence` | `contact_id`, `start_time`, `end_time` |
-| `scores` | `contact_id`, `score_id` |
-| `score_indicators` | `contact_id`, `score_id`, `score_component_id` |
-| `tags` | `contact_id`, `tag_id` |
-| `transcripts` | `contact_id`, `start_time` |
+| `AI-SUMMARIES` | `contact_id` |
+| `COMMENTS` | `comment_id` |
+| `CONTACTS` | `id` |
+| `CATEGORIES` | `contact_id`, `category_id`, `section_id` |
+| `CATEGORY-COMPONENTS` | `contact_id`, `category_id`, `component_id`, `start_time` |
+| `EVENTS-DELAY` | `contact_id`, `start_time`, `end_time` |
+| `EVENTS-OVERTALK` | `contact_id`, `start_time`, `end_time` |
+| `EVENTS-REDACTION` | `contact_id`, `start_time`, `end_time` |
+| `EVENTS-SILENCE` | `contact_id`, `start_time`, `end_time` |
+| `SCORES` | `contact_id`, `score_id` |
+| `SCORE-INDICATORS` | `contact_id`, `score_id`, `score_component_id` |
+| `TAGS` | `contact_id`, `tag_id` |
+| `TRANSCRIPTS` | `contact_id`, `start_time` |
 
 ## Additional files
 
