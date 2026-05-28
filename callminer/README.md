@@ -147,7 +147,6 @@ The connector defines primary keys for known CallMiner export tables in the `sch
 - `file_processing.py`: Downloads export files, extracts nested archives, processes CSV streams, and tracks file processing errors.
 - `state.py`: Reads and updates per-data-type sync state.
 - `sync.py`: Determines sync strategy, orchestrates export jobs, polls job status, checkpoints progress, and resumes pending jobs.
-- `configuration.json`: Provides placeholder local configuration values for `fivetran debug`.
 
 ## Additional considerations
 
