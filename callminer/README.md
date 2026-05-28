@@ -83,6 +83,8 @@ This connector does not require a `requirements.txt` file. It uses Python standa
 
 The connector uses OAuth2 client credentials flow through the CallMiner identity provider. The `get_access_token` function posts the configured `client_id` and `client_secret` to the token endpoint and stores the returned bearer token for API calls.
 
+Before you can request a token from CallMiner's Identity Provider Service, you'll need to request a Client ID and Secret from `support@callminer.com`.
+
 Tokens are refreshed before expiration by `refresh_token_if_needed`, using a five-minute buffer to avoid using an expired token during long-running export jobs.
 
 ## Bulk export workflow
