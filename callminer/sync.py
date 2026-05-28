@@ -116,8 +116,6 @@ def poll_and_process_single_job(
     """
     Poll a single job and process when complete.
 
-    Generator function that may yield checkpoint operations.
-
     Args:
         job_id: The job ID to poll
         data_types_str: Comma-separated data types string
@@ -132,9 +130,6 @@ def poll_and_process_single_job(
         max_threads: Maximum number of threads for parallel processing
         max_polls: Maximum number of polling attempts
         poll_interval: Seconds between polls
-
-    Yields:
-        Operations (checkpoints)
 
     Returns:
         Tuple of (updated_bearer_token, updated_expiration, job_id)
@@ -167,7 +162,7 @@ def poll_and_process_single_job(
             download_endpoint = job_status.get("download_endpoint")
 
             if not download_endpoint:
-                log.severe("Job completed but no download endpoint")
+                log.error("Job completed but no download endpoint")
                 raise ValueError(f"No download endpoint for completed job {job_id}")
 
             # Download and process the completed job
@@ -186,14 +181,14 @@ def poll_and_process_single_job(
             return bearer_token, token_expires_at, job_id
 
         elif status == "Failed":
-            log.severe(f"Job {job_id} failed")
+            log.error(f"Job {job_id} failed")
             raise ValueError(f"Export job failed: {job_id}")
 
         # Job still processing, wait before next poll
         time.sleep(poll_interval)
 
     # Job didn't complete within timeout - store in state for resume
-    log.severe(
+    log.error(
         f"Job {job_id} did not complete within timeout "
         f"({max_polls * poll_interval / 60:.0f} minutes)"
     )
@@ -208,7 +203,7 @@ def poll_and_process_single_job(
     }
 
     # IMPORTANT: Checkpoint before raising error so pending_job is persisted
-    yield op.checkpoint(state=state)
+    op.checkpoint(state=state)
 
     raise TimeoutError(
         f"Job {job_id} timed out after "
@@ -276,7 +271,7 @@ def sync_with_last_n_hours(
     start_date_str = start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     # Poll and process this job
-    result = yield from poll_and_process_single_job(
+    result = poll_and_process_single_job(
         job_id=job_id,
         data_types_str=",".join(data_types),
         client_id=client_id,
@@ -300,7 +295,7 @@ def sync_with_last_n_hours(
         update_data_type_state(state, dt, sync_timestamp)
 
     # Checkpoint after sync
-    yield op.checkpoint(state=state)
+    op.checkpoint(state=state)
 
     # Delete job after checkpoint
     delete_job(processed_job_id, bearer_token)
@@ -395,7 +390,7 @@ def sync_incremental_periods(
         log.info(f"[{data_types_str}] Job created with ID: {job_id}")
 
         # Poll and process this job
-        result = yield from poll_and_process_single_job(
+        result = poll_and_process_single_job(
             job_id=job_id,
             data_types_str=",".join(data_types),
             client_id=client_id,
@@ -417,7 +412,7 @@ def sync_incremental_periods(
             update_data_type_state(state, dt, end_date_str)
 
         # Checkpoint after each period
-        yield op.checkpoint(state=state)
+        op.checkpoint(state=state)
 
         # Delete job after checkpoint
         delete_job(processed_job_id, bearer_token)

@@ -17,15 +17,15 @@ def validate_configuration(configuration: Dict[str, Any]) -> None:
         ValueError: If any required configuration is missing
     """
     if not configuration.get("client_id"):
-        log.severe("client_id not found in configuration")
+        log.error("client_id not found in configuration")
         raise ValueError("client_id is required in configuration")
 
     if not configuration.get("client_secret"):
-        log.severe("client_secret not found in configuration")
+        log.error("client_secret not found in configuration")
         raise ValueError("client_secret is required in configuration")
 
     if not configuration.get("initial_start_date"):
-        log.severe("initial_start_date not found in configuration")
+        log.error("initial_start_date not found in configuration")
         raise ValueError("initial_start_date is required in configuration")
 
 

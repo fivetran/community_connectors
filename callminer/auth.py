@@ -50,7 +50,7 @@ def retry_on_500_error(max_retries: int = 3, initial_delay: int = 1, backoff_fac
                             time.sleep(delay)
                             continue
                         else:
-                            log.severe(
+                            log.error(
                                 f"HTTP {e.response.status_code} error in "
                                 f"{func.__name__}. Max retries "
                                 f"({max_retries}) exceeded."
@@ -61,7 +61,7 @@ def retry_on_500_error(max_retries: int = 3, initial_delay: int = 1, backoff_fac
 
                 except requests.exceptions.RequestException as e:
                     # For non-HTTP errors (timeout, connection, etc), don't retry
-                    log.severe(f"Request exception in {func.__name__}: {e}")
+                    log.error(f"Request exception in {func.__name__}: {e}")
                     raise
 
             # If we get here, we've exhausted retries
@@ -106,14 +106,14 @@ def get_access_token(client_id: str, client_secret: str) -> Tuple[str, int]:
         expires_in = token_data.get("expires_in", 3600)
 
         if not access_token:
-            log.severe("No access_token in response")
+            log.error("No access_token in response")
             raise ValueError("Failed to obtain access token")
 
         log.info("Successfully obtained access token")
         return access_token, expires_in
 
     except requests.exceptions.RequestException as e:
-        log.severe(f"Error obtaining access token: {e}")
+        log.error(f"Error obtaining access token: {e}")
         raise
 
 

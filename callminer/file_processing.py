@@ -86,7 +86,7 @@ def download_and_stream_file(download_endpoint: str, bearer_token: str) -> io.By
             response.close()
 
     except requests.exceptions.RequestException as e:
-        log.severe(f"Error downloading file: {e}")
+        log.error(f"Error downloading file: {e}")
         raise
 
 
@@ -215,31 +215,31 @@ def process_single_nested_file(
         thread_name = threading.current_thread().name
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["gzip_decompression_errors"] += 1
-        log.severe(f"[{thread_name}] Gzip decompression error in {filename}: {e}")
+        log.error(f"[{thread_name}] Gzip decompression error in {filename}: {e}")
         raise
     except zipfile.BadZipFile as e:
         thread_name = threading.current_thread().name
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["zip_decompression_errors"] += 1
-        log.severe(f"[{thread_name}] Zip decompression error in {filename}: {e}")
+        log.error(f"[{thread_name}] Zip decompression error in {filename}: {e}")
         raise
     except csv.Error as e:
         thread_name = threading.current_thread().name
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["csv_parsing_errors"] += 1
-        log.severe(f"[{thread_name}] CSV parsing error in {filename}: {e}")
+        log.error(f"[{thread_name}] CSV parsing error in {filename}: {e}")
         raise
     except UnicodeDecodeError as e:
         thread_name = threading.current_thread().name
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["encoding_errors"] += 1
-        log.severe(f"[{thread_name}] Encoding error in {filename}: {e}")
+        log.error(f"[{thread_name}] Encoding error in {filename}: {e}")
         raise
     except Exception as e:
         thread_name = threading.current_thread().name
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["unexpected_file_errors"] += 1
-        log.severe(f"[{thread_name}] Unexpected error processing {filename}: {e}")
+        log.error(f"[{thread_name}] Unexpected error processing {filename}: {e}")
         raise
 
 
@@ -296,7 +296,7 @@ def process_multi_type_zip_file(
 
             # If no nested files found, log error
             if not nested_files:
-                log.severe(f"No nested compressed files found in {download_id}")
+                log.error(f"No nested compressed files found in {download_id}")
                 return
 
             log.info(
@@ -355,12 +355,12 @@ def process_multi_type_zip_file(
 
                     except Exception as e:
                         error_msg = f"Failed to process {filename}: {e}"
-                        log.severe(error_msg)
+                        log.error(error_msg)
                         errors.append(error_msg)
 
             # Report results
             if errors:
-                log.severe(
+                log.error(
                     f"Completed with {len(errors)} error(s). "
                     f"Total records processed: {total_records}"
                 )
@@ -371,12 +371,12 @@ def process_multi_type_zip_file(
     except zipfile.BadZipFile as e:
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["outer_zip_errors"] += 1
-        log.severe(f"Invalid outer zip file: {e}")
+        log.error(f"Invalid outer zip file: {e}")
         raise
     except Exception as e:
         with _ERROR_STATS_LOCK:
             _ERROR_STATS["outer_processing_errors"] += 1
-        log.severe(f"Error processing zip file: {e}")
+        log.error(f"Error processing zip file: {e}")
         raise
     finally:
         # Always log error statistics at the end

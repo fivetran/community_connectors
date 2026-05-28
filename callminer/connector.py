@@ -24,13 +24,11 @@ from api_client import delete_job
 
 def schema(configuration: Dict[str, Any]):
     """
-    Define the schema for all CallMiner tables.
-
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
     Args:
-        configuration: Configuration dictionary containing API credentials
-
-    Returns:
-        List of table schemas
+        configuration: a dictionary that holds the configuration settings for the connector.
     """
     return [
         {"table": "ai_summaries", "primary_key": ["contact_id"]},
@@ -86,6 +84,8 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
               - end_date: End date of the job period
               - created_at: When job was created
     """
+    log.warning("Example: API Connector : CallMiner Connector")
+
     # Validate configuration
     validate_configuration(configuration)
 
@@ -108,7 +108,7 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
         log.info("=" * 60)
 
         try:
-            result = yield from poll_and_process_single_job(
+            result = poll_and_process_single_job(
                 job_id=pending["job_id"],
                 data_types_str=pending["data_types"],
                 client_id=config["client_id"],
@@ -143,7 +143,7 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
                 log.info(f"Updated last_synced_date to {next_start_str} " f"for resumed job")
 
             # Checkpoint after updating state
-            yield op.checkpoint(state=state)
+            op.checkpoint(state=state)
 
             # Delete job after checkpoint
             delete_job(processed_job_id, bearer_token)
@@ -153,11 +153,11 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
 
         except TimeoutError:
             # Job still not done, keep it in state and exit
-            log.severe("Pending job still not complete after resuming")
+            log.error("Pending job still not complete after resuming")
             raise
         except Exception as e:
             # Other error - clear pending job and let it fail
-            log.severe(f"Error resuming pending job: {e}")
+            log.error(f"Error resuming pending job: {e}")
             if "pending_job" in state:
                 del state["pending_job"]
             raise
@@ -169,7 +169,7 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
         log.info("=" * 60)
 
         # Poll and process the test job
-        result = yield from poll_and_process_single_job(
+        result = poll_and_process_single_job(
             job_id=config["test_job_id"],
             data_types_str=",".join(config["data_types"]),
             client_id=config["client_id"],
@@ -225,7 +225,7 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
 
         if group_info["use_last_n_hours"]:
             # Recent sync - use LastNHours for efficiency
-            bearer_token, token_expires_at = yield from sync_with_last_n_hours(
+            bearer_token, token_expires_at = sync_with_last_n_hours(
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
                 bearer_token=bearer_token,
@@ -240,7 +240,7 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
             )
         else:
             # Initial sync or large gap - use incremental date range logic
-            bearer_token, token_expires_at = yield from sync_incremental_periods(
+            bearer_token, token_expires_at = sync_incremental_periods(
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
                 bearer_token=bearer_token,

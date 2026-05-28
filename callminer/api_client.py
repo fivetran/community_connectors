@@ -92,7 +92,7 @@ def create_job(
         create_date = job_data.get("CreateDate")
 
         if not job_id:
-            log.severe(f"No job ID in response: {job_data}")
+            log.error(f"No job ID in response: {job_data}")
             raise ValueError("Failed to get job ID from response")
 
         log.info(f"Successfully created job with ID: {job_id}")
@@ -100,7 +100,7 @@ def create_job(
         return {"job_id": job_id, "create_date": create_date, "full_response": job_data}
 
     except requests.exceptions.RequestException as e:
-        log.severe(f"Error creating job: {e}")
+        log.error(f"Error creating job: {e}")
         raise
 
 
@@ -134,7 +134,7 @@ def get_jobs_history(bearer_token: str) -> list:
         return jobs
 
     except requests.exceptions.RequestException as e:
-        log.severe(f"Error getting jobs history: {e}")
+        log.error(f"Error getting jobs history: {e}")
         raise
 
 
@@ -160,7 +160,7 @@ def delete_job(job_id: str, bearer_token: str) -> None:
         log.info(f"Successfully deleted job: {job_id}")
 
     except requests.exceptions.RequestException as e:
-        log.severe(f"Error deleting job {job_id}: {e}")
+        log.error(f"Error deleting job {job_id}: {e}")
         # Don't raise - deletion failure shouldn't fail the sync
         # Job will eventually expire on CallMiner's side
 
