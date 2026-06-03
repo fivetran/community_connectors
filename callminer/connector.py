@@ -7,7 +7,14 @@ job creation, polling, and data synchronization.
 
 from typing import Dict, Any
 from datetime import datetime, timedelta
-from fivetran_connector_sdk import Connector, Operations as op, Logging as log
+# Import required classes from fivetran_connector_sdk
+from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
+from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
+from fivetran_connector_sdk import Operations as op
 
 # Import from local modules
 from auth import get_token
@@ -54,35 +61,14 @@ def schema(configuration: Dict[str, Any]):
 
 
 def update(configuration: Dict[str, Any], state: Dict[str, Any]):
-    """
-    Main sync function to create jobs and download/process CallMiner files.
-    Data types with the same sync parameters are batched into single API calls,
-    but state is tracked independently per data type.
-
-    TESTING MODE: If test_job_id is provided in configuration, skips job
-    creation and directly polls/processes the specified job.
-
+"""
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#update
     Args:
-        configuration: Dictionary containing:
-            - client_id: Client ID for authentication
-            - client_secret: Client secret for authentication
-            - initial_start_date: Starting date for first sync
-              (ISO format: YYYY-MM-DDTHH:MM:SS.000Z)
-            - increment_days: Number of days per sync period (default: 10)
-            - email_recipients: Comma-separated email addresses (optional)
-            - data_types: Comma-separated data types to export
-              (e.g., "Contacts,Transcripts,Events")
-            - max_records: Maximum records to process (optional, for testing)
-            - test_job_id: Existing job ID to process (optional, testing only)
-        state: Dictionary containing sync state with per-data-type tracking:
-            - data_types: Dict mapping data type to its state
-              - {data_type}: {'last_synced_date': ISO format timestamp}
-            - pending_job: Dict with incomplete job info (if timed out)
-              - job_id: Job ID to resume
-              - data_types: Comma-separated data types
-              - start_date: Start date of the job period
-              - end_date: End date of the job period
-              - created_at: When job was created
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
     """
     log.warning("Example: API Connector : CallMiner Connector")
 
@@ -142,7 +128,12 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
                     update_data_type_state(state, dt.strip(), next_start_str)
                 log.info(f"Updated last_synced_date to {next_start_str} " f"for resumed job")
 
-            # Checkpoint after updating state
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state=state)
 
             # Delete job after checkpoint
