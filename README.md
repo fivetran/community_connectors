@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/fivetran/community_connectors/stargazers" target="_blank"><img src="https://img.shields.io/github/stars/fivetran/community_connectors?style=social&label=Star"></a>
   <a href="https://github.com/fivetran/community_connectors/blob/main/LICENSE" target="_blank"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License"></a>
-  <a href="https://github.com/fivetran/community_connectors/blob/main/README.md" target="_blank"><img src="https://img.shields.io/badge/Managed-Yes-green/" alt="Managed"></a>
+  <a href="https://github.com/fivetran/community_connectors/blob/main/README.md" target="_blank"><img src="https://img.shields.io/badge/Managed-Yes-green" alt="Managed"></a>
 </p>
 
 # Overview
