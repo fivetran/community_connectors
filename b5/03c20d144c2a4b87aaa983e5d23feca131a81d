@@ -1,0 +1,25 @@
+data_camp/connector.py
+  4dc59e0bb5d9b59a 189
+ibm/ibm_db2_log_based_replication/connector.py
+  4dc59e0bb5d9b59a 364,374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "b503c20d144c2a4b87aaa983e5d23feca131a81d",
+  "prompts": {
+    "4dc59e0bb5d9b59a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d194940-8990-4a97-8a1c-2acecd727950",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 3,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
