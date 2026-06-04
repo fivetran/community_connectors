@@ -8,7 +8,7 @@ The connector is particularly valuable for organizations using DragonflyDB as a 
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -80,7 +80,7 @@ Key pattern examples:
 - `user:*:profile` - All user profile keys
 - `rate_limit:*` - All rate limiter keys
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -94,7 +94,7 @@ redis
 
 ## Authentication
 
-The connector supports flexible authentication options compatible with DragonflyDB deployments (refer to the `build_connection_params` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/dragonfly_db/connector.py)).
+The connector supports flexible authentication options compatible with DragonflyDB deployments (refer to the `build_connection_params` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/dragonfly_db/connector.py)).
 
 Basic configuration without authentication:
 ```json
@@ -137,7 +137,7 @@ SSL/TLS configuration:
 
 ## Pagination
 
-The connector implements the `SCAN` command for efficient, non-blocking key iteration (refer to the `scan_keys` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/dragonfly_db/connector.py)):
+The connector implements the `SCAN` command for efficient, non-blocking key iteration (refer to the `scan_keys` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/dragonfly_db/connector.py)):
 
 - Uses cursor-based iteration starting from cursor position 0
 - Processes keys in configurable batches (default: 100 keys per `SCAN` operation)
@@ -150,7 +150,7 @@ The `SCAN` operation is memory-efficient, non-blocking, and allows other Dragonf
 
 ## Data handling
 
-The connector performs comprehensive data extraction and transformation (refer to the following functions in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/dragonfly_db/connector.py)):
+The connector performs comprehensive data extraction and transformation (refer to the following functions in [connector.py](https://github.com/fivetran/community_connectors/blob/main/dragonfly_db/connector.py)):
 
 - `get_key_info` - Retrieves comprehensive information about a key
 - `extract_value_by_type` - Handles type-specific value extraction
@@ -172,7 +172,7 @@ Data handling workflow:
 
 ## Error handling
 
-The connector implements comprehensive error handling strategies (refer to the following functions in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/dragonfly_db/connector.py)):
+The connector implements comprehensive error handling strategies (refer to the following functions in [connector.py](https://github.com/fivetran/community_connectors/blob/main/dragonfly_db/connector.py)):
 
 - Connection validation with retry logic (`create_dragonfly_client` function) - Tests DragonflyDB connectivity during client creation with ping operation, implements exponential backoff retry logic for transient failures (max 3 attempts), handles SSL configuration errors, raises RuntimeError on failure.
 - Configuration validation (`validate_configuration` function) - Ensures required parameters (host, port) are present, raises ValueError for missing configuration.

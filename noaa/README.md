@@ -3,7 +3,7 @@
 ## Connector overview
 This connector retrieves weather observation data and active alerts from the [National Weather Service (NOAA) API](https://www.weather.gov/documentation/services-web-api) and syncs it to Fivetran destinations. The connector fetches current observations from specified weather stations and weather alerts for designated areas, supporting incremental syncing to efficiently process weather data over time.
 ## Requirements
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -64,7 +64,7 @@ Full Configuration (with all optional parameters):
 - `alert_area` (optional): Two-letter US state code for filtering weather alerts (e.g., "IL", "CA"). Default behavior if omitted: fetches all active weather alerts across the United States.
 - `start_date` (optional): Date in YYYY-MM-DD format to start syncing observations from (e.g., "2025-01-01"). Default behavior if omitted: starts syncing from the current time (no historical backfill).
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 This connector uses only the pre-installed packages in the Fivetran environment and does not require any additional dependencies.
