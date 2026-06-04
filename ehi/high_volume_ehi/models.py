@@ -152,7 +152,7 @@ class SchemaDetector:
                 try:
                     results[table_name] = future.result()
                 except Exception as exc:
-                    log.severe(f"Failed to detect schema for {schema_name}.{table_name}: {exc}")
+                    log.error(f"Failed to detect schema for {schema_name}.{table_name}: {exc}")
 
         log.info(f"Schema detection complete: {len(results)} table(s) discovered")
         return results
@@ -208,7 +208,7 @@ class SchemaDetector:
                             "table will fall back to PK-keyset or offset pagination"
                         )
                         return None
-                    log.fine(f"Using configured incremental column: {column.name}")
+                    log.debug(f"Using configured incremental column: {column.name}")
                     return column
             log.warning(
                 f"Configured incremental column '{configured_incremental_column}' not found in table columns — "
@@ -224,7 +224,7 @@ class SchemaDetector:
         for pattern in KNOWN_REPLICATION_KEY_PATTERNS:
             if pattern.lower() in column_by_lower_name:
                 matched_column = column_by_lower_name[pattern.lower()]
-                log.fine(f"Replication key matched pattern '{pattern}': {matched_column.name}")
+                log.debug(f"Replication key matched pattern '{pattern}': {matched_column.name}")
                 return matched_column
 
         return None
@@ -281,5 +281,5 @@ class SchemaDetector:
             "rowversion",
         }:
             return bytes
-        log.fine(f"Unknown SQL type '{sql_type}' mapped to str")
+        log.debug(f"Unknown SQL type '{sql_type}' mapped to str")
         return str
