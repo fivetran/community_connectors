@@ -74,7 +74,7 @@ To sync only specific tables, add an optional `tables` field (comma-separated):
 
 If `tables` is omitted, all user tables in the database are synced automatically.
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_connector_sdk/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/fivetran_connector_sdk/tree/main/examples) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/fivetran_connector_sdk/tree/main/examples) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
 When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 
