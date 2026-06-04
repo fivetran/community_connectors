@@ -5,8 +5,10 @@ Main entry point for the connector that orchestrates authentication,
 job creation, polling, and data synchronization.
 """
 
+import json
 from typing import Dict, Any
 from datetime import datetime, timedelta
+
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 
@@ -61,7 +63,7 @@ def schema(configuration: Dict[str, Any]):
 
 
 def update(configuration: Dict[str, Any], state: Dict[str, Any]):
-"""
+    """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
     https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#update
@@ -128,12 +130,12 @@ def update(configuration: Dict[str, Any], state: Dict[str, Any]):
                     update_data_type_state(state, dt.strip(), next_start_str)
                 log.info(f"Updated last_synced_date to {next_start_str} " f"for resumed job")
 
-          # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-          # from the correct position in case of next sync or interruptions.
-          # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-          # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-          # Learn more about how and where to checkpoint by reading our best practices documentation
-          # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state=state)
 
             # Delete job after checkpoint
@@ -263,6 +265,9 @@ connector = Connector(update=update, schema=schema)
 # Note: This method is not called by Fivetran when executing your connector in production.
 # Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
+    with open("configuration.json", "r") as f:
+        configuration = json.load(f)
 
     # Test the connector locally
     connector.debug(configuration=configuration)
