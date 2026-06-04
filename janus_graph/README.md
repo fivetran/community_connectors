@@ -15,7 +15,7 @@ Key capabilities include:
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
     - Windows: 10 or later (64-bit only)
     - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -71,7 +71,7 @@ For production (with authentication):
 - `username` (optional): Username for authenticated connections to the Gremlin Server
 - `password` (optional): Password for authenticated connections to the Gremlin Server
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

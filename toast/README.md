@@ -4,7 +4,7 @@
 
 This is a custom [Fivetran connector](https://fivetran.com/docs/connectors/connector-sdk) implementation to extract and sync data from the [Toast POS API](https://doc.toasttab.com/) into a destination warehouse. Toast is a restaurant management platform providing point-of-sale, labor, menu, and operational data.
 
-For full implementation details, see the [Toast connector example code](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/toast/).
+For full implementation details, see the [Toast connector example code](https://github.com/fivetran/community_connectors/tree/main/toast/).
 
 ## Requirements
 
@@ -12,7 +12,7 @@ For full implementation details, see the [Toast connector example code](https://
 - Domain to connect to (e.g., `api.toasttab.com`)
 - A Fernet key (`key`) for encrypting access tokens
 - `initialSyncStart` ISO timestamp to define the start of sync window
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 
 ## Getting started
 
@@ -52,7 +52,7 @@ Example `configuration.json`:
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

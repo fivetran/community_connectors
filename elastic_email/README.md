@@ -6,7 +6,7 @@ This connector syncs email marketing data from Elastic Email to your destination
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -48,7 +48,7 @@ The connector requires the following configuration parameters:
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -68,11 +68,11 @@ To set up authentication:
 4. Make a note of the API key value.
 5. Add the API key to your `configuration.json` file as the value for `api_key`.
 
-The connector validates that the API key is present during initialization. Refer to the `validate_configuration` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/elastic_email/connector.py).
+The connector validates that the API key is present during initialization. Refer to the `validate_configuration` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/elastic_email/connector.py).
 
 ## Pagination
 
-The connector handles pagination using offset-based pagination for all API endpoints. Each endpoint supports `limit` and `offset` parameters to retrieve data in batches. The connector uses a page limit of 100 records per request and automatically increments the offset until all data is retrieved. Refer to the `process_paginated_endpoint` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/elastic_email/connector.py).
+The connector handles pagination using offset-based pagination for all API endpoints. Each endpoint supports `limit` and `offset` parameters to retrieve data in batches. The connector uses a page limit of 100 records per request and automatically increments the offset until all data is retrieved. Refer to the `process_paginated_endpoint` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/elastic_email/connector.py).
 
 ## Data handling
 
@@ -84,7 +84,7 @@ The connector processes data from the Elastic Email API and transforms it for th
 - Incremental sync is supported for events using date-based filtering
 - Data is processed in batches to avoid loading large datasets into memory
 
-Refer to the `flatten_dict` and `process_paginated_endpoint` functions in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/elastic_email/connector.py).
+Refer to the `flatten_dict` and `process_paginated_endpoint` functions in [connector.py](https://github.com/fivetran/community_connectors/blob/main/elastic_email/connector.py).
 
 ## Error handling
 
@@ -96,7 +96,7 @@ The connector implements comprehensive error handling:
 - All errors are logged using the SDK logging framework
 - Failed requests raise RuntimeError with descriptive error messages
 
-Refer to the `make_request_with_retry` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/elastic_email/connector.py).
+Refer to the `make_request_with_retry` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/elastic_email/connector.py).
 
 ## Tables created
 
@@ -118,7 +118,7 @@ The connector creates the following tables in the destination:
 | `COMPLAINT` | `email` | Spam complaint email addresses. |
 | `USUBSCRIBE` | `email` | Unsubscribed email addresses. |
 
-All table schemas are defined with primary keys only. Column data types are inferred by Fivetran based on the actual data. Nested objects are flattened with underscore-separated column names. Refer to the `schema` function in [connector.py](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/elastic_email/connector.py).
+All table schemas are defined with primary keys only. Column data types are inferred by Fivetran based on the actual data. Nested objects are flattened with underscore-separated column names. Refer to the `schema` function in [connector.py](https://github.com/fivetran/community_connectors/blob/main/elastic_email/connector.py).
 
 ## Additional considerations
 

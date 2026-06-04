@@ -468,6 +468,6 @@ __BASE_DELAY = 1  # Base delay in seconds for API request retries
 
 ## Templates
 
-Refer to our `connector.py` and `README_template.md` files in this repo ([https://github.com/fivetran/fivetran_csdk_connectors/tree/main/_template_connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/_template_connector)).
+Refer to our `connector.py` and `README_template.md` files in this repo ([https://github.com/fivetran/community_connectors/tree/main/_template_connector](https://github.com/fivetran/community_connectors/tree/main/_template_connector)).
 
 It contains some ideas about structuring your code. Review it to get a general understanding of our example format.
