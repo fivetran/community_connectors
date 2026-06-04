@@ -16,7 +16,7 @@ Example use cases include:
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -68,7 +68,7 @@ Configuration parameters:
 - `organization` (required) - GitHub organization name to sync (can be comma-separated for multiple orgs).
 - `installation_id` (required) - Installation ID for the GitHub App on your organization.
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -320,7 +320,7 @@ Rate limit errors
 
 ### Related examples
 
-- [github_traffic connector example](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/github_traffic) - This example shows how to sync GitHub repository traffic metrics (views, clones, referrers, and popular content paths) using the GitHub REST API. It demonstrates how to work with GitHub's traffic analytics endpoints, handle limited historical data (14 days), and use Personal Access Token authentication.
+- [github_traffic connector example](https://github.com/fivetran/community_connectors/tree/main/github_traffic) - This example shows how to sync GitHub repository traffic metrics (views, clones, referrers, and popular content paths) using the GitHub REST API. It demonstrates how to work with GitHub's traffic analytics endpoints, handle limited historical data (14 days), and use Personal Access Token authentication.
 - [Certificate authentication pattern example](https://github.com/fivetran/fivetran_connector_sdk/tree/main/examples/common_patterns_for_connectors/authentication/certificate/) - This example demonstrates certificate-based authentication with two approaches - using base64 encoded certificates in configuration, or retrieving certificates from AWS S3 at runtime. Useful for understanding advanced credential management patterns that can be applied to GitHub App private keys.
 
 ### Additional resources

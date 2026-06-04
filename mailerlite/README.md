@@ -4,7 +4,7 @@
 This connector demonstrates how to fetch email marketing data from [MailerLite](https://www.mailerlite.com/) and upsert it into your destination using the Fivetran Connector SDK. The connector synchronizes the most important entities: subscribers, groups, campaigns, and custom fields from your MailerLite account. It implements pagination handling for large datasets and includes incremental synchronization capabilities using cursor-based and page-based pagination depending on the endpoint.
 
 ## Requirements
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -45,7 +45,7 @@ The configuration keys required for your connector are as follows:
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 The connector uses the `requests` library for HTTP communication, which is pre-installed in the Fivetran environment.

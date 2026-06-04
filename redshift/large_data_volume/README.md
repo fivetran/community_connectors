@@ -6,7 +6,7 @@ This example connector demonstrates how to sync large tables from Amazon Redshif
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -69,7 +69,7 @@ The parameters include:
 - `enable_complete_resync`: A boolean flag that defines whether each sync is a [full re-sync](https://fivetran.com/docs/using-fivetran/features#fullresync).
 - `max_parallel_workers`: The maximum number of parallel workers to use for data extraction. We recommend setting this value between 2 and 4. Setting it too high may lead to potential performance degradation.
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

@@ -5,11 +5,11 @@
 This connector example demonstrates how to sync data from Couchbase Capella using the Connector SDK. It connects to a Couchbase Capella instance, executes SQL++ (N1QL) queries to fetch data from a specific bucket, scope, and collection, and efficiently streams the data to destination table while implementing best practices for handling large datasets.
 This connector is built for Couchbase Capella. It supports buckets using either the Magma or Couchstore storage engines.
 
-> For syncing data from a Magma bucket on self-managed Couchbase Server, please refer to the [Couchbase Magma connector example](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/couchbase_magma)
+> For syncing data from a Magma bucket on self-managed Couchbase Server, please refer to the [Couchbase Magma connector example](https://github.com/fivetran/community_connectors/tree/main/couchbase_magma)
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/fivetran_csdk_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -52,7 +52,7 @@ The connector requires the following configuration parameters to connect to your
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
