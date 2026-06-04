@@ -86,7 +86,7 @@ Uses Fivetran SDK logging levels (`info`, `debug`, `warning`, `error`) for detai
 
 The entity-relationship diagram (ERD) below shows how tables are linked in the Toast schema.
 
-<img src="https://raw.githubusercontent.com/fivetran/fivetran_connector_sdk/main/connectors/toast/Toast_ERD.png" alt="Fivetran Toast Connector ERD" width="100%">
+<img src="https://raw.githubusercontent.com/fivetran/connector_sdk/main/connectors/toast/Toast_ERD.png" alt="Fivetran Toast Connector ERD" width="100%">
 
 ### Core tables
 
