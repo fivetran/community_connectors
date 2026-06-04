@@ -167,6 +167,9 @@ def process_csv_stream(
             log.info(f"Reached limit of {max_records} records for {table_name}")
             break
 
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table=table_name, data=row)
         record_count += 1
 
