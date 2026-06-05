@@ -1,0 +1,11 @@
+{
+    "client_id": "<YOUR_CLIENT_ID>",
+    "client_secret": "<YOUR_CLIENT_SECRET>",
+    "initial_start_date": "<YOUR_INITIAL_START_DATE>",
+    "increment_days": "<YOUR_INCREMENT_DAYS>",
+    "max_threads": "<YOUR_MAX_THREADS>",
+    "max_polls": "<YOUR_MAX_POLLS>",
+    "email_recipients": "<YOUR_EMAIL_RECIPIENTS>",
+    "data_types": "<YOUR_DATA_TYPES>"
+}
+
