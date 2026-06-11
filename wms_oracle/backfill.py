@@ -62,7 +62,8 @@ def run_backfill_phase(
         log.info(f"Starting historical backfill for {entity} (DESC, offset pagination)")
     else:
         log.info(
-            f"Resuming backfill for {entity}: window cursor={backfill_cursor} (DESC, offset pagination)"
+            f"Resuming backfill for {entity}: window cursor={backfill_cursor} "
+            f"(DESC, offset pagination)"
         )
 
     cursor_dt: Optional[datetime] = (
@@ -86,7 +87,8 @@ def run_backfill_phase(
         if bf_cursor_rollback is not None:
             cursor_dt = datetime.fromisoformat(bf_cursor_rollback)
             log.warning(
-                f"{entity}: backfill rolling back cursor to {bf_cursor_rollback} after timeout, restarting from page 1"
+                f"{entity}: backfill rolling back cursor to {bf_cursor_rollback} "
+                f"after timeout, restarting from page 1"
             )
             bf_cursor_rollback = None
             bf_page = 1
@@ -119,7 +121,8 @@ def run_backfill_phase(
             except requests.exceptions.Timeout:
                 if bf_page_size <= MIN_PAGE_SIZE:
                     log.error(
-                        f"{entity}: backfill page {bf_page} timed out at minimum page_size={bf_page_size}, giving up"
+                        f"{entity}: backfill page {bf_page} timed out at minimum "
+                        f"page_size={bf_page_size}, giving up"
                     )
                     raise
                 if bf_prev_page_min_ts is not None:
@@ -147,7 +150,8 @@ def run_backfill_phase(
                     bf_page_size = max(bf_page_size // 2, MIN_PAGE_SIZE)
                     bf_page = (old_offset // bf_page_size) + 1
                     log.warning(
-                        f"{entity}: backfill page timed out, retrying at page {bf_page} with page_size={bf_page_size}"
+                        f"{entity}: backfill page timed out, retrying at page {bf_page} "
+                        f"with page_size={bf_page_size}"
                     )
 
         # If a rollback was triggered in the inner loop, restart the outer loop
@@ -163,12 +167,14 @@ def run_backfill_phase(
             bf_consecutive_empty += 1
             if bf_consecutive_empty >= BACKFILL_MAX_EMPTY_WINDOWS:
                 log.info(
-                    f"{entity}: {BACKFILL_MAX_EMPTY_WINDOWS} consecutive empty windows — backfill complete"
+                    f"{entity}: {BACKFILL_MAX_EMPTY_WINDOWS} consecutive empty windows "
+                    f"— backfill complete"
                 )
                 bf_finished = True
                 break
             log.info(
-                f"{entity}: empty window — sliding back {BACKFILL_WINDOW_DAYS} days (empty #{bf_consecutive_empty})"
+                f"{entity}: empty window — sliding back {BACKFILL_WINDOW_DAYS} days "
+                f"(empty #{bf_consecutive_empty})"
             )
             cursor_dt = lower_dt
             bf_page = 1
@@ -227,12 +233,14 @@ def run_backfill_phase(
 
         if bf_pages_since_log >= 10:
             log.info(
-                f"{entity}: backfill progress — {bf_records:,} records, {bf_pages_fetched} pages, oldest mod_ts={bf_min_mod_ts_seen}"
+                f"{entity}: backfill progress — {bf_records:,} records, {bf_pages_fetched} pages, "
+                f"oldest mod_ts={bf_min_mod_ts_seen}"
             )
             bf_pages_since_log = 0
 
     log.info(
-        f"{entity}: backfill {'complete' if bf_finished else 'paused'} — {bf_records} records, {bf_pages_fetched} pages"
+        f"{entity}: backfill {'complete' if bf_finished else 'paused'} "
+        f"— {bf_records} records, {bf_pages_fetched} pages"
     )
 
     new_cursor = None if bf_finished else (cursor_dt.isoformat() if cursor_dt else None)

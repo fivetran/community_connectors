@@ -105,5 +105,3 @@ def to_utc(timestamp_str: str) -> str:
         return dt.astimezone(timezone.utc).isoformat()
     except (ValueError, AttributeError):
         return timestamp_str
-
-

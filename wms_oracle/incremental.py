@@ -99,13 +99,15 @@ def run_incremental_phase(
             except requests.exceptions.Timeout:
                 if page_size_1a <= MIN_PAGE_SIZE:
                     log.error(
-                        f"{entity}: Phase 1 (mod_ts) page {phase1a_page} timed out at minimum page_size={page_size_1a}, giving up"
+                        f"{entity}: Phase 1 (mod_ts) page {phase1a_page} timed out at minimum "
+                        f"page_size={page_size_1a}, giving up"
                     )
                     raise
                 page_size_1a = max(page_size_1a // 2, MIN_PAGE_SIZE)
                 phase1a_page = 1
                 log.warning(
-                    f"{entity}: Phase 1 (mod_ts) page timed out, restarting from page 1 with page_size={page_size_1a}"
+                    f"{entity}: Phase 1 (mod_ts) page timed out, restarting from page 1 "
+                    f"with page_size={page_size_1a}"
                 )
 
         records = response_data.get("results", [])
@@ -171,7 +173,8 @@ def run_incremental_phase(
         total_records += count_1b
     except OrderingNotSupportedError:
         log.warning(
-            f"{entity}: Phase 2 (create_ts) ordering=create_ts,id not supported — retrying without ordering"
+            f"{entity}: Phase 2 (create_ts) ordering=create_ts,id not supported "
+            f"— retrying without ordering"
         )
         try:
             count_1b, _, _ = fetch_entity_data(

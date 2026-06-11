@@ -64,8 +64,10 @@ def make_api_request(
         session:              Optional Session for connection reuse across pages
 
     Raises:
-        OrderingNotSupportedError: if the entity returns 400 for the given ordering (never retried).
-        requests.exceptions.Timeout: propagated immediately for adaptive page-size handling upstream.
+        OrderingNotSupportedError: if the entity returns 400 for the given ordering
+            (never retried).
+        requests.exceptions.Timeout: propagated immediately for adaptive page-size
+            handling upstream.
         requests.exceptions.RequestException: after MAX_RETRIES exhausted.
     """
     params = {
@@ -120,12 +122,14 @@ def make_api_request(
             if attempt < MAX_RETRIES:
                 backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
                 log.warning(
-                    f"API request failed for {entity} page {page} (attempt {attempt}/{MAX_RETRIES}). Retrying in {backoff}s…"
+                    f"API request failed for {entity} page {page} "
+                    f"(attempt {attempt}/{MAX_RETRIES}). Retrying in {backoff}s…"
                 )
                 time.sleep(backoff)
             else:
                 log.error(
-                    f"API request failed for {entity} page {page} after {MAX_RETRIES} attempts: {e}"
+                    f"API request failed for {entity} page {page} "
+                    f"after {MAX_RETRIES} attempts: {e}"
                 )
 
     raise last_exception
@@ -263,7 +267,8 @@ def fetch_entity_data(
             except requests.exceptions.Timeout:
                 if page_size <= MIN_PAGE_SIZE:
                     log.error(
-                        f"{entity}: page {page} timed out at minimum page_size={page_size}, giving up"
+                        f"{entity}: page {page} timed out at minimum "
+                        f"page_size={page_size}, giving up"
                     )
                     raise
                 old_offset = (page - 1) * page_size
@@ -334,7 +339,8 @@ def fetch_entity_data(
             if ts_when_max_reached:
                 log.warning(
                     f"{entity}: reached max_pages={max_pages} but cursor is still "
-                    f"{ts_when_max_reached} — possible bulk import; continuing until timestamp changes"
+                    f"{ts_when_max_reached} — possible bulk import; "
+                    f"continuing until timestamp changes"
                 )
 
         if (
@@ -347,7 +353,8 @@ def fetch_entity_data(
 
     if ts_when_max_reached is not None and extreme_mod_ts != ts_when_max_reached:
         log.info(
-            f"{entity}: timestamp changed {ts_when_max_reached} → {extreme_mod_ts} after {pages_fetched} pages — bulk import cleared"
+            f"{entity}: timestamp changed {ts_when_max_reached} → {extreme_mod_ts} "
+            f"after {pages_fetched} pages — bulk import cleared"
         )
 
     finished = is_exhausted or (total_pages is not None and page > total_pages)

@@ -25,7 +25,7 @@ from fivetran_connector_sdk import Operations as op
 
 import json
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from typing import Optional
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -157,7 +157,8 @@ def process_entity(
             cursor_str = to_utc(cursor_dt.isoformat())
             with lock:
                 in_progress_backfill_cursors[entity] = cursor_str
-                # Save backfill progress so the window cursor is preserved if the sync is interrupted.
+                # Save backfill progress so the window cursor is preserved
+                # if the sync is interrupted.
                 op.checkpoint(
                     {
                         "entity_cursors": dict(entity_cursors_live),
@@ -175,9 +176,11 @@ def process_entity(
             if not has_mod_ts:
                 # ── Full sync (no mod_ts support) ────────────────────────────
                 log.info(
-                    f"Full sync for {entity} (no mod_ts support, existing records _fivetran_deleted = true)"
+                    f"Full sync for {entity} "
+                    f"(no mod_ts support, existing records _fivetran_deleted = true)"
                 )
-                # Truncate soft-deletes all existing rows before the full re-scan so removed records are marked deleted.
+                # Truncate soft-deletes all existing rows before the full re-scan
+                # so removed records are marked deleted.
                 op.truncate(table=entity)
                 count, _, _ = fetch_entity_data(
                     base_url,
@@ -335,9 +338,8 @@ def update(configuration: dict, state: dict):
                 entity = futures[future]
                 entity_mod_ts_support[entity] = future.result()
                 support_str = "supports" if entity_mod_ts_support[entity] else "does not support"
-                log.info(
-                    f"Entity {entity} {support_str} mod_ts - will use {'incremental' if entity_mod_ts_support[entity] else 'full'} sync"
-                )
+                sync_type = "incremental" if entity_mod_ts_support[entity] else "full"
+                log.info(f"Entity {entity} {support_str} mod_ts - will use {sync_type} sync")
 
     # ── Probe result counts to sort entities largest-first ────────────────────
     log.info(f"Probing {len(entities_to_sync)} entities to determine processing order…")
@@ -633,7 +635,8 @@ def update(configuration: dict, state: dict):
                     if probe_total > 0:
                         pct = round(records_this_sync / probe_total * 100, 1)
                         log.info(
-                            f"    {e}: reached {cursor} — fetched {pct}% of {probe_total:,} pending records this sync"
+                            f"    {e}: reached {cursor} — fetched {pct}% "
+                            f"of {probe_total:,} pending records this sync"
                         )
                     else:
                         log.info(f"    {e}: reached {cursor}")
@@ -648,7 +651,8 @@ def update(configuration: dict, state: dict):
                     log.info(msg)
             log.info("--- End: Repull Summary ---")
 
-        # Final checkpoint marks the sync as complete and persists the hourly drift counts for the next run.
+        # Final checkpoint marks the sync as complete and persists hourly drift counts
+        # for the next run.
         op.checkpoint(
             {
                 "entity_cursors": entity_cursors,
@@ -668,7 +672,8 @@ def update(configuration: dict, state: dict):
             )
         else:
             log.info(
-                f"Sync completed successfully | page_size={page_size}, max_pages={max_pages}, concurrency={MAX_CONCURRENT_ENTITIES}"
+                f"Sync completed successfully | page_size={page_size}, "
+                f"max_pages={max_pages}, concurrency={MAX_CONCURRENT_ENTITIES}"
             )
 
     except RuntimeError:

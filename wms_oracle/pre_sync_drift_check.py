@@ -123,7 +123,8 @@ def run_pre_cursor_hourly_check(
                 prev_count = prev_hourly_counts.get(entity, {}).get(hour_str)
                 if prev_count is not None and count > prev_count:
                     log.warning(
-                        f"Pre-cursor drift: {entity} {hour_str} count increased {prev_count} → {count}"
+                        f"Pre-cursor drift: {entity} {hour_str} count increased "
+                        f"{prev_count} → {count}"
                     )
                     hours_to_repull.append((entity, hour_str, gte, lt, prev_count, count))
 
@@ -186,7 +187,10 @@ def run_pre_cursor_hourly_check(
             mod_ts_lt_filter=lt,
         )
         if verified_count == new_count:
-            verify_msg = f"Verified: {entity} {hour_str} confirmed at {new_count} ({total_pulled} records re-pulled)"
+            verify_msg = (
+                f"Verified: {entity} {hour_str} confirmed at {new_count} "
+                f"({total_pulled} records re-pulled)"
+            )
             log.info(verify_msg)
             summary_lines.append(("info", verify_msg))
         else:
