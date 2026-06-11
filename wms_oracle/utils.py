@@ -1,6 +1,6 @@
 """Constants, entity list, custom exceptions, and timestamp utilities."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 # ── Entity list ───────────────────────────────────────────────────────────────
 
@@ -55,13 +55,10 @@ MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 1
 MAX_CONCURRENT_ENTITIES = 10
 DEFAULT_MAX_PAGES = 100
-INCREMENTAL_LOOKBACK_MINUTES = 0
-INCREMENTAL_LAG_MINUTES = 0
 BACKFILL_WINDOW_DAYS = 30  # Width of each backfill fetch window
 BACKFILL_MAX_EMPTY_WINDOWS = 12  # Stop after this many consecutive empty windows (~1 year)
-INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS = (
-    600  # Max wall-clock seconds between incremental checkpoints
-)
+# Max wall-clock seconds between incremental checkpoints
+INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS = 600
 
 
 # ── Configuration validation ──────────────────────────────────────────────────
@@ -73,8 +70,8 @@ def validate_configuration(configuration: dict):
         if key not in configuration:
             raise ValueError(f"Missing required configuration value: {key}")
 
-    if not configuration.get("base_url", "").startswith(("http://", "https://")):
-        raise ValueError("base_url must start with http:// or https://")
+    if not configuration.get("base_url", "").startswith("https://"):
+        raise ValueError("base_url must start with https://")
 
     try:
         int(configuration.get("page_size", str(DEFAULT_PAGE_SIZE)))
@@ -110,7 +107,3 @@ def to_utc(timestamp_str: str) -> str:
         return timestamp_str
 
 
-def apply_lookback(cursor_str: str, minutes: int = INCREMENTAL_LOOKBACK_MINUTES) -> str:
-    """Subtract `minutes` from a cursor timestamp string, preserving timezone offset."""
-    dt = datetime.fromisoformat(cursor_str)
-    return (dt - timedelta(minutes=minutes)).isoformat()

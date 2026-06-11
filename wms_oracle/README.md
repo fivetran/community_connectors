@@ -52,10 +52,9 @@ fivetran init --template wms_oracle
     "base_url": "https://<YOUR_REGION>.wms.ocs.oraclecloud.com/<YOUR_ORG>",
     "username": "<YOUR_USERNAME>",
     "password": "<YOUR_PASSWORD>",
-    "page_size": "500",
+    "page_size": "1000",
     "max_pages": "100",
     "lookback_check_hours": "24",
-    "lag_minutes": "0",
     "test_entities": ""
 }
 ```
@@ -68,21 +67,9 @@ fivetran init --template wms_oracle
 | `page_size` | No | Records per page (default `1000`). Reduce if timeouts occur; the connector also adapts automatically |
 | `max_pages` | No | Soft page limit per entity per sync for backfill (default `100`). The connector continues past this limit until the current timestamp group is fully consumed |
 | `lookback_check_hours` | No | Number of hours before each entity's cursor to probe for drift (default `24`) |
-| `lag_minutes` | No | Minutes to subtract from the current time when computing the incremental upper bound (default `0`) |
 | `test_entities` | No | Comma-separated list of entity names to sync; leave empty to sync all entities |
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
-
-
-## Requirements file
-
-The `requirements.txt` file specifies the Python libraries required by the connector beyond those pre-installed in the Connector SDK runtime.
-
-```
-requests>=2.28.0
-```
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 
 ## Authentication
@@ -101,7 +88,17 @@ On timeout, the connector halves `page_size` (down to a minimum of 25) and recal
 
 ## Data handling
 
-Incremental entities (those whose Oracle WMS describe endpoint lists a `mod_ts` field) use cursor-based sync. Entities without `mod_ts` support receive a full scan each sync, preceded by `op.truncate()` to soft-delete removed records.
+The connector determines whether each entity supports incremental sync by calling the Oracle WMS describe endpoint on the entity's first sync. If the response includes a `mod_ts` field, the entity uses cursor-based incremental sync; otherwise it receives a full scan each sync, preceded by `op.truncate()` to soft-delete records removed from the source. The describe result is cached in connector state so the call is only made once per entity. To force re-detection — for example, after an Oracle WMS upgrade that adds `mod_ts` support to an entity — remove that entity's entry from the `mod_ts_support` key in connector state.
+
+Note: a crash between `op.truncate()` and the first `op.upsert()` for a full-scan entity leaves the destination table empty until the next sync completes a full re-fetch.
+
+To add an entity, append its Oracle WMS API name to `ORACLE_WMS_ENTITIES` in `utils.py` and add a corresponding entry to the `schema()` function in `connector.py`:
+
+```python
+{"table": "new_entity", "primary_key": ["id"]}
+```
+
+On the first sync after adding an entity the connector automatically detects the appropriate sync strategy. The `inventory_history` entity is included in `utils.py` as a commented-out example — uncomment it if your Oracle WMS instance supports this entity.
 
 Each record is delivered via `op.upsert()` using `id` as the primary key. The two monitoring tables use composite primary keys:
 
@@ -109,6 +106,17 @@ Each record is delivered via `op.upsert()` using `id` as the primary key. The tw
 - `pre_cursor_hourly_counts`: `(table_name, hour_start, batch_id)`
 
 Timestamps are normalized to second precision before being used as Oracle WMS query parameters, as the API rejects sub-second values.
+
+
+## Pre-cursor drift check
+
+Before each sync, the connector probes the Oracle WMS record count for each clock-aligned hourly window in the `lookback_check_hours` period immediately before each entity's incremental cursor. These counts are compared against the counts recorded during the prior sync. If a window's count has increased — indicating a long-running transaction that committed with a `mod_ts` inside an already-advanced window — the connector re-pulls all records for that window and upserts them before the main sync begins.
+
+A partial window (the sub-hour gap between the last full clock-aligned hour and the cursor's exact position) is probed and written to the `pre_cursor_hourly_counts` monitoring table for visibility, but is never compared against prior counts. This window grows legitimately each sync as the cursor advances within the current hour; comparing it would produce false positives.
+
+After each re-pull, the connector probes the count again to verify it matches the value that triggered the re-pull. A mismatch is logged as a warning, indicating the data may still be in flux.
+
+The `lookback_check_hours` configuration key controls how many hours are probed (default `24`). Transactions delayed by less than approximately one hour fall within the current-hour partial window and are not compared against prior counts.
 
 
 ## Error handling
@@ -152,12 +160,26 @@ Timestamps are normalized to second precision before being used as Oracle WMS qu
 | `putaway_type` | Putaway type codes |
 | `vendor` | Vendor master records |
 
-2 monitoring tables:
+2 monitoring tables written each sync for observability:
 
-| Table | Primary key | Description |
-|-------|-------------|-------------|
-| `counts_by_day` | `(table_name, mod_ts_day, batch_id)` | Daily mod_ts record counts for the last 30 calendar days, written each sync |
-| `pre_cursor_hourly_counts` | `(table_name, hour_start, batch_id)` | Hourly mod_ts counts for the lookback window before each entity's cursor, written each sync |
+`counts_by_day` records the number of records with a `mod_ts` on each calendar day for the last 30 days per entity. Use it to track daily modification volume, detect unexpected drops or spikes, and verify that recent days are receiving writes.
+
+| Column | Primary key | Description |
+|--------|-------------|-------------|
+| `table_name` | Yes | Entity name |
+| `mod_ts_day` | Yes | Calendar day (`YYYY-MM-DD`) |
+| `batch_id` | Yes | Sync start timestamp; identifies which sync wrote the row |
+| `record_count` | No | Number of records with a `mod_ts` on this day |
+
+`pre_cursor_hourly_counts` records `mod_ts` counts for each clock-aligned hourly window in the drift-check lookback period before each entity's cursor. Use it to audit drift-check activity: compare `record_count` across `batch_id` values for the same `(table_name, hour_start)` to see which hours increased between syncs and triggered a re-pull.
+
+| Column | Primary key | Description |
+|--------|-------------|-------------|
+| `table_name` | Yes | Entity name |
+| `hour_start` | Yes | UTC hour window start (ISO format) |
+| `batch_id` | Yes | Sync start timestamp; identifies which sync wrote the row |
+| `record_count` | No | Number of records with a `mod_ts` in this window |
+| `is_partial` | No | `true` for the sub-hour gap between the last full clock-aligned hour and the exact cursor position — written for visibility only, not used for drift comparison |
 
 
 ## Additional files

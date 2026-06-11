@@ -36,7 +36,6 @@ from utils import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_MAX_PAGES,
     MAX_CONCURRENT_ENTITIES,
-    INCREMENTAL_LAG_MINUTES,
     OrderingNotSupportedError,
     validate_configuration,
     get_current_timestamp,
@@ -216,9 +215,9 @@ def process_entity(
                     backfill_ran = True
                     try:
                         # On first sync backfill_cursor is None (no prior state). Seed it at
-                        # sync_start_time so the first window starts just below the lag boundary
-                        # and walks cleanly backwards — avoids fetching in-flight records and
-                        # prevents a gap between the backfill cursor and the incremental cursor.
+                        # sync_start_time so the first window starts at the current time and
+                        # walks cleanly backwards — prevents a gap between the backfill cursor
+                        # and the incremental cursor.
                         initial_backfill_cursor = (
                             backfill_cursor if backfill_cursor is not None else sync_start_time
                         )
@@ -302,7 +301,6 @@ def update(configuration: dict, state: dict):
     password = configuration.get("password")
     page_size = int(configuration.get("page_size", DEFAULT_PAGE_SIZE))
     max_pages = int(configuration.get("max_pages", DEFAULT_MAX_PAGES))
-    lag_minutes = int(configuration.get("lag_minutes", INCREMENTAL_LAG_MINUTES))
     lookback_check_hours = int(configuration.get("lookback_check_hours", 24))
     test_entities_raw = configuration.get("test_entities")
     test_entities = (
@@ -312,24 +310,13 @@ def update(configuration: dict, state: dict):
     entity_cursors = state.get("entity_cursors", {})
     entity_backfill_cursors = state.get("entity_backfill_cursors", {})
 
-    # Upper bound: lag behind current time so in-flight transactions can commit.
-    # Oracle records mod_ts at transaction START not commit time, so a fixed lag ensures
-    # we don't query a window that might still be receiving writes.
-    current_time = get_current_timestamp()
-    sync_start_time = (
-        (
-            datetime.fromisoformat(current_time.replace("Z", "+00:00"))
-            - timedelta(minutes=lag_minutes)
-        )
-        .astimezone(timezone.utc)
-        .isoformat()
-    )
+    sync_start_time = get_current_timestamp()
 
     entities_to_sync = [
         e for e in ORACLE_WMS_ENTITIES if test_entities is None or e in test_entities
     ]
     log.info(
-        f"Sync started at: {current_time} | upper bound: {sync_start_time} | "
+        f"Sync started at: {sync_start_time} | "
         f"page_size={page_size}, max_pages={max_pages}, concurrency={MAX_CONCURRENT_ENTITIES}"
     )
     log.info(f"Processing {len(entities_to_sync)} entities")

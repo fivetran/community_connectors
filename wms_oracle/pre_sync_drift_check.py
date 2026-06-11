@@ -18,7 +18,7 @@ Window design
   NOT saved to state.
 
 Blind spot: transactions delayed by less than ~60 minutes (sub-hour gap) are not
-detected here — that range is already covered by lag_minutes.
+detected here — that range falls within the current-hour partial window.
 """
 
 import time
