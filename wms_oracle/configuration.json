@@ -1,0 +1,10 @@
+{
+    "base_url": "https://<YOUR_REGION>.wms.ocs.oraclecloud.com/<YOUR_ORG>",
+    "username": "<YOUR_USERNAME>",
+    "password": "<YOUR_PASSWORD>",
+    "page_size": "500",
+    "max_pages": "100",
+    "lookback_check_hours": "24",
+    "lag_minutes": "0",
+    "test_entities": ""
+}
