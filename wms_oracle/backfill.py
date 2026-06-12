@@ -221,9 +221,9 @@ def run_backfill_phase(
             )
         if (
             bf_pages_fetched >= max_pages
-            and bf_prev_page_min_ts is not None
-            and page_max_ts is not None
-            and page_max_ts < bf_prev_page_min_ts
+            and bf_prev_page_min_ts is not None  # noqa: W503
+            and page_max_ts is not None  # noqa: W503
+            and page_max_ts < bf_prev_page_min_ts  # noqa: W503
         ):
             cursor_dt = datetime.fromisoformat(bf_prev_page_min_ts)
             checkpoint_fn(cursor_dt)

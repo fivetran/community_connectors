@@ -240,8 +240,8 @@ def fetch_entity_data(
 
     while (total_pages is None or page <= total_pages) and (
         max_pages is None
-        or pages_fetched < max_pages
-        or (is_desc and ts_when_max_reached is not None and extreme_mod_ts == ts_when_max_reached)
+        or pages_fetched < max_pages  # noqa: W503
+        or (is_desc and ts_when_max_reached is not None and extreme_mod_ts == ts_when_max_reached)  # noqa: W503
     ):
 
         # Adaptive page size: on timeout, halve page_size and recalculate the page number
@@ -331,9 +331,9 @@ def fetch_entity_data(
 
         if (
             is_desc
-            and max_pages is not None
-            and pages_fetched == max_pages
-            and ts_when_max_reached is None
+            and max_pages is not None  # noqa: W503
+            and pages_fetched == max_pages  # noqa: W503
+            and ts_when_max_reached is None  # noqa: W503
         ):
             ts_when_max_reached = extreme_mod_ts
             if ts_when_max_reached:
@@ -345,8 +345,8 @@ def fetch_entity_data(
 
         if (
             checkpoint_callback
-            and pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES
-            and extreme_mod_ts
+            and pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES  # noqa: W503
+            and extreme_mod_ts  # noqa: W503
         ):
             checkpoint_callback(extreme_mod_ts)
             pages_since_checkpoint = 0
