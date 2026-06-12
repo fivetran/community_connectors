@@ -134,7 +134,7 @@ def run_incremental_phase(
                 phase1a_page = 1
                 if checkpoint_fn and (
                     time.monotonic() - last_checkpoint_wall
-                    >= INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS  # noqa: W503
+                    >= INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS
                 ):
                     checkpoint_fn(cursor_dt)
                     last_checkpoint_wall = time.monotonic()

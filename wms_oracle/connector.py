@@ -376,7 +376,7 @@ def update(configuration: dict, state: dict):
     entities_to_sync.sort(key=lambda e: entity_counts.get(e, 0), reverse=True)
     log.info(
         "Processing order (by record count): "
-        + ", ".join(f"{e}({entity_counts.get(e, 0):,})" for e in entities_to_sync)  # noqa: W503
+        + ", ".join(f"{e}({entity_counts.get(e, 0):,})" for e in entities_to_sync)
     )
 
     # ── Classify: incremental-only (sequential) vs backfill/full-scan (parallel) ──
