@@ -591,6 +591,9 @@ def _build_plan(
     )
     # Detect columns that require explicit typing based on their data types
     explicit_cols = detect_typed_columns(selected_cols_with_types=selected_cols_with_types)
+    # Merge user-defined column_types from TABLE_SPECS; auto-detected special types take precedence
+    user_column_types = spec.get("column_types") or {}
+    explicit_cols = {**user_column_types, **explicit_cols}
     # List of selected column names required for building the SQL query
     selected_columns = [column for column, _ in selected_cols_with_types]
 

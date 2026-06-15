@@ -55,6 +55,11 @@ CHUNK_SIZE = 10000
 # - use_chunking: (Optional) Boolean to enable/disable chunking for this specific table.
 #                 If not specified, defaults to False
 #                 Note: Chunking is only applicable for tables with INCREMENTAL strategy and replication_key.
+# - column_types: (Optional) Dict mapping column names to explicit Fivetran type strings.
+#                 Use this to declare columns that contain only NULL values during a sync, which
+#                 Fivetran cannot type-infer automatically. Declared columns are merged with
+#                 auto-detected special types (date, timestamp, super); auto-detected types win
+#                 on conflict. If omitted or empty, no additional columns are declared.
 
 TABLE_SPECS = [
     {
@@ -107,6 +112,12 @@ TABLE_SPECS = [
         "replication_key": None,
         "include": [],
         "exclude": [],
+        "column_types": {
+            "sales": "STRING",
+            # Explicitly declare columns that may contain only NULL values so Fivetran
+            # creates them in the destination even when no non-null data is observed.
+            # Example: "quantity_sold": "SHORT", "commission": "FLOAT"
+        },
     },
     {
         "name": "tickit.venue",
