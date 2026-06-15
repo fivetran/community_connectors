@@ -1,0 +1,25 @@
+redshift/large_data_volume/redshift_client.py
+  61d7f54941026778 594-596
+redshift/large_data_volume/table_specs.py
+  61d7f54941026778 58-62,115,117-118,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "3286d64764dcad1580ea342c0518a433ac13d94b",
+  "prompts": {
+    "61d7f54941026778": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aea341b4-6e22-49e4-8500-117333b30dd1",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Sahil Khirwal <sahil.khirwal@fivetran.com>",
+      "messages": [],
+      "total_additions": 16,
+      "total_deletions": 0,
+      "accepted_lines": 12,
+      "overriden_lines": 1
+    }
+  }
+}
