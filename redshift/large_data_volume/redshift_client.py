@@ -62,6 +62,7 @@ class TablePlan:
         strategy: str - Replication strategy ('FULL' or 'INCREMENTAL')
         replication_key: Optional[str] - Name of the replication key column, or None
         use_chunking: bool - Whether to use chunked cursor processing for this table (true) or not (false)
+        filter_condition: Optional[dict] - Static WHERE filter applied on every sync, or None
     """
 
     stream: str
@@ -73,6 +74,7 @@ class TablePlan:
     strategy: str
     replication_key: Optional[str]
     use_chunking: bool
+    filter_condition: Optional[dict]
 
 
 class _ConnectionPool:
@@ -281,7 +283,7 @@ def detect_typed_columns(selected_cols_with_types):
     return explicit
 
 
-def build_select(redshift_schema, table, columns, replication_key, bookmark, upper_bound=None):
+def build_select(redshift_schema, table, columns, replication_key, bookmark, upper_bound=None, filter_condition=None):
     """
     Build a parameterized SELECT SQL query for the given table and columns.
     If a replication_key and bookmark are provided, add a WHERE clause to filter rows.
@@ -294,6 +296,7 @@ def build_select(redshift_schema, table, columns, replication_key, bookmark, upp
         replication_key: name of the replication key column, or None
         bookmark: last synced value of the replication key, or None
         upper_bound: optional upper bound for the replication_key (for chunking)
+        filter_condition: optional dict with keys 'column', 'operator', 'value' for a static WHERE filter
     Returns:
         A tuple of (sql_query, params) where sql_query is the parameterized SQL string
         and params is a list of parameters to bind to the query.
@@ -307,6 +310,10 @@ def build_select(redshift_schema, table, columns, replication_key, bookmark, upp
 
     params = []
     where_conditions = []
+    if filter_condition:
+        # Apply the static filter condition (e.g. "createddate > '2020-01-10'")
+        where_conditions.append(f'"{filter_condition["column"]}" {filter_condition["operator"]} %s')
+        params.append(filter_condition["value"])
     if replication_key and bookmark is not None:
         # If a bookmark is provided, add a WHERE clause to filter rows greater than the bookmark
         where_conditions.append(f'"{replication_key}" > %s')
@@ -340,7 +347,7 @@ def _declare_cursor(cursor, table_cursor, sql_query, params):
     log.info(f"Successfully declared cursor {table_cursor}")
 
 
-def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_size):
+def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_size, filter_condition=None):
     """
     Find the replication_key value at approximately row chunk_size from the current bookmark.
     This provides a safe boundary to end the chunk, ensuring all rows with the boundary
@@ -352,12 +359,23 @@ def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_s
         replication_key: name of the replication key column
         bookmark: current bookmark value (last synced replication_key value)
         chunk_size: target number of rows per chunk
+        filter_condition: optional dict with keys 'column', 'operator', 'value' for a static WHERE filter
 
     Returns:
         The replication_key value at the chunk boundary, or None if no more rows exist.
     """
-    # Build WHERE clause conditionally based on bookmark presence
-    where_clause = f'WHERE "{replication_key}" > %s' if bookmark is not None else ""
+    # Build WHERE clause from bookmark and optional static filter
+    where_parts = []
+    params = []
+    if bookmark is not None:
+        where_parts.append(f'"{replication_key}" > %s')
+        params.append(bookmark)
+    if filter_condition:
+        where_parts.append(f'"{filter_condition["column"]}" {filter_condition["operator"]} %s')
+        params.append(filter_condition["value"])
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    params.append(chunk_size - 1)  # OFFSET
+
     sql = f"""
         SELECT "{replication_key}"
         FROM "{plan.schema}"."{plan.table}"
@@ -365,7 +383,6 @@ def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_s
         ORDER BY "{replication_key}"
         OFFSET %s LIMIT 1
     """
-    params = [bookmark, chunk_size - 1] if bookmark is not None else [chunk_size - 1]
 
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
@@ -616,6 +633,7 @@ def _build_plan(
         strategy=strategy,
         replication_key=replication_key,
         use_chunking=use_chunking,
+        filter_condition=spec.get("filter") or None,
     )
     return plan
 
@@ -747,6 +765,7 @@ def sync_table_chunked_cursors(connection, plan, state, bookmark, batch_size):
             replication_key=replication_key,
             bookmark=current_bookmark,
             chunk_size=CHUNK_SIZE,
+            filter_condition=plan.filter_condition,
         )
 
         chunk_number += 1
@@ -765,6 +784,7 @@ def sync_table_chunked_cursors(connection, plan, state, bookmark, batch_size):
                 replication_key=replication_key,
                 bookmark=current_bookmark,
                 upper_bound=upper_bound,
+                filter_condition=plan.filter_condition,
             )
         else:
             # If upper_bound is None, there are fewer than CHUNK_SIZE rows remaining - process all of them
@@ -778,6 +798,7 @@ def sync_table_chunked_cursors(connection, plan, state, bookmark, batch_size):
                 columns=plan.selected_columns,
                 replication_key=replication_key,
                 bookmark=current_bookmark,
+                filter_condition=plan.filter_condition,
             )
 
         with connection.cursor() as cursor:
@@ -913,6 +934,7 @@ def sync_table_server_side_cursor(connection, replication_key, plan, state, book
         columns=plan.selected_columns,
         replication_key=replication_key,
         bookmark=bookmark,
+        filter_condition=plan.filter_condition,
     )
 
     # Initialize counter to track number of rows processed
