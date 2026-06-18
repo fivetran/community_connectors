@@ -1,0 +1,8 @@
+{
+  "host": "<PI_SQL_DAS_HOSTNAME_OR_IP>",
+  "port": "5461",
+  "database": "<PI_AF_DATABASE_NAME>",
+  "username": "<PI_USERNAME>",
+  "password": "<PI_PASSWORD>",
+  "odbc_driver": "PI ODBC"
+}
