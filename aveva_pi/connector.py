@@ -56,10 +56,10 @@ EPOCH_ISO = "1970-01-01T00:00:00Z"
 # ---------------------------------------------------------------------------
 
 def validate_configuration(configuration: dict) -> None:
-    """Raise ValueError if any required configuration key is missing."""
+    """Raise ValueError if any required configuration key is missing or blank."""
     for key in ("base_url", "username", "password"):
-        if key not in configuration:
-            raise ValueError(f"Missing required configuration key: '{key}'")
+        if not configuration.get(key):
+            raise ValueError(f"Missing or empty required configuration key: '{key}'")
 
 
 # ---------------------------------------------------------------------------
