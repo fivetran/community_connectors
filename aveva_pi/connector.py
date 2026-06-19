@@ -1,14 +1,20 @@
 """AVEVA PI Connector for Fivetran Connector SDK.
 
-Syncs data from AVEVA PI (formerly OSIsoft PI) via the PI SQL Data Access Server
-(PI SQL DAS) using an ODBC connection. Supports full reimport and cursor-based
-incremental syncs with time-windowed queries and automatic window backoff.
+Syncs data from AVEVA PI (formerly OSIsoft PI) via the PI Web API REST interface.
+No proprietary drivers required — the connector communicates over HTTPS using
+standard Basic authentication.
+
+Tables synced:
+  - elements        : PI AF elements (full reimport each sync)
+  - attributes      : PI AF element attributes (full reimport each sync)
+  - event_frames    : PI AF event frames (cursor-based incremental by start_time)
+  - recorded_values : PI archive / recorded data (cursor-based incremental, opt-in via
+                      sync_recorded_values = "true" in configuration)
 
 Prerequisites:
-  - AVEVA PI SQL Client (ODBC driver) installed on the host machine.
-    Download from: https://customers.osisoft.com (AVEVA Customer Portal).
-  - pyodbc Python library (see requirements.txt).
-  - PI SQL DAS service running and reachable on the configured host/port.
+  - PI Web API 2019 SP1 or later, reachable over HTTPS from the connector host.
+  - Basic authentication enabled on the PI Web API server.
+  - The PI user must have read access to the configured AF database.
 
 See the Technical Reference: https://fivetran.com/docs/connectors/connector-sdk/technical-reference
 See Best Practices:          https://fivetran.com/docs/connectors/connector-sdk/best-practices
@@ -21,7 +27,8 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Generator
 
-import pyodbc
+import requests
+from requests.auth import HTTPBasicAuth
 
 from fivetran_connector_sdk import Connector
 from fivetran_connector_sdk import Logging as log
@@ -32,68 +39,16 @@ from fivetran_connector_sdk import Operations as op
 # Constants
 # ---------------------------------------------------------------------------
 
-SOURCE_NAME = "AVEVA PI"
+SOURCE_NAME = "AVEVA PI Web API"
 
-# Maximum retry attempts for transient connection failures before raising
 MAX_RETRIES = 3
+MAX_COUNT = 1000              # PI Web API maximum items per response page
+INITIAL_WINDOW_DAYS = 30      # Starting size of the incremental time window (days)
+MIN_WINDOW_HOURS = 1          # If the adaptive window shrinks below this, surface the error
+LATE_ARRIVAL_ROLLBACK_HOURS = 2   # Roll back cursor by this many hours on subsequent syncs
+CHECKPOINT_INTERVAL = 10_000  # Emit a checkpoint every N rows during full reimport
 
-# Default PI SQL DAS port
-DEFAULT_PI_PORT = 5461
-
-# Column name that flags a table as supporting cursor-based incremental sync
-INCREMENTAL_COLUMN = "Modified"
-
-# The Archive table uses a different incremental column than standard PI tables
-ARCHIVE_TABLE = "Archive"
-ARCHIVE_INCREMENTAL_COLUMN = "TimeStamp"
-
-# Only these two columns contribute to the hash ID for Archive rows
-ARCHIVE_HASH_COLUMNS: frozenset[str] = frozenset({"AttributeID", "TimeStamp"})
-
-# Starting size of the time window for incremental queries (days)
-INITIAL_WINDOW_DAYS = 365
-
-# If the adaptive window shrinks below this threshold, give up and surface the error
-MIN_WINDOW_HOURS = 1
-
-# Roll back the start cursor by this many hours for Archive to catch late-arriving records
-LATE_ARRIVAL_ROLLBACK_HOURS = 2
-
-# Emit a checkpoint every N rows during full reimport to signal liveness to Fivetran
-CHECKPOINT_INTERVAL = 10_000
-
-# Error message substrings that identify an authentication failure (not worth retrying)
-_AUTH_ERROR_PATTERNS = [
-    "403 Forbidden",
-    "401 Unauthorized",
-    "Unknown PI SQL DAS",
-    "Connection failed. Server returned HTTP response code: 400",
-    "Please make sure the PI SQL DAS service is running",
-]
-
-# Maps AVEVA PI SQL type names to Fivetran Connector SDK type strings.
-# Types not present in this map are skipped with a warning.
-_PI_TYPE_MAP: dict[str, str] = {
-    "AnsiString":   "STRING",
-    "AnsiStringCs": "STRING",
-    "TimeSpan":     "STRING",
-    "Guid":         "STRING",
-    "String":       "STRING",
-    "StringCs":     "STRING",
-    "Variant":      "STRING",
-    "Boolean":      "BOOLEAN",
-    "DateTime":     "UTC_DATETIME",
-    "Double":       "DOUBLE",
-    "Single":       "DOUBLE",
-    "Int8":         "SHORT",
-    "Int16":        "SHORT",
-    "UInt8":        "SHORT",
-    "Int32":        "INT",
-    "UInt16":       "INT",
-    "Int64":        "LONG",
-    "UInt32":       "LONG",
-    "UInt64":       "LONG",
-}
+EPOCH_ISO = "1970-01-01T00:00:00Z"
 
 
 # ---------------------------------------------------------------------------
@@ -101,382 +56,449 @@ _PI_TYPE_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def validate_configuration(configuration: dict) -> None:
-    """
-    Validate the configuration dictionary to ensure it contains all required keys.
-    Raises ValueError if any required key is absent.
-    Args:
-        configuration: a dictionary containing connection settings for the connector.
-    """
-    for key in ("host", "username", "password"):
+    """Raise ValueError if any required configuration key is missing."""
+    for key in ("base_url", "username", "password"):
         if key not in configuration:
             raise ValueError(f"Missing required configuration key: '{key}'")
 
 
 # ---------------------------------------------------------------------------
-# Connection management
+# HTTP session and request helpers
 # ---------------------------------------------------------------------------
 
-def _build_conn_str(configuration: dict) -> str:
-    """Build the ODBC connection string from configuration values."""
-    # Users may need to change 'odbc_driver' to match their PI SQL Client installation.
-    # Common values: "PI ODBC", "PI SQL Client"
-    driver   = configuration.get("odbc_driver", "PI ODBC")
-    host     = configuration["host"]
-    port     = int(configuration.get("port", DEFAULT_PI_PORT))
-    database = configuration.get("database", "")
-    username = configuration["username"]
-    password = configuration["password"]
-    return (
-        f"DRIVER={{{driver}}};"
-        f"Server={host};"
-        f"Port={port};"
-        f"Database={database};"
-        f"UID={username};"
-        f"PWD={password};"
-        f"Time Zone=UTC;"
-    )
+def _build_session(configuration: dict) -> requests.Session:
+    """Create an authenticated requests.Session for PI Web API calls."""
+    session = requests.Session()
+    session.auth = HTTPBasicAuth(configuration["username"], configuration["password"])
+    session.headers.update({
+        "Accept": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+    })
+    # Allow users to disable TLS verification for self-signed PI Web API certificates
+    session.verify = configuration.get("verify_ssl", "true").lower() != "false"
+    return session
 
 
-def get_connection(configuration: dict) -> pyodbc.Connection:
+def _base_url(configuration: dict) -> str:
+    return configuration["base_url"].rstrip("/")
+
+
+def _api_get(session: requests.Session, url: str, params: dict | None = None) -> dict:
     """
-    Open a pyodbc connection to PI SQL DAS, retrying up to MAX_RETRIES times.
+    GET a PI Web API endpoint and return the parsed JSON body.
 
-    Raises ValueError immediately on authentication errors (no retry — the
-    user must fix credentials before the next sync).
-    Raises ConnectionError after MAX_RETRIES consecutive transient failures.
+    Raises ValueError immediately on 4xx responses (auth failures, not-found, etc.) —
+    these are not worth retrying. Retries up to MAX_RETRIES times on 5xx or network errors.
     """
-    conn_str = _build_conn_str(configuration)
-    last_exc: Exception = RuntimeError("No connection attempt made")
-
+    last_exc: Exception = RuntimeError("No request attempted")
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            conn = pyodbc.connect(conn_str, autocommit=True)
-            log.info(f"Connected to {SOURCE_NAME}")
-            return conn
-        except pyodbc.Error as exc:
-            msg = str(exc)
-            if any(p in msg for p in _AUTH_ERROR_PATTERNS):
-                raise ValueError(f"Authentication failed for {SOURCE_NAME}: {msg}") from exc
+            resp = session.get(url, params=params, timeout=30)
+            if resp.status_code in (401, 403):
+                raise ValueError(
+                    f"Authentication error ({resp.status_code}) for {url}: {resp.text[:200]}"
+                )
+            if 400 <= resp.status_code < 500:
+                raise ValueError(
+                    f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}"
+                )
+            resp.raise_for_status()
+            return resp.json()
+        except ValueError:
+            raise
+        except Exception as exc:
             last_exc = exc
-            log.warning(f"Connection attempt {attempt}/{MAX_RETRIES} failed: {msg}")
+            log.warning(f"Request attempt {attempt}/{MAX_RETRIES} failed for {url}: {exc}")
 
     raise ConnectionError(
-        f"Could not connect to {SOURCE_NAME} after {MAX_RETRIES} attempts."
+        f"Could not reach {SOURCE_NAME} after {MAX_RETRIES} attempts. URL: {url}"
     ) from last_exc
 
 
+def _paginate(
+    session: requests.Session, url: str, params: dict | None = None
+) -> Generator[dict, None, None]:
+    """
+    Yield every item from a paginated PI Web API response.
+
+    PI Web API paginates via a 'Links.Next' URL embedded in the response body.
+    """
+    next_url: str | None = url
+    next_params: dict | None = params
+    while next_url:
+        body = _api_get(session, next_url, next_params)
+        for item in body.get("Items", []):
+            yield item
+        next_url = body.get("Links", {}).get("Next")
+        next_params = None  # Parameters are already encoded in the Next URL
+
+
 # ---------------------------------------------------------------------------
-# Metadata discovery
+# Database discovery
 # ---------------------------------------------------------------------------
 
-def _map_type(pi_type: str) -> str | None:
-    """Map a PI SQL type name to a Fivetran SDK type. Returns None for unknown types."""
-    mapped = _PI_TYPE_MAP.get(pi_type)
-    if mapped is None:
-        log.warning(f"Unsupported PI type '{pi_type}' — column will be skipped.")
-    return mapped
-
-
-def discover_tables(conn: pyodbc.Connection) -> dict[str, list[str]]:
+def get_database_web_id(
+    session: requests.Session, base_url: str, database_name: str | None
+) -> str:
     """
-    Return all TABLE-type objects grouped by schema: {schema_name: [table_name, ...]}.
-    Equivalent to JDBC DatabaseMetaData.getTables() in the original Java connector.
+    Find the WebId of the target AF database.
+
+    Searches all asset servers visible to this PI Web API instance. If database_name
+    is provided, returns the first database with that exact name. If omitted, returns
+    the first database found across any server.
+
+    Raises ValueError if the target database cannot be found.
     """
-    tables: dict[str, list[str]] = {}
-    for row in conn.cursor().tables(tableType="TABLE"):
-        tables.setdefault(row.table_schem, []).append(row.table_name)
-    return tables
+    servers = _api_get(session, f"{base_url}/assetservers").get("Items", [])
+    if not servers:
+        raise ValueError("No PI Asset Servers found via PI Web API. Check the base_url.")
+
+    for server in servers:
+        server_web_id = server["WebId"]
+        databases = _api_get(
+            session, f"{base_url}/assetservers/{server_web_id}/assetdatabases"
+        ).get("Items", [])
+        for db in databases:
+            if database_name is None or db.get("Name") == database_name:
+                log.info(
+                    f"Connected to database '{db['Name']}' on server '{server.get('Name')}'"
+                )
+                return db["WebId"]
+
+    target = f"'{database_name}'" if database_name else "any database"
+    raise ValueError(f"Could not find {target} on any PI Asset Server. Check database_name.")
 
 
-def get_columns(conn: pyodbc.Connection, table: str, schema: str) -> list[dict]:
-    """
-    Return [{"name": column_name, "type": fivetran_type}, ...] for each supported column.
-    Columns with PI types not in _PI_TYPE_MAP are omitted (a warning is logged).
-    """
-    columns = []
-    for row in conn.cursor().columns(table=table, schema=schema):
-        fivetran_type = _map_type(row.type_name)
-        if fivetran_type:
-            columns.append({"name": row.column_name, "type": fivetran_type})
-    return columns
+# ---------------------------------------------------------------------------
+# Timestamp helpers
+# ---------------------------------------------------------------------------
 
-
-def get_primary_keys(conn: pyodbc.Connection, table: str, schema: str) -> list[str]:
-    """Return primary key column names for the given table."""
-    pks = []
+def _parse_pi_timestamp(ts: str | None) -> datetime | None:
+    """Parse a PI Web API ISO 8601 timestamp string to a UTC-aware datetime."""
+    if not ts:
+        return None
     try:
-        for row in conn.cursor().primaryKeys(table=table, schema=schema):
-            pks.append(row.column_name)
-    except pyodbc.Error as exc:
-        log.warning(f"Could not fetch primary keys for {schema}.{table}: {exc}")
-    return pks
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _fmt_ts(dt: datetime) -> str:
+    """Format a datetime as a PI Web API-compatible UTC timestamp string."""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------
-# SQL query helpers
+# Record extraction
 # ---------------------------------------------------------------------------
 
-def _dq(name: str) -> str:
-    """Double-quote a SQL identifier, escaping any embedded double-quotes."""
-    return '"' + name.replace('"', '""') + '"'
+def _category_names(item: dict) -> str:
+    """Serialize the CategoryNames list (if present) to a JSON array string."""
+    return json.dumps(item.get("CategoryNames") or [])
 
 
-def _fmt_dt(dt: datetime) -> str:
-    """Format a datetime as a PI SQL timestamp literal (UTC, 'YYYY-MM-DD HH:MM:SS')."""
-    return "'" + dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "'"
+def _extract_element(item: dict) -> dict:
+    return {
+        "web_id":          item.get("WebId", ""),
+        "name":            item.get("Name", ""),
+        "description":     item.get("Description", ""),
+        "path":            item.get("Path", ""),
+        "template_name":   item.get("TemplateName", ""),
+        "category_names":  _category_names(item),
+    }
 
 
-def _col_list(columns: list[dict]) -> str:
-    """Build a comma-separated, double-quoted column list for use in SELECT."""
-    return ", ".join(_dq(c["name"]) for c in columns)
+def _extract_attribute(item: dict, element_web_id: str) -> dict:
+    return {
+        "web_id":              item.get("WebId", ""),
+        "element_web_id":      element_web_id,
+        "name":                item.get("Name", ""),
+        "description":         item.get("Description", ""),
+        "path":                item.get("Path", ""),
+        "type":                item.get("Type", ""),
+        "type_qualifier":      item.get("TypeQualifier", ""),
+        "data_reference":      item.get("DataReferencePlugIn", ""),
+        "data_reference_path": item.get("ConfigString", ""),
+        "category_names":      _category_names(item),
+    }
 
 
-# ---------------------------------------------------------------------------
-# Row streaming (generator-based to avoid loading large tables into memory)
-# ---------------------------------------------------------------------------
-
-def _iter_rows(cursor: pyodbc.Cursor, columns: list[dict]) -> Generator[dict, None, None]:
-    """
-    Yield one {column_name: value} dict per cursor row.
-    pyodbc returns naive datetime objects; this attaches UTC timezone info to them.
-    """
-    col_names = [c["name"] for c in columns]
-    for row in cursor:
-        record: dict = {}
-        for name, value in zip(col_names, row):
-            # Attach UTC tz info to naive datetimes returned by the ODBC driver
-            if isinstance(value, datetime) and value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
-            record[name] = value
-        yield record
+def _extract_event_frame(item: dict, db_web_id: str) -> dict:
+    return {
+        "web_id":          item.get("WebId", ""),
+        "name":            item.get("Name", ""),
+        "description":     item.get("Description", ""),
+        "start_time":      _parse_pi_timestamp(item.get("StartTime")),
+        "end_time":        _parse_pi_timestamp(item.get("EndTime")),
+        "template_name":   item.get("TemplateName", ""),
+        "category_names":  _category_names(item),
+        "database_web_id": db_web_id,
+    }
 
 
-def stream_full_table(
-    conn: pyodbc.Connection, table: str, schema: str, columns: list[dict]
-) -> Generator[dict, None, None]:
-    """Stream every row from a table via a full SELECT (no WHERE clause)."""
-    query = f"SELECT {_col_list(columns)} FROM {_dq(schema)}.{_dq(table)}"
-    cursor = conn.cursor()
-    cursor.execute(query)
-    yield from _iter_rows(cursor, columns)
+def _generate_recorded_value_id(attr_web_id: str, timestamp: str) -> str:
+    """Deterministic MD5 primary key for a recorded value (attribute WebId + raw timestamp)."""
+    return hashlib.md5(f"{attr_web_id}|{timestamp}".encode("utf-8")).hexdigest()
 
 
-def stream_epoch_records(
-    conn: pyodbc.Connection,
-    table: str,
-    schema: str,
-    columns: list[dict],
-    ts_col: str,
-) -> Generator[dict, None, None]:
-    """
-    Stream Archive rows where ts_col equals Unix epoch (1970-01-01 00:00:00 UTC).
-    This seeds the Archive table on the first sync so no historical records are missed.
-    """
-    epoch_literal = _fmt_dt(datetime.fromtimestamp(0, tz=timezone.utc))
-    query = (
-        f"SELECT {_col_list(columns)} FROM {_dq(schema)}.{_dq(table)} "
-        f"WHERE {ts_col} = {epoch_literal}"
-    )
-    cursor = conn.cursor()
-    cursor.execute(query)
-    yield from _iter_rows(cursor, columns)
+def _extract_recorded_value(item: dict, attr_web_id: str) -> dict:
+    ts_str = item.get("Timestamp", "")
+    value = item.get("Value")
+    # PI value may be a system digital state dict, e.g. {"Name": "Shutdown", "Value": 248}
+    if isinstance(value, dict):
+        value = value.get("Name") or str(value)
+    else:
+        value = str(value) if value is not None else None
 
-
-def stream_incremental_window(
-    conn: pyodbc.Connection,
-    table: str,
-    schema: str,
-    columns: list[dict],
-    incremental_col: str,
-    since: datetime,
-    until: datetime,
-) -> Generator[dict, None, None]:
-    """Stream rows where incremental_col is within the closed interval [since, until]."""
-    query = (
-        f"SELECT {_col_list(columns)} FROM {_dq(schema)}.{_dq(table)} "
-        f"WHERE {incremental_col} >= {_fmt_dt(since)} "
-        f"AND {incremental_col} <= {_fmt_dt(until)}"
-    )
-    cursor = conn.cursor()
-    cursor.execute(query)
-    yield from _iter_rows(cursor, columns)
+    return {
+        "_fivetran_id":     _generate_recorded_value_id(attr_web_id, ts_str),
+        "attribute_web_id": attr_web_id,
+        "timestamp":        _parse_pi_timestamp(ts_str),
+        "value":            value,
+        "quality":          "questionable" if item.get("Questionable") else "good",
+        "good":             not item.get("Questionable", False),
+    }
 
 
 # ---------------------------------------------------------------------------
-# Hash ID generation (for tables without a natural primary key)
+# Sync strategies
 # ---------------------------------------------------------------------------
 
-def generate_hash_id(record: dict, hash_columns: list[str]) -> str:
-    """
-    Produce a deterministic hex string from the values of the specified columns.
-    Used as _fivetran_id when a table has no natural primary key.
-
-    Args:
-        record: the row dict.
-        hash_columns: column names whose values contribute to the hash.
-    Returns:
-        A 32-character lowercase hex string (MD5).
-    """
-    parts = [str(record.get(col, "")) for col in sorted(hash_columns)]
-    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Per-table sync strategies
-# ---------------------------------------------------------------------------
-
-def _upsert(record: dict, dest_table: str, use_hash_id: bool, hash_columns: list[str]) -> None:
-    """Inject a hash ID when needed, then upsert the record."""
-    if use_hash_id:
-        cols = hash_columns or list(record.keys())
-        record["_fivetran_id"] = generate_hash_id(record, cols)
-    op.upsert(dest_table, record)
-
-
-def sync_reimport(
-    conn: pyodbc.Connection,
-    table: str,
-    schema: str,
-    columns: list[dict],
-    dest_table: str,
-    use_hash_id: bool,
-    state: dict,
+def sync_elements(
+    session: requests.Session, base_url: str, db_web_id: str, state: dict
 ) -> None:
-    """
-    Full reimport: upsert every row from the source table.
-
-    Checkpoints every CHECKPOINT_INTERVAL rows to signal liveness to Fivetran.
-
-    Note on deletes: rows removed from PI are NOT automatically soft-deleted in the
-    destination because PI does not expose a deleted-records feed. If delete reflection
-    is required, enable Fivetran's truncate-and-reload mode for these tables.
-    """
-    log.info(f"Full reimport: {schema}.{table} → {dest_table}")
-    col_names = [c["name"] for c in columns]
-    row_count = 0
-
-    for record in stream_full_table(conn, table, schema, columns):
-        _upsert(record, dest_table, use_hash_id, col_names)
-        row_count += 1
-        # Checkpoint periodically so Fivetran knows we are making progress
-        if row_count % CHECKPOINT_INTERVAL == 0:
+    """Full reimport of all PI AF elements in the database (the asset hierarchy)."""
+    log.info("Syncing elements (full reimport)")
+    count = 0
+    for item in _paginate(
+        session,
+        f"{base_url}/assetdatabases/{db_web_id}/elements",
+        params={"searchFullHierarchy": "true", "maxCount": MAX_COUNT},
+    ):
+        op.upsert("elements", _extract_element(item))
+        count += 1
+        if count % CHECKPOINT_INTERVAL == 0:
             op.checkpoint(state)
-            log.info(f"  … {row_count} rows processed")
+            log.info(f"  elements: {count} rows synced")
 
     op.checkpoint(state)
-    log.info(f"Full reimport done: {dest_table} ({row_count} rows)")
+    log.info(f"elements sync complete ({count} rows)")
 
 
-def sync_incremental(
-    conn: pyodbc.Connection,
-    table: str,
-    schema: str,
-    columns: list[dict],
-    dest_table: str,
-    incremental_col: str,
-    use_hash_id: bool,
-    hash_columns: list[str],
-    state: dict,
+def sync_attributes(
+    session: requests.Session, base_url: str, db_web_id: str, state: dict
+) -> list[str]:
+    """
+    Full reimport of all PI AF element attributes in the database.
+
+    Attempts the database-wide /elementattributes endpoint first (PI Web API 2019+).
+    Falls back to iterating each element individually if that endpoint is unavailable.
+
+    Returns the WebIds of all PI Point attributes found (used by sync_recorded_values).
+    """
+    log.info("Syncing attributes (full reimport)")
+    count = 0
+    pi_point_web_ids: list[str] = []
+
+    def _process_attr(item: dict, element_web_id: str) -> None:
+        nonlocal count
+        op.upsert("attributes", _extract_attribute(item, element_web_id))
+        count += 1
+        if item.get("DataReferencePlugIn") == "PI Point":
+            pi_point_web_ids.append(item["WebId"])
+        if count % CHECKPOINT_INTERVAL == 0:
+            op.checkpoint(state)
+            log.info(f"  attributes: {count} rows synced")
+
+    try:
+        for item in _paginate(
+            session,
+            f"{base_url}/assetdatabases/{db_web_id}/elementattributes",
+            params={"searchFullHierarchy": "true", "maxCount": MAX_COUNT},
+        ):
+            # The Element link is an embedded object on newer PI Web API versions
+            element_web_id = (
+                item["Element"]["WebId"]
+                if isinstance(item.get("Element"), dict)
+                else ""
+            )
+            _process_attr(item, element_web_id)
+    except ValueError:
+        # /elementattributes not available on this PI Web API version — iterate per element
+        log.info("  /elementattributes not available; falling back to per-element fetch")
+        for elem_item in _paginate(
+            session,
+            f"{base_url}/assetdatabases/{db_web_id}/elements",
+            params={"searchFullHierarchy": "true", "maxCount": MAX_COUNT},
+        ):
+            elem_web_id = elem_item.get("WebId", "")
+            try:
+                for attr_item in _paginate(
+                    session,
+                    f"{base_url}/elements/{elem_web_id}/attributes",
+                    params={"maxCount": MAX_COUNT},
+                ):
+                    _process_attr(attr_item, elem_web_id)
+            except ValueError as exc:
+                log.warning(f"  Skipping attributes for element {elem_web_id}: {exc}")
+
+    op.checkpoint(state)
+    log.info(
+        f"attributes sync complete ({count} rows, "
+        f"{len(pi_point_web_ids)} PI Point attributes)"
+    )
+    return pi_point_web_ids
+
+
+def sync_event_frames(
+    session: requests.Session, base_url: str, db_web_id: str, state: dict, start_date: str
 ) -> None:
     """
-    Cursor-based incremental sync with adaptive time-window backoff.
+    Cursor-based incremental sync of PI AF event frames, keyed on start_time.
 
-    Algorithm:
-      1. Read the last cursor from state (defaults to Unix epoch on first sync).
-      2. For the Archive table on first sync: seed epoch records before the
-         windowed loop (epoch records have a special timestamp that falls outside
-         the normal incremental range).
-      3. For the Archive table on subsequent syncs: roll back the start cursor by
-         LATE_ARRIVAL_ROLLBACK_HOURS to recapture records that arrived late.
-      4. Walk from start to now in windows of up to INITIAL_WINDOW_DAYS.
-      5. On a transient query failure: halve the window and retry the same slice.
-         If the window shrinks below MIN_WINDOW_HOURS, raise immediately.
-      6. Checkpoint state (with updated cursor) after every successfully processed window.
+    Uses an adaptive time-window strategy: starts with INITIAL_WINDOW_DAYS-day windows
+    and halves the window size on transient query failures. Raises if the window shrinks
+    below MIN_WINDOW_HOURS and the query still fails.
     """
-    cursor_key = f"{schema}.{table}"
-    cursors = state.setdefault("incremental_cursor", {})
-    start_str = cursors.get(cursor_key)
+    cursors = state.setdefault("cursors", {})
+    start_str = cursors.get("event_frames", start_date)
+    start = _parse_pi_timestamp(start_str) or datetime.fromtimestamp(0, tz=timezone.utc)
+    now = datetime.now(timezone.utc)
+    window = timedelta(days=INITIAL_WINDOW_DAYS)
+    total = 0
+
+    log.info(f"Syncing event_frames (incremental from {_fmt_ts(start)})")
+
+    while start < now:
+        end = min(start + window, now)
+        window_count = 0
+
+        try:
+            for item in _paginate(
+                session,
+                f"{base_url}/assetdatabases/{db_web_id}/eventframes",
+                params={
+                    "searchFullHierarchy": "true",
+                    "startTime":           _fmt_ts(start),
+                    "endTime":             _fmt_ts(end),
+                    "maxCount":            MAX_COUNT,
+                },
+            ):
+                op.upsert("event_frames", _extract_event_frame(item, db_web_id))
+                window_count += 1
+
+            cursors["event_frames"] = end.isoformat()
+            op.checkpoint(state)
+            log.info(
+                f"  event_frames window {_fmt_ts(start)} → {_fmt_ts(end)}: {window_count} rows"
+            )
+            total += window_count
+            start = end
+
+        except ValueError:
+            raise
+        except Exception as exc:
+            window = window / 2
+            if window < timedelta(hours=MIN_WINDOW_HOURS):
+                raise RuntimeError(
+                    f"event_frames sync failed; window cannot be halved below "
+                    f"{MIN_WINDOW_HOURS}h. Last error: {exc}"
+                ) from exc
+            log.warning(
+                f"  event_frames window failed; halving to "
+                f"{int(window.total_seconds() // 3600)}h. Error: {exc}"
+            )
+
+    log.info(f"event_frames sync complete ({total} rows)")
+
+
+def sync_recorded_values(
+    session: requests.Session,
+    base_url: str,
+    pi_point_web_ids: list[str],
+    state: dict,
+    start_date: str,
+) -> None:
+    """
+    Cursor-based incremental sync of PI archive (recorded) values for all PI Point attributes.
+
+    A single time cursor is shared across all attributes. On subsequent syncs the cursor
+    is rolled back by LATE_ARRIVAL_ROLLBACK_HOURS to capture values that were written
+    slightly after their timestamps.
+
+    Individual attribute streams that return 4xx errors (e.g. deleted PI Points) are
+    skipped with a warning rather than failing the whole sync.
+    """
+    if not pi_point_web_ids:
+        log.info("No PI Point attributes found; skipping recorded_values sync")
+        return
+
+    cursors = state.setdefault("cursors", {})
+    start_str = cursors.get("recorded_values")
     is_first_sync = start_str is None
     start = (
-        datetime.fromisoformat(start_str)
-        if start_str
-        else datetime.fromtimestamp(0, tz=timezone.utc)
+        _parse_pi_timestamp(start_str) or _parse_pi_timestamp(start_date)
+        or datetime.fromtimestamp(0, tz=timezone.utc)
     )
-    now = datetime.now(timezone.utc)
 
-    # Archive first sync: seed epoch-timestamp records before the windowed pass
-    if table == ARCHIVE_TABLE and is_first_sync:
-        log.info(f"Archive: seeding epoch records for {schema}.{table}")
-        seed_count = 0
-        for record in stream_epoch_records(conn, table, schema, columns, incremental_col):
-            _upsert(record, dest_table, use_hash_id, hash_columns)
-            seed_count += 1
-        log.info(f"Archive epoch seed complete ({seed_count} rows)")
-
-    # Archive subsequent syncs: roll back to catch late-arriving records
-    if table == ARCHIVE_TABLE and not is_first_sync:
+    if not is_first_sync:
         start = start - timedelta(hours=LATE_ARRIVAL_ROLLBACK_HOURS)
-        log.info(f"Archive: adjusted start to {start.isoformat()} (late-arrival rollback)")
+        log.info(f"  recorded_values: late-arrival rollback applied → {_fmt_ts(start)}")
 
+    now = datetime.now(timezone.utc)
     window = timedelta(days=INITIAL_WINDOW_DAYS)
+    total = 0
+
     log.info(
-        f"Incremental: {schema}.{table} | "
-        f"from {start.isoformat()} | initial window={window.days}d"
+        f"Syncing recorded_values (incremental from {_fmt_ts(start)}, "
+        f"{len(pi_point_web_ids)} PI Point attributes)"
     )
 
     while start < now:
         end = min(start + window, now)
-        max_seen: datetime | None = None
-        row_count = 0
+        window_count = 0
 
         try:
-            for record in stream_incremental_window(
-                conn, table, schema, columns, incremental_col, start, end
-            ):
-                _upsert(record, dest_table, use_hash_id, hash_columns)
-                row_count += 1
-                ts = record.get(incremental_col)
-                if isinstance(ts, datetime) and (max_seen is None or ts > max_seen):
-                    max_seen = ts
+            for attr_web_id in pi_point_web_ids:
+                try:
+                    for item in _paginate(
+                        session,
+                        f"{base_url}/streams/{attr_web_id}/recorded",
+                        params={
+                            "startTime": _fmt_ts(start),
+                            "endTime":   _fmt_ts(end),
+                            "maxCount":  MAX_COUNT,
+                        },
+                    ):
+                        op.upsert("recorded_values", _extract_recorded_value(item, attr_web_id))
+                        window_count += 1
+                except ValueError as exc:
+                    # 404 = PI Point deleted; 403 = no read permission — skip this attribute
+                    log.warning(f"  Skipping stream {attr_web_id}: {exc}")
 
-            # Advance cursor: take the max of the previous cursor and the latest
-            # timestamp seen in this window. If the window was empty, advance to end.
-            prev_str = cursors.get(cursor_key)
-            prev_cursor = datetime.fromisoformat(prev_str) if prev_str else start
-            new_cursor = max(prev_cursor, max_seen) if max_seen else end
-            cursors[cursor_key] = new_cursor.isoformat()
-
-            # Save progress after each successful window
+            cursors["recorded_values"] = end.isoformat()
             op.checkpoint(state)
             log.info(
-                f"  Window {start.isoformat()} → {end.isoformat()}: "
-                f"{row_count} rows | cursor → {new_cursor.isoformat()}"
+                f"  recorded_values window {_fmt_ts(start)} → {_fmt_ts(end)}: {window_count} rows"
             )
+            total += window_count
             start = end
 
+        except ValueError:
+            raise
         except Exception as exc:
-            msg = str(exc)
-
-            # Authentication errors are not transient — surface immediately
-            if any(p in msg for p in _AUTH_ERROR_PATTERNS):
-                raise
-
-            # Transient query error: halve the window and retry the same time slice
             window = window / 2
             if window < timedelta(hours=MIN_WINDOW_HOURS):
-                log.warning(
-                    f"Window for {schema}.{table} is below the {MIN_WINDOW_HOURS}h minimum "
-                    f"and cannot be reduced further. Last error: {msg}"
-                )
                 raise RuntimeError(
-                    f"Incremental sync failed for {schema}.{table}: {msg}"
+                    f"recorded_values sync failed; window cannot be halved below "
+                    f"{MIN_WINDOW_HOURS}h. Last error: {exc}"
                 ) from exc
-
             log.warning(
-                f"Query failed [{start.isoformat()} → {end.isoformat()}]. "
-                f"Halving window to "
-                f"{int(window.total_seconds() // 3600)}h. Error: {msg}"
+                f"  recorded_values window failed; halving to "
+                f"{int(window.total_seconds() // 3600)}h. Error: {exc}"
             )
+
+    log.info(f"recorded_values sync complete ({total} rows)")
 
 
 # ---------------------------------------------------------------------------
@@ -485,109 +507,119 @@ def sync_incremental(
 
 def schema(configuration: dict) -> list[dict]:
     """
-    Discover AVEVA PI tables and return their schema for Fivetran.
+    Return the static schema for the AVEVA PI Web API connector.
 
-    Destination table name convention: "<source_schema>_<table_name>"
-    This preserves the source schema namespace within a single Fivetran destination
-    schema, matching the behaviour of the original Fivetran-native AVEVA PI connector.
-
-    Tables without a natural primary key receive a synthetic '_fivetran_id' primary key.
-    The value is generated at sync time from an MD5 hash of the relevant column values.
-
-    Args:
-        configuration: a dictionary containing connection settings.
-    Returns:
-        A list of table definitions for Fivetran.
+    The schema is fixed — no connection is required. The four tables map directly
+    to the PI AF object types exposed by the PI Web API REST endpoints.
+    The recorded_values table is always declared in the schema even when
+    sync_recorded_values is "false"; Fivetran will simply receive no rows for it.
     """
     validate_configuration(configuration)
-    conn = get_connection(configuration)
-    try:
-        result = []
-        for src_schema, tables in discover_tables(conn).items():
-            for table_name in tables:
-                pks = get_primary_keys(conn, table_name, src_schema)
-                columns = get_columns(conn, table_name, src_schema)
-                dest_table = f"{src_schema}_{table_name}"
-
-                table_def = {
-                    "table": dest_table,
-                    "primary_key": pks if pks else ["_fivetran_id"],
-                    "columns": {c["name"]: c["type"] for c in columns},
-                }
-                result.append(table_def)
-                log.info(
-                    f"Discovered {src_schema}.{table_name} → {dest_table} "
-                    f"(PK: {table_def['primary_key']})"
-                )
-        return result
-    finally:
-        conn.close()
+    return [
+        {
+            "table": "elements",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id":          "STRING",
+                "name":            "STRING",
+                "description":     "STRING",
+                "path":            "STRING",
+                "template_name":   "STRING",
+                "category_names":  "STRING",
+            },
+        },
+        {
+            "table": "attributes",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id":              "STRING",
+                "element_web_id":      "STRING",
+                "name":                "STRING",
+                "description":         "STRING",
+                "path":                "STRING",
+                "type":                "STRING",
+                "type_qualifier":      "STRING",
+                "data_reference":      "STRING",
+                "data_reference_path": "STRING",
+                "category_names":      "STRING",
+            },
+        },
+        {
+            "table": "event_frames",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id":          "STRING",
+                "name":            "STRING",
+                "description":     "STRING",
+                "start_time":      "UTC_DATETIME",
+                "end_time":        "UTC_DATETIME",
+                "template_name":   "STRING",
+                "category_names":  "STRING",
+                "database_web_id": "STRING",
+            },
+        },
+        {
+            "table": "recorded_values",
+            "primary_key": ["_fivetran_id"],
+            "columns": {
+                "_fivetran_id":     "STRING",
+                "attribute_web_id": "STRING",
+                "timestamp":        "UTC_DATETIME",
+                "value":            "STRING",
+                "quality":          "STRING",
+                "good":             "BOOLEAN",
+            },
+        },
+    ]
 
 
 def update(configuration: dict, state: dict) -> None:
     """
     Main sync function. Called by Fivetran on every sync run.
 
-    Iterates all tables visible in PI SQL DAS and applies the appropriate strategy:
-      - Tables with a 'Modified' column        → incremental (cursor + windowed queries)
-      - The 'Archive' table (with 'TimeStamp') → incremental with late-arrival rollback
-      - All other tables                       → full reimport every sync
+    Sync order:
+      1. elements        — full reimport (PI AF asset hierarchy)
+      2. attributes      — full reimport; also collects PI Point attribute WebIds
+      3. event_frames    — cursor-based incremental, keyed by start_time
+      4. recorded_values — cursor-based incremental, opt-in via sync_recorded_values = "true"
 
-    Args:
-        configuration: a dictionary containing connection settings.
-        state: a dictionary containing cursor state from the previous run.
-               Empty on the first sync or after a full re-sync.
+    Configuration keys:
+      base_url             : PI Web API base URL (e.g. https://piserver/piwebapi)
+      username             : PI user account name
+      password             : PI user password
+      database_name        : (optional) target AF database name; defaults to first found
+      verify_ssl           : (optional) "true" / "false" — verify TLS certificate
+      start_date           : (optional) ISO 8601 start date for first incremental sync
+      sync_recorded_values : (optional) "true" to also sync the recorded_values table
+                             (can generate very large data volumes on large deployments)
     """
     validate_configuration(configuration)
-    conn = get_connection(configuration)
-    try:
-        for src_schema, tables in discover_tables(conn).items():
-            for table_name in tables:
-                pks = get_primary_keys(conn, table_name, src_schema)
-                columns = get_columns(conn, table_name, src_schema)
+    session = _build_session(configuration)
+    base = _base_url(configuration)
+    database_name = configuration.get("database_name")
+    start_date = configuration.get("start_date", EPOCH_ISO)
+    do_recorded = configuration.get("sync_recorded_values", "false").lower() == "true"
 
-                if not columns:
-                    log.warning(f"Skipping {src_schema}.{table_name}: no supported columns.")
-                    continue
+    db_web_id = get_database_web_id(session, base, database_name)
 
-                col_name_set = {c["name"] for c in columns}
-                col_name_list = [c["name"] for c in columns]
-                use_hash_id = not pks
-                dest_table = f"{src_schema}_{table_name}"
+    sync_elements(session, base, db_web_id, state)
+    pi_point_web_ids = sync_attributes(session, base, db_web_id, state)
+    sync_event_frames(session, base, db_web_id, state, start_date)
 
-                # Determine the incremental column and which columns feed the hash ID
-                if table_name == ARCHIVE_TABLE and ARCHIVE_INCREMENTAL_COLUMN in col_name_set:
-                    incremental_col: str | None = ARCHIVE_INCREMENTAL_COLUMN
-                    hash_columns = [
-                        c["name"] for c in columns if c["name"] in ARCHIVE_HASH_COLUMNS
-                    ]
-                elif INCREMENTAL_COLUMN in col_name_set:
-                    incremental_col = INCREMENTAL_COLUMN
-                    hash_columns = col_name_list
-                else:
-                    incremental_col = None
-                    hash_columns = col_name_list
-
-                if incremental_col:
-                    sync_incremental(
-                        conn, table_name, src_schema, columns, dest_table,
-                        incremental_col, use_hash_id, hash_columns, state,
-                    )
-                else:
-                    sync_reimport(
-                        conn, table_name, src_schema, columns, dest_table,
-                        use_hash_id, state,
-                    )
-    finally:
-        conn.close()
+    if do_recorded:
+        sync_recorded_values(session, base, pi_point_web_ids, state, start_date)
+    else:
+        log.info(
+            "Skipping recorded_values sync (set sync_recorded_values = \"true\" to enable). "
+            "Note: enabling this can generate very large data volumes on large PI deployments."
+        )
 
 
-# Create the connector object using the schema and update functions
+# Create the connector object with the schema and update functions.
 connector = Connector(update=update, schema=schema)
 
-# Check if the script is being run as the main module.
-# This is Python's standard entry method allowing your script to be run directly from the
-# command line or IDE. The recommended way to test is: fivetran debug
+# Standard Python entry point for local debugging.
+# The recommended way to test is: fivetran debug
 if __name__ == "__main__":
     with open("configuration.json", "r") as f:
         configuration = json.load(f)

@@ -2,28 +2,25 @@
 
 ## Connector overview
 
-This connector syncs data from AVEVA PI (formerly OSIsoft PI) to your Fivetran destination. It connects to the PI SQL Data Access Server (PI SQL DAS) via ODBC and discovers all table-type objects in the configured PI AF database at sync time.
+This connector syncs data from AVEVA PI (formerly OSIsoft PI) to your Fivetran destination. It communicates with the PI system via the **PI Web API** REST interface — no proprietary ODBC drivers are required, so the connector runs in Fivetran's managed cloud environment without any additional installation.
 
 Key capabilities:
-- Dynamic schema discovery: tables and columns are discovered from PI SQL DAS ODBC metadata at each sync
-- Incremental sync for tables that expose a `Modified` column, using time-windowed queries that automatically halve the window on query failures
-- Special handling for the `Archive` table: epoch-seeded first sync, 2-hour late-arrival rollback on subsequent syncs, and hash-based row identification using `AttributeID` + `TimeStamp`
-- Full reimport for all other tables (no `Modified` column)
-- Synthetic `_fivetran_id` primary key for tables without a natural primary key, generated as an MD5 hash of the relevant column values
-- Authentication-aware retry: transient connection failures are retried up to 3 times; auth failures surface immediately
-
-The destination table name format is `<source_schema>_<table_name>` to preserve the PI schema hierarchy within a single Fivetran destination schema.
+- REST-based connectivity via PI Web API (HTTPS + Basic auth) — no ODBC driver installation required
+- Four fixed tables: `elements`, `attributes`, `event_frames`, and `recorded_values`
+- Full reimport for `elements` and `attributes` (PI AF asset hierarchy)
+- Cursor-based incremental sync for `event_frames` and `recorded_values` with adaptive time-window backoff
+- 2-hour late-arrival rollback on `recorded_values` to capture values written after their timestamps
+- MD5-based synthetic `_fivetran_id` primary key for `recorded_values`
+- Authentication-aware retry: 4xx responses surface immediately; 5xx / network errors retry up to 3 times
+- `recorded_values` sync is opt-in (set `sync_recorded_values = "true"`) because it can generate very large data volumes
 
 
 ## Requirements
 
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
-- AVEVA PI SQL Client (ODBC driver) installed on the host machine. Download from the [AVEVA Customer Portal](https://customers.osisoft.com/s/downloads). See the [PI SQL Client documentation](https://docs.aveva.com/bundle/pi-sql-client) for installation instructions.
-- PI SQL Data Access Server (PI SQL DAS) running and reachable from the connector host on the configured port (default: 5461)
-- Operating system:
-  - Windows: 10 or later (64-bit only)
-  - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
-  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64) — requires the PI ODBC driver for Linux (available from AVEVA Support)
+- PI Web API 2019 SP1 or later, reachable over HTTPS from the connector host
+- Basic authentication enabled on the PI Web API server
+- A PI user account with read access to the target AF database
 
 
 ## Getting started
@@ -36,12 +33,11 @@ To initialize a new Connector SDK project using this connector as a starting poi
 fivetran init --template aveva_pi
 ```
 
-> Note: Ensure you have updated `configuration.json` with your PI SQL DAS connection details before running `fivetran debug`. See the [Configuration file](#configuration-file) section below.
+> Note: Ensure you have updated `configuration.json` with your PI Web API connection details before running `fivetran debug`. See the [Configuration file](#configuration-file) section below.
 
-1. Install the AVEVA PI SQL Client (ODBC driver) from the AVEVA Customer Portal.
-2. Verify the PI SQL DAS service is running: `ping <PI_SQL_DAS_HOST>` and confirm port 5461 is open.
-3. Update `configuration.json` with your connection details.
-4. Test the connector locally:
+1. Verify PI Web API is reachable: open `https://<PI_WEB_API_HOSTNAME>/piwebapi` in a browser and confirm you can authenticate.
+2. Update `configuration.json` with your connection details.
+3. Test the connector locally:
    ```
    fivetran debug
    ```
@@ -49,97 +45,89 @@ fivetran init --template aveva_pi
 
 ## Features
 
-- Dynamic table and column discovery via ODBC catalog metadata
-- Cursor-based incremental sync using the `Modified` timestamp column
-- Adaptive time-window backoff: starts at 365-day windows, halves automatically on query errors, minimum 1-hour window
-- Archive table support: epoch-seeded initial sync + 2-hour late-arrival rollback
-- MD5 hash-based synthetic primary key for tables without natural PKs
+- No-driver REST connectivity via PI Web API — works in Fivetran's managed cloud environment
+- Fixed four-table schema: `elements`, `attributes`, `event_frames`, `recorded_values`
+- Cursor-based incremental sync for `event_frames` and `recorded_values`
+- Adaptive time-window backoff: starts at 30-day windows, halves automatically on request errors, minimum 1-hour window
+- 2-hour late-arrival rollback for `recorded_values` to capture late-written archive data
+- MD5 hash-based synthetic primary key (`_fivetran_id`) for `recorded_values`
 - Periodic checkpointing every 10,000 rows during full reimports
-- Authentication-aware error handling: auth failures are surfaced immediately without unnecessary retries
+- Paginated fetching via `Links.Next` — no large in-memory result sets
 
 
 ## Configuration file
 
 ```json
 {
-  "host": "<PI_SQL_DAS_HOSTNAME_OR_IP>",
-  "port": "5461",
-  "database": "<PI_AF_DATABASE_NAME>",
+  "base_url": "https://<PI_WEB_API_HOSTNAME>/piwebapi",
   "username": "<PI_USERNAME>",
   "password": "<PI_PASSWORD>",
-  "odbc_driver": "PI ODBC"
+  "database_name": "<PI_AF_DATABASE_NAME>",
+  "verify_ssl": "true",
+  "start_date": "2020-01-01T00:00:00Z",
+  "sync_recorded_values": "false"
 }
 ```
 
 | Key | Required | Description |
 |---|---|---|
-| `host` | Yes | Hostname or IP address of the PI SQL DAS server |
-| `port` | No | PI SQL DAS port (default: `5461`) |
-| `database` | No | PI AF database name (defaults to the server default database if omitted) |
-| `username` | Yes | PI user account with read access to the target database |
+| `base_url` | Yes | Base URL of the PI Web API instance (e.g. `https://piserver/piwebapi`) |
+| `username` | Yes | PI user account with read access to the target AF database |
 | `password` | Yes | Password for the PI user account |
-| `odbc_driver` | No | ODBC driver name as registered on the host (default: `PI ODBC`). Common alternatives: `PI SQL Client` |
+| `database_name` | No | PI AF database name to sync. Defaults to the first database found if omitted |
+| `verify_ssl` | No | Set to `"false"` to skip TLS certificate verification for self-signed certificates (default: `"true"`) |
+| `start_date` | No | ISO 8601 start date for the first incremental sync (default: Unix epoch). Example: `"2020-01-01T00:00:00Z"` |
+| `sync_recorded_values` | No | Set to `"true"` to also sync the `recorded_values` table. Disabled by default because it can generate very large data volumes on large PI deployments |
 
 > Note: When submitting connector code as a Community Connector, ensure `configuration.json` has placeholder values. When deploying, do not check this file into version control to protect credentials.
 
 
 ## Requirements file
 
-`requirements.txt` declares `pyodbc`, the Python ODBC bridge library. The Fivetran Connector SDK runtime installs this at deployment time.
-
-> Note: [Some packages](https://fivetran.com/docs/connectors/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK environment. Do not re-declare them in `requirements.txt` to avoid dependency conflicts.
+`requirements.txt` has no entries. The `requests` library used by this connector is [pre-installed](https://fivetran.com/docs/connectors/connector-sdk/technical-reference#preinstalledpackages) in the Fivetran Connector SDK runtime.
 
 
 ## Authentication
 
-The connector uses PI username/password authentication passed directly in the ODBC connection string. The PI SQL DAS server validates credentials against the configured PI identity provider (PI Mapping or Windows authentication, depending on your PI server configuration).
+The connector uses HTTP Basic authentication. Credentials are passed in each request via the `Authorization` header. The PI Web API server validates them against the configured PI identity provider.
 
-If the connection attempt returns a 401, 403, or known PI DAS authentication error, the connector raises a `ValueError` immediately without retrying, so the sync fails fast and Fivetran prompts for updated credentials.
+If a request returns a 401 or 403 response, the connector raises a `ValueError` immediately without retrying, so the sync fails fast and Fivetran prompts for updated credentials. Other 4xx errors (e.g. 404 for a missing PI Point stream) are treated as skippable warnings for individual resources.
 
 
 ## Pagination
 
-This connector does not use page-based pagination. Instead, it uses time-window-based streaming:
+PI Web API responses include a `Links.Next` URL when there are more items. The connector follows this link chain automatically until all items are retrieved. Each page is processed and yielded immediately — no full result set is held in memory.
 
-- For incremental tables: data is fetched in windows of up to 365 days. If a query fails with a transient error, the window is halved and the same slice is retried. This continues until either the query succeeds or the window drops below 1 hour (at which point the error is surfaced).
-- For full reimport tables: all rows are fetched in a single query and streamed via the pyodbc cursor iterator, avoiding loading the entire result set into memory.
+For incremental tables (`event_frames` and `recorded_values`), data is fetched in time windows of up to 30 days. If a request fails with a transient error, the window is halved and the same slice is retried. This continues until either the request succeeds or the window drops below 1 hour, at which point the error is surfaced.
 
-Checkpointing occurs after each successful time window (incremental) or every 10,000 rows (reimport), allowing the connector to resume from the last safe point after an interruption.
+Checkpointing occurs after each successful time window (incremental) or every 10,000 rows (full reimport), allowing the connector to resume from the last safe point after an interruption.
 
 
 ## Data handling
 
-- **Type mapping**: AVEVA PI SQL types (AnsiString, Guid, Int8, DateTime, etc.) are mapped to Fivetran SDK types (STRING, SHORT, UTC_DATETIME, etc.). Columns with unrecognised types are skipped with a warning.
-- **Timestamps**: pyodbc returns naive datetime objects. The connector attaches UTC timezone info before yielding rows to Fivetran, ensuring correct UTC_DATETIME handling.
-- **Hash IDs**: Tables without a natural primary key receive a `_fivetran_id` column (MD5 hex string). For most tables this is computed from all column values; for the Archive table it uses only `AttributeID` and `TimeStamp` to match the original connector's identity semantics.
-- **Destination table naming**: `<source_schema>_<table_name>` (e.g., the `Archive` table in the `PISystem` schema lands as `PISystem_Archive` in the destination).
+- **Schema**: Fixed four-table schema. Columns map directly from PI Web API JSON response fields to Fivetran SDK types (`STRING`, `UTC_DATETIME`, `BOOLEAN`).
+- **Timestamps**: PI Web API returns ISO 8601 timestamps. The connector parses them to UTC-aware `datetime` objects before yielding rows to Fivetran.
+- **PI digital states**: When a PI recorded value is a system digital state (a JSON object like `{"Name": "Shutdown", "Value": 248}`), only the `Name` string is stored in the `value` column.
+- **Hash IDs**: The `recorded_values` table has no natural primary key. A `_fivetran_id` column is generated as the MD5 hex digest of `attribute_web_id|timestamp`.
+- **Category names**: The `category_names` column stores a JSON-serialized array of category name strings (e.g. `["Production", "Critical"]`).
 
 
 ## Error handling
 
-- Connection failures are retried up to 3 times with a warning logged per attempt. Refer to `get_connection()`.
-- Authentication errors (401/403, unknown DAS, bad port) are detected by matching the error message against known patterns and raise immediately without retrying. Refer to `_AUTH_ERROR_PATTERNS`.
-- Incremental query failures trigger window halving rather than hard failure. If the window cannot be halved further (below 1 hour), a `RuntimeError` is raised. Refer to `sync_incremental()`.
-- Tables with no supported columns are skipped with a warning rather than causing the entire sync to fail.
+- HTTP 4xx responses raise a `ValueError` immediately (no retry). Refer to `_api_get()`.
+- HTTP 5xx and network errors retry up to 3 times with a warning logged per attempt. Refer to `_api_get()`.
+- Incremental query failures trigger adaptive window halving rather than a hard failure. If the window cannot be halved further (below 1 hour), a `RuntimeError` is raised. Refer to `sync_event_frames()` and `sync_recorded_values()`.
+- Individual `recorded_values` attribute streams that return 4xx errors are skipped with a warning (e.g. deleted PI Points). Refer to `sync_recorded_values()`.
 
 
 ## Tables created
 
-The connector creates one destination table per PI SQL DAS table visible in the configured AF database. The exact tables depend on the PI AF schema, but a typical PI deployment exposes:
-
-| Source table | Incremental column | Notes |
-|---|---|---|
-| `Archive` | `TimeStamp` | Special epoch-seed + late-arrival rollback |
-| `Element` | `Modified` | Incremental |
-| `Event_Frame` | `Modified` | Incremental |
-| `Attribute` | `Modified` | Incremental |
-| `Category` | `Modified` | Incremental |
-| `Class` | `Modified` | Incremental |
-| `Element_Hierarchy` | — | Full reimport |
-| `Unit_of_Measure` | — | Full reimport |
-| Other tables | varies | Detected at sync time |
-
-All destination tables follow the naming convention `<source_schema>_<table_name>`.
+| Table | Sync type | Primary key | Notes |
+|---|---|---|---|
+| `elements` | Full reimport | `web_id` | PI AF element hierarchy |
+| `attributes` | Full reimport | `web_id` | PI AF element attributes; includes PI Point data reference metadata |
+| `event_frames` | Incremental (by `start_time`) | `web_id` | PI AF event frames |
+| `recorded_values` | Incremental (by `timestamp`) | `_fivetran_id` | PI archive data for PI Point attributes; opt-in via `sync_recorded_values = "true"` |
 
 
 ## Additional considerations

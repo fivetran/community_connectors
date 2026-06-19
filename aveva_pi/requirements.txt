@@ -1,1 +1,2 @@
-pyodbc
+# requests is pre-installed in the Fivetran Connector SDK runtime.
+# No additional packages are required for this connector.
