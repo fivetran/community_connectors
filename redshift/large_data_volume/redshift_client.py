@@ -46,7 +46,6 @@ __REDSHIFT_TO_FIVETRAN_TYPE = {
 # Replication strategy constants
 __STRATEGY_FULL = "FULL"
 __STRATEGY_INCREMENTAL = "INCREMENTAL"
-__SUPPORTED_FILTER_OPERATORS = {">", ">=", "<", "<=", "=", "!="}
 
 
 @dataclass
@@ -294,14 +293,7 @@ def _build_filter_condition(filter_condition):
     """
     if not filter_condition:
         return None, None
-
-    operator = filter_condition["operator"]
-    if operator not in __SUPPORTED_FILTER_OPERATORS:
-        raise ValueError(
-            f"Unsupported filter operator '{operator}'. "
-            f"Supported operators are: {', '.join(sorted(__SUPPORTED_FILTER_OPERATORS))}"
-        )
-    return f'"{filter_condition["column"]}" {operator} %s', filter_condition["value"]
+    return f'"{filter_condition["column"]}" {filter_condition["operator"]} %s', filter_condition["value"]
 
 
 def build_select(redshift_schema, table, columns, replication_key, bookmark, upper_bound=None, filter_condition=None):

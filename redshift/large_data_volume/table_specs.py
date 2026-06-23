@@ -119,18 +119,13 @@ TABLE_SPECS = [
         "include": [],
         "exclude": [],
         "column_types": {
-            "sales": "STRING",
             # Explicitly declare columns that may contain only NULL values so Fivetran
             # creates them in the destination even when no non-null data is observed.
             # Example: "quantity_sold": "SHORT", "commission": "FLOAT"
         },
-        "filter": {
-            # Sync only records where saletime is after this date.
-            # Remove or set to None to sync all records.
-            "column": "saletime",
-            "operator": ">",
-            "value": "2008-01-01",
-        },
+        # Optional: apply a static WHERE condition to every sync of this table.
+        # Example:"filter": {"column": "saletime", "operator": ">", "value": "2008-01-01"}
+        "filter": None
     },
     {
         "name": "tickit.venue",
