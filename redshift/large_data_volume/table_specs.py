@@ -125,7 +125,7 @@ TABLE_SPECS = [
         },
         # Optional: apply a static WHERE condition to every sync of this table.
         # Example:"filter": {"column": "saletime", "operator": ">", "value": "2008-01-01"}
-        "filter": None
+        "filter": None,
     },
     {
         "name": "tickit.venue",

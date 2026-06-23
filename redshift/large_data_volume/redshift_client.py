@@ -293,11 +293,21 @@ def _build_filter_condition(filter_condition):
     """
     if not filter_condition:
         return None, None
-    return f'"{filter_condition["column"]}" {filter_condition["operator"]} %s', filter_condition["value"]
+    return (
+        f'"{filter_condition["column"]}" {filter_condition["operator"]} %s',
+        filter_condition["value"],
+    )
 
 
-def build_select(redshift_schema, table, columns, replication_key, bookmark, upper_bound=None,
-                 filter_condition=None):
+def build_select(
+    redshift_schema,
+    table,
+    columns,
+    replication_key,
+    bookmark,
+    upper_bound=None,
+    filter_condition=None,
+):
     """
     Build a parameterized SELECT SQL query for the given table and columns.
     If a replication_key and bookmark are provided, add a WHERE clause to filter rows.
@@ -361,8 +371,9 @@ def _declare_cursor(cursor, table_cursor, sql_query, params):
     log.info(f"Successfully declared cursor {table_cursor}")
 
 
-def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_size,
-                            filter_condition=None):
+def _find_chunk_upper_bound(
+    connection, plan, replication_key, bookmark, chunk_size, filter_condition=None
+):
     """
     Find the replication_key value at approximately row chunk_size from the current bookmark.
     This provides a safe boundary to end the chunk, ensuring all rows with the boundary
