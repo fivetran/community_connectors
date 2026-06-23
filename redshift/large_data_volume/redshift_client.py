@@ -46,6 +46,7 @@ __REDSHIFT_TO_FIVETRAN_TYPE = {
 # Replication strategy constants
 __STRATEGY_FULL = "FULL"
 __STRATEGY_INCREMENTAL = "INCREMENTAL"
+__SUPPORTED_FILTER_OPERATORS = {">", ">=", "<", "<=", "=", "!="}
 
 
 @dataclass
@@ -283,6 +284,26 @@ def detect_typed_columns(selected_cols_with_types):
     return explicit
 
 
+def _build_filter_condition(filter_condition):
+    """
+    Build a parameterized static filter predicate from a TABLE_SPECS filter.
+    Args:
+        filter_condition: optional dict with keys 'column', 'operator', and 'value'
+    Returns:
+        A tuple of (where_condition, parameter), or (None, None) when no filter is configured.
+    """
+    if not filter_condition:
+        return None, None
+
+    operator = filter_condition["operator"]
+    if operator not in __SUPPORTED_FILTER_OPERATORS:
+        raise ValueError(
+            f"Unsupported filter operator '{operator}'. "
+            f"Supported operators are: {', '.join(sorted(__SUPPORTED_FILTER_OPERATORS))}"
+        )
+    return f'"{filter_condition["column"]}" {operator} %s', filter_condition["value"]
+
+
 def build_select(redshift_schema, table, columns, replication_key, bookmark, upper_bound=None, filter_condition=None):
     """
     Build a parameterized SELECT SQL query for the given table and columns.
@@ -310,14 +331,14 @@ def build_select(redshift_schema, table, columns, replication_key, bookmark, upp
 
     params = []
     where_conditions = []
-    if filter_condition:
-        # Apply the static filter condition (e.g. "createddate > '2020-01-10'")
-        where_conditions.append(f'"{filter_condition["column"]}" {filter_condition["operator"]} %s')
-        params.append(filter_condition["value"])
     if replication_key and bookmark is not None:
         # If a bookmark is provided, add a WHERE clause to filter rows greater than the bookmark
         where_conditions.append(f'"{replication_key}" > %s')
         params.append(bookmark)
+    filter_sql, filter_value = _build_filter_condition(filter_condition)
+    if filter_sql:
+        where_conditions.append(filter_sql)
+        params.append(filter_value)
     if replication_key and upper_bound is not None:
         # If an upper bound is provided, add it to the WHERE clause for chunking
         where_conditions.append(f'"{replication_key}" <= %s')
@@ -370,9 +391,10 @@ def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_s
     if bookmark is not None:
         where_parts.append(f'"{replication_key}" > %s')
         params.append(bookmark)
-    if filter_condition:
-        where_parts.append(f'"{filter_condition["column"]}" {filter_condition["operator"]} %s')
-        params.append(filter_condition["value"])
+    filter_sql, filter_value = _build_filter_condition(filter_condition)
+    if filter_sql:
+        where_parts.append(filter_sql)
+        params.append(filter_value)
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
     params.append(chunk_size - 1)  # OFFSET
 
