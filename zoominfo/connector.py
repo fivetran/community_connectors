@@ -20,7 +20,7 @@ Patterns demonstrated:
 - Bounded-memory streaming of high-volume per-company enrichments through a
   worker pool + queue (see _stream_per_company_enrich).
 - Exponential-backoff retries on 429/5xx and intra-table checkpointing
-  (see post_with_retry, CHECKPOINT_EVERY_N_ROWS).
+  (see post_with_retry, __CHECKPOINT_EVERY_N_ROWS).
 
 Pure helper logic and the HTTP retry path are unit-tested in connector_test.py
 (mocked transport, no credentials required).
@@ -62,50 +62,50 @@ import json
 # ─────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────
-TOKEN_URL = "https://api.zoominfo.com/gtm/oauth/v1/token"
-SEARCH_BASE = "https://api.zoominfo.com"
+__TOKEN_URL = "https://api.zoominfo.com/gtm/oauth/v1/token"
+__SEARCH_BASE = "https://api.zoominfo.com"
 
 # Search endpoints (free — no credits, records/requests counted)
-ENDPOINT_CONTACTS = "/gtm/data/v1/contacts/search"
-ENDPOINT_COMPANIES = "/gtm/data/v1/companies/search"
-ENDPOINT_SCOOPS = "/gtm/data/v1/scoops/search"
-ENDPOINT_INTENT = "/gtm/data/v1/intent/search"
-ENDPOINT_NEWS = "/gtm/data/v1/news/search"
+__ENDPOINT_CONTACTS = "/gtm/data/v1/contacts/search"
+__ENDPOINT_COMPANIES = "/gtm/data/v1/companies/search"
+__ENDPOINT_SCOOPS = "/gtm/data/v1/scoops/search"
+__ENDPOINT_INTENT = "/gtm/data/v1/intent/search"
+__ENDPOINT_NEWS = "/gtm/data/v1/news/search"
 
 # Enrich endpoints (cost credits per company/contact)
-ENDPOINT_CONTACTS_ENRICH = "/gtm/data/v1/contacts/enrich"
-ENDPOINT_COMPANIES_ENRICH = "/gtm/data/v1/companies/enrich"
-ENDPOINT_SCOOPS_ENRICH = "/gtm/data/v1/scoops/enrich"
-ENDPOINT_TECHNOLOGIES_ENRICH = "/gtm/data/v1/companies/technologies/enrich"
-ENDPOINT_CORP_HIER_ENRICH = "/gtm/data/v1/companies/corporate-hierarchy/enrich"
+__ENDPOINT_CONTACTS_ENRICH = "/gtm/data/v1/contacts/enrich"
+__ENDPOINT_COMPANIES_ENRICH = "/gtm/data/v1/companies/enrich"
+__ENDPOINT_SCOOPS_ENRICH = "/gtm/data/v1/scoops/enrich"
+__ENDPOINT_TECHNOLOGIES_ENRICH = "/gtm/data/v1/companies/technologies/enrich"
+__ENDPOINT_CORP_HIER_ENRICH = "/gtm/data/v1/companies/corporate-hierarchy/enrich"
 
 # Usage endpoint (free)
-ENDPOINT_USAGE = "/gtm/data/v1/users/usage"
+__ENDPOINT_USAGE = "/gtm/data/v1/users/usage"
 
 # JSON:API type name per endpoint
-JSONAPI_TYPE = {
-    ENDPOINT_CONTACTS: "ContactSearch",
-    ENDPOINT_COMPANIES: "CompanySearch",
-    ENDPOINT_SCOOPS: "ScoopSearch",
-    ENDPOINT_INTENT: "IntentSearch",
-    ENDPOINT_NEWS: "NewsSearch",
-    ENDPOINT_CONTACTS_ENRICH: "ContactEnrich",
-    ENDPOINT_COMPANIES_ENRICH: "CompanyEnrich",
-    ENDPOINT_SCOOPS_ENRICH: "ScoopEnrich",
-    ENDPOINT_TECHNOLOGIES_ENRICH: "TechnologyEnrich",
-    ENDPOINT_CORP_HIER_ENRICH: "CorporateHierarchyEnrich",
+__JSONAPI_TYPE = {
+    __ENDPOINT_CONTACTS: "ContactSearch",
+    __ENDPOINT_COMPANIES: "CompanySearch",
+    __ENDPOINT_SCOOPS: "ScoopSearch",
+    __ENDPOINT_INTENT: "IntentSearch",
+    __ENDPOINT_NEWS: "NewsSearch",
+    __ENDPOINT_CONTACTS_ENRICH: "ContactEnrich",
+    __ENDPOINT_COMPANIES_ENRICH: "CompanyEnrich",
+    __ENDPOINT_SCOOPS_ENRICH: "ScoopEnrich",
+    __ENDPOINT_TECHNOLOGIES_ENRICH: "TechnologyEnrich",
+    __ENDPOINT_CORP_HIER_ENRICH: "CorporateHierarchyEnrich",
 }
 
 # Pagination via URL query params: page[size] and page[number]
-PAGE_SIZE = 100
+__PAGE_SIZE = 100
 
 # Safety cap on pages per endpoint per sync (client-side backstop). At
-# PAGE_SIZE=100 this is 1M records. See SEARCH_RESULT_CEILING below for the
+# __PAGE_SIZE=100 this is 1M records. See __SEARCH_RESULT_CEILING below for the
 # server-side limit that is reached first in practice.
-MAX_PAGES = 10000
+__MAX_PAGES = 10000
 
 # Server-side ceiling on a single ZoomInfo Search query. The Search API returns
-# at most 100 pages (meta.page.total caps at 100), i.e. PAGE_SIZE * 100 = 10,000
+# at most 100 pages (meta.page.total caps at 100), i.e. __PAGE_SIZE * 100 = 10,000
 # records, regardless of how large meta.totalResults is. A query whose universe
 # exceeds this returns only the first 10,000 records — the remainder are NOT
 # retrievable by paging further. The connector cannot page past this; the only
@@ -113,37 +113,37 @@ MAX_PAGES = 10000
 # so each query's universe stays under the ceiling. paginate() logs a WARNING
 # when totalResults exceeds this so silent truncation is visible. See the
 # "Known limitations" section of the README.
-SEARCH_RESULT_CEILING = PAGE_SIZE * 100  # = 10,000
+__SEARCH_RESULT_CEILING = __PAGE_SIZE * 100  # = 10,000
 
 # Enrich API accepts up to 25 records per request (contacts and companies)
-ENRICH_BATCH_SIZE = 25
+__ENRICH_BATCH_SIZE = 25
 
 # Worker pool size for per-company enrich loops (scoops, technologies).
 # Lowered from 5 to 3 in 2026-05-28 — Fivetran cloud OOM'd with 5 workers
 # accumulating per-company row lists in memory. Streaming via queue also added;
 # see _stream_per_company_enrich. Don't raise above 3 without re-validating
 # memory under the 1 GB cloud limit.
-ENRICH_WORKERS = 3
+__ENRICH_WORKERS = 3
 
 # Bounded queue size for the per-company streaming pattern. Caps peak memory
 # at roughly QUEUE_MAX × avg_row_size bytes. At ~5 KB/row → ~10 MB ceiling.
 # Workers block on put() when queue is full, providing backpressure.
-ENRICH_QUEUE_MAX = 2000
+__ENRICH_QUEUE_MAX = 2000
 
 # Intra-table checkpoint cadence for high-volume streams. Fivetran best
 # practice is ~1K rows or ~10 min per checkpoint — without intermediate
 # checkpoints the entire table buffers in flight and OOMs the runtime.
 # See https://fivetran.com/docs/connector-sdk/best-practices
-CHECKPOINT_EVERY_N_ROWS = 1000
+__CHECKPOINT_EVERY_N_ROWS = 1000
 
 # Default country filter when the customer leaves `countries` blank.
-DEFAULT_COUNTRY = "United States"
+__DEFAULT_COUNTRY = "United States"
 
 # Default output fields for Contact Enrichment
 # Note: linkedInUrl is NOT a valid field — LinkedIn data is not available via this API.
 # Note: managementLevel returns a list (e.g. ["C-Level"]) — stored as JSON string.
 # Note: companyName is nested under company.name in the response, not a top-level field.
-DEFAULT_CONTACT_ENRICH_FIELDS = [
+__DEFAULT_CONTACT_ENRICH_FIELDS = [
     "firstName",
     "lastName",
     "email",
@@ -172,7 +172,7 @@ DEFAULT_CONTACT_ENRICH_FIELDS = [
 # Default output fields for Company Enrichment
 # Confirmed valid via GET /gtm/data/v1/lookup/enrich?filter[entity]=company&filter[fieldType]=output
 # Invalid names we fixed: "industry" -> "primaryIndustry", "companyType" -> "type"
-DEFAULT_COMPANY_ENRICH_FIELDS = [
+__DEFAULT_COMPANY_ENRICH_FIELDS = [
     "name",
     "website",
     "phone",
@@ -217,32 +217,32 @@ DEFAULT_COMPANY_ENRICH_FIELDS = [
 #       familyTree lists all companies and locations in the family tree.
 # No standard company fields (name, website, city, etc.) are valid here —
 # use companies_enriched table for those details.
-DEFAULT_CORP_HIER_FIELDS = [
+__DEFAULT_CORP_HIER_FIELDS = [
     "companyId",
     "parentage",
     "familyTree",
 ]
 
 # Retry settings for transient HTTP failures
-MAX_RETRIES = 5
-RETRY_BASE_WAIT = 2  # seconds — doubles each retry (exponential backoff)
-RETRY_MAX_WAIT = 60  # seconds — cap on any single wait
+__MAX_RETRIES = 5
+__RETRY_BASE_WAIT = 2  # seconds — doubles each retry (exponential backoff)
+__RETRY_MAX_WAIT = 60  # seconds — cap on any single wait
 
 # HTTP status codes that should trigger a retry (429 + transient 5xx).
-RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+__RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # (connect, read) timeout for every outbound request. Without this, a hung
 # ZoomInfo connection would stall the sync forever.
-REQUEST_TIMEOUT = (10, 60)
+__REQUEST_TIMEOUT = (10, 60)
 
 # State keys persisted via op.checkpoint between syncs. Centralized so a typo
 # at one call-site can't silently break incremental sync (a wrong key reads as
 # "no prior state" and re-pulls the full universe).
-STATE_CONTACTS_LAST_UPDATED = "contacts_last_updated"
-STATE_COMPANIES_LAST_UPDATED = "companies_last_updated"
-STATE_SCOOPS_LAST_UPDATED = "scoops_last_updated"
-STATE_INTENT_LAST_UPDATED = "intent_last_updated"
-STATE_NEWS_LAST_UPDATED = "news_last_updated"
+__STATE_CONTACTS_LAST_UPDATED = "contacts_last_updated"
+__STATE_COMPANIES_LAST_UPDATED = "companies_last_updated"
+__STATE_SCOOPS_LAST_UPDATED = "scoops_last_updated"
+__STATE_INTENT_LAST_UPDATED = "intent_last_updated"
+__STATE_NEWS_LAST_UPDATED = "news_last_updated"
 
 # In-memory token cache. Guarded by _token_cache_lock — enrich worker threads
 # can race on token refresh otherwise, wasting credits on duplicate /oauth/v1/token
@@ -316,13 +316,13 @@ def get_access_token(configuration: dict) -> str:
         encoded = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
 
         response = requests.post(
-            TOKEN_URL,
+            __TOKEN_URL,
             headers={
                 "Authorization": f"Basic {encoded}",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             data={"grant_type": "client_credentials"},
-            timeout=REQUEST_TIMEOUT,
+            timeout=__REQUEST_TIMEOUT,
         )
 
         if response.status_code != 200:
@@ -369,14 +369,14 @@ def get_headers_get(token: str) -> dict:
 
 def build_body(endpoint: str, attributes: dict) -> dict:
     """Wraps filter/input attributes in the JSON:API request envelope."""
-    return {"data": {"type": JSONAPI_TYPE[endpoint], "attributes": attributes}}
+    return {"data": {"type": __JSONAPI_TYPE[endpoint], "attributes": attributes}}
 
 
 def _sleep_for_retry(response: requests.Response, current_wait: int):
     """
     Sleeps for the appropriate wait time on a retryable response and returns
     (wait_secs_used, next_current_wait). Honors Retry-After when present,
-    otherwise uses exponential backoff capped at RETRY_MAX_WAIT.
+    otherwise uses exponential backoff capped at __RETRY_MAX_WAIT.
     """
     retry_after = response.headers.get("Retry-After")
     if retry_after:
@@ -387,7 +387,7 @@ def _sleep_for_retry(response: requests.Response, current_wait: int):
         except ValueError:
             pass  # fall through to backoff
 
-    wait_secs = min(current_wait, RETRY_MAX_WAIT)
+    wait_secs = min(current_wait, __RETRY_MAX_WAIT)
     time.sleep(wait_secs)
     return wait_secs, current_wait * 2
 
@@ -398,40 +398,40 @@ def post_with_retry(
     """
     POST with exponential backoff on retryable failures: 429 + transient 5xx
     + connection errors / timeouts. Honors Retry-After on 429. Raises
-    RuntimeError after MAX_RETRIES.
+    RuntimeError after __MAX_RETRIES.
     """
-    wait = RETRY_BASE_WAIT
+    wait = __RETRY_BASE_WAIT
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, __MAX_RETRIES + 1):
         try:
             response = requests.post(
                 url,
                 headers=headers,
                 json=json_body,
                 params=params,
-                timeout=REQUEST_TIMEOUT,
+                timeout=__REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException as e:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"Network error on {url} after {MAX_RETRIES} attempts: {e}")
-            wait_secs = min(wait, RETRY_MAX_WAIT)
+            if attempt == __MAX_RETRIES:
+                raise RuntimeError(f"Network error on {url} after {__MAX_RETRIES} attempts: {e}")
+            wait_secs = min(wait, __RETRY_MAX_WAIT)
             log.warning(
-                f"Network error on {url} ({type(e).__name__}) — backing off {wait_secs}s (attempt {attempt}/{MAX_RETRIES})"
+                f"Network error on {url} ({type(e).__name__}) — backing off {wait_secs}s (attempt {attempt}/{__MAX_RETRIES})"
             )
             time.sleep(wait_secs)
             wait *= 2
             continue
 
-        if response.status_code in RETRY_STATUS_CODES:
-            if attempt == MAX_RETRIES:
+        if response.status_code in __RETRY_STATUS_CODES:
+            if attempt == __MAX_RETRIES:
                 raise RuntimeError(
-                    f"ZoomInfo API failed after {MAX_RETRIES} retries on {url} "
+                    f"ZoomInfo API failed after {__MAX_RETRIES} retries on {url} "
                     f"[HTTP {response.status_code}]: {response.text[:200]}"
                 )
             wait_secs, wait = _sleep_for_retry(response, wait)
             log.warning(
                 f"Retryable status {response.status_code} on {url} — waited {wait_secs}s "
-                f"(attempt {attempt}/{MAX_RETRIES})"
+                f"(attempt {attempt}/{__MAX_RETRIES})"
             )
             continue
 
@@ -445,37 +445,37 @@ def get_with_retry(url: str, headers: dict, params: dict = None) -> requests.Res
     GET with exponential backoff on retryable failures: 429 + transient 5xx
     + connection errors / timeouts.
     """
-    wait = RETRY_BASE_WAIT
+    wait = __RETRY_BASE_WAIT
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, __MAX_RETRIES + 1):
         try:
             response = requests.get(
                 url,
                 headers=headers,
                 params=params,
-                timeout=REQUEST_TIMEOUT,
+                timeout=__REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException as e:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"Network error on {url} after {MAX_RETRIES} attempts: {e}")
-            wait_secs = min(wait, RETRY_MAX_WAIT)
+            if attempt == __MAX_RETRIES:
+                raise RuntimeError(f"Network error on {url} after {__MAX_RETRIES} attempts: {e}")
+            wait_secs = min(wait, __RETRY_MAX_WAIT)
             log.warning(
-                f"Network error on {url} ({type(e).__name__}) — backing off {wait_secs}s (attempt {attempt}/{MAX_RETRIES})"
+                f"Network error on {url} ({type(e).__name__}) — backing off {wait_secs}s (attempt {attempt}/{__MAX_RETRIES})"
             )
             time.sleep(wait_secs)
             wait *= 2
             continue
 
-        if response.status_code in RETRY_STATUS_CODES:
-            if attempt == MAX_RETRIES:
+        if response.status_code in __RETRY_STATUS_CODES:
+            if attempt == __MAX_RETRIES:
                 raise RuntimeError(
-                    f"ZoomInfo API failed after {MAX_RETRIES} retries on {url} "
+                    f"ZoomInfo API failed after {__MAX_RETRIES} retries on {url} "
                     f"[HTTP {response.status_code}]: {response.text[:200]}"
                 )
             wait_secs, wait = _sleep_for_retry(response, wait)
             log.warning(
                 f"Retryable status {response.status_code} on {url} — waited {wait_secs}s "
-                f"(attempt {attempt}/{MAX_RETRIES})"
+                f"(attempt {attempt}/{__MAX_RETRIES})"
             )
             continue
 
@@ -488,10 +488,10 @@ def _warn_if_truncated(endpoint: str, total_results) -> bool:
     """
     Logs a WARNING when a Search query's universe exceeds the API result ceiling.
 
-    The ZoomInfo Search API returns at most SEARCH_RESULT_CEILING records per
+    The ZoomInfo Search API returns at most __SEARCH_RESULT_CEILING records per
     query; records beyond that are not retrievable by paging further. When the
     reported totalResults is larger, this run will only capture the first
-    SEARCH_RESULT_CEILING records, and incremental syncs will not backfill the
+    __SEARCH_RESULT_CEILING records, and incremental syncs will not backfill the
     remainder. Warn so the operator can narrow the query.
     Args:
         endpoint: the Search endpoint path being paginated (for the log message).
@@ -500,13 +500,13 @@ def _warn_if_truncated(endpoint: str, total_results) -> bool:
         True if a truncation warning was emitted, otherwise False.
     """
     count = _safe_int(total_results)
-    if count is not None and count > SEARCH_RESULT_CEILING:
+    if count is not None and count > __SEARCH_RESULT_CEILING:
         log.warning(
             f"{endpoint}: totalResults={count} exceeds the ZoomInfo Search API "
-            f"ceiling of {SEARCH_RESULT_CEILING} records per query. Only the first "
-            f"{SEARCH_RESULT_CEILING} will be synced, and incremental runs will NOT "
+            f"ceiling of {__SEARCH_RESULT_CEILING} records per query. Only the first "
+            f"{__SEARCH_RESULT_CEILING} will be synced, and incremental runs will NOT "
             f"backfill the remainder. Narrow the query (e.g. a tighter `countries` "
-            f"filter) so each query's universe stays under {SEARCH_RESULT_CEILING}."
+            f"filter) so each query's universe stays under {__SEARCH_RESULT_CEILING}."
         )
         return True
     return False
@@ -529,12 +529,12 @@ def paginate(configuration: dict, endpoint: str, attributes: dict):
 
     while True:
         params = {
-            "page[size]": PAGE_SIZE,
+            "page[size]": __PAGE_SIZE,
             "page[number]": page,
         }
 
         response = post_with_retry(
-            f"{SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body, params=params
+            f"{__SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body, params=params
         )
 
         if response.status_code == 401:
@@ -542,7 +542,7 @@ def paginate(configuration: dict, endpoint: str, attributes: dict):
             _invalidate_token_cache()
             token = get_access_token(configuration)
             response = post_with_retry(
-                f"{SEARCH_BASE}{endpoint}",
+                f"{__SEARCH_BASE}{endpoint}",
                 headers=get_headers(token),
                 json_body=body,
                 params=params,
@@ -573,7 +573,7 @@ def paginate(configuration: dict, endpoint: str, attributes: dict):
                 f"totalPages={meta.get('page', {}).get('total')}"
             )
             # Surface silent truncation: the Search API caps a single query at
-            # SEARCH_RESULT_CEILING records. If the universe is larger, only the
+            # __SEARCH_RESULT_CEILING records. If the universe is larger, only the
             # first ceiling records are retrievable — and because incremental
             # syncs advance the cursor past whatever was fetched, the dropped
             # records are never backfilled on later runs. Warn loudly so the
@@ -598,8 +598,8 @@ def paginate(configuration: dict, endpoint: str, attributes: dict):
         total_pages = payload.get("meta", {}).get("page", {}).get("total", 1)
         if page >= total_pages:
             break
-        if MAX_PAGES is not None and page >= MAX_PAGES:
-            log.debug(f"{endpoint}: reached MAX_PAGES={MAX_PAGES}, stopping early")
+        if __MAX_PAGES is not None and page >= __MAX_PAGES:
+            log.debug(f"{endpoint}: reached __MAX_PAGES={__MAX_PAGES}, stopping early")
             break
 
         page += 1
@@ -612,17 +612,17 @@ def paginate_enrich_scoops(configuration: dict, company_id: str):
     """
     page = 1
     token = get_access_token(configuration)
-    body = build_body(ENDPOINT_SCOOPS_ENRICH, {"companyId": company_id})
+    body = build_body(__ENDPOINT_SCOOPS_ENRICH, {"companyId": company_id})
 
     while True:
         params = {
-            "page[size]": PAGE_SIZE,
+            "page[size]": __PAGE_SIZE,
             "page[number]": page,
             "sort": "-originalPublishedDate",
         }
 
         response = post_with_retry(
-            f"{SEARCH_BASE}{ENDPOINT_SCOOPS_ENRICH}",
+            f"{__SEARCH_BASE}{__ENDPOINT_SCOOPS_ENRICH}",
             headers=get_headers(token),
             json_body=body,
             params=params,
@@ -632,7 +632,7 @@ def paginate_enrich_scoops(configuration: dict, company_id: str):
             _invalidate_token_cache()
             token = get_access_token(configuration)
             response = post_with_retry(
-                f"{SEARCH_BASE}{ENDPOINT_SCOOPS_ENRICH}",
+                f"{__SEARCH_BASE}{__ENDPOINT_SCOOPS_ENRICH}",
                 headers=get_headers(token),
                 json_body=body,
                 params=params,
@@ -671,7 +671,7 @@ def paginate_enrich_scoops(configuration: dict, company_id: str):
         total_pages = payload.get("meta", {}).get("page", {}).get("total", 1)
         if page >= total_pages:
             break
-        if MAX_PAGES is not None and page >= MAX_PAGES:
+        if __MAX_PAGES is not None and page >= __MAX_PAGES:
             break
 
         page += 1
@@ -695,11 +695,11 @@ def paginate_enrich_technologies(configuration: dict, company_id: str):
     No outputFields param — API returns all fields automatically.
     """
     token = get_access_token(configuration)
-    body = build_body(ENDPOINT_TECHNOLOGIES_ENRICH, {"companyId": company_id})
-    params = {"page[size]": PAGE_SIZE, "page[number]": 1}
+    body = build_body(__ENDPOINT_TECHNOLOGIES_ENRICH, {"companyId": company_id})
+    params = {"page[size]": __PAGE_SIZE, "page[number]": 1}
 
     response = post_with_retry(
-        f"{SEARCH_BASE}{ENDPOINT_TECHNOLOGIES_ENRICH}",
+        f"{__SEARCH_BASE}{__ENDPOINT_TECHNOLOGIES_ENRICH}",
         headers=get_headers(token),
         json_body=body,
         params=params,
@@ -709,7 +709,7 @@ def paginate_enrich_technologies(configuration: dict, company_id: str):
         _invalidate_token_cache()
         token = get_access_token(configuration)
         response = post_with_retry(
-            f"{SEARCH_BASE}{ENDPOINT_TECHNOLOGIES_ENRICH}",
+            f"{__SEARCH_BASE}{__ENDPOINT_TECHNOLOGIES_ENRICH}",
             headers=get_headers(token),
             json_body=body,
             params=params,
@@ -863,11 +863,11 @@ def build_search_filter(configuration: dict) -> dict:
     Builds the JSON:API `attributes` filter used by every Search endpoint.
 
     Reads `countries` from configuration (comma-separated). Defaults to
-    DEFAULT_COUNTRY when blank. Currently supports a single country only —
+    __DEFAULT_COUNTRY when blank. Currently supports a single country only —
     if multiple are provided, the first is used and a warning is logged.
     """
     raw = configuration.get("countries", "").strip()
-    countries = [c.strip() for c in raw.split(",") if c.strip()] if raw else [DEFAULT_COUNTRY]
+    countries = [c.strip() for c in raw.split(",") if c.strip()] if raw else [__DEFAULT_COUNTRY]
 
     if len(countries) > 1:
         log.warning(
@@ -957,7 +957,7 @@ def get_enrich_config(configuration: dict) -> dict:
 
     mgmt_levels = _list_config(configuration, "enrich_management_levels")
     output_fields = _fields_config(
-        configuration, "enrich_output_fields", DEFAULT_CONTACT_ENRICH_FIELDS
+        configuration, "enrich_output_fields", __DEFAULT_CONTACT_ENRICH_FIELDS
     )
 
     log.info(
@@ -1035,7 +1035,7 @@ def _enrich_post(configuration: dict, endpoint: str, attributes: dict) -> list:
     body = build_body(endpoint, attributes)
 
     response = post_with_retry(
-        f"{SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body
+        f"{__SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body
     )
 
     if response.status_code == 401:
@@ -1043,7 +1043,7 @@ def _enrich_post(configuration: dict, endpoint: str, attributes: dict) -> list:
         _invalidate_token_cache()
         token = get_access_token(configuration)
         response = post_with_retry(
-            f"{SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body
+            f"{__SEARCH_BASE}{endpoint}", headers=get_headers(token), json_body=body
         )
 
     if response.status_code != 200:
@@ -1058,7 +1058,7 @@ def enrich_contacts_batch(configuration: dict, person_ids: list, output_fields: 
     """Enriches a batch of up to 25 contacts by personId."""
     return _enrich_post(
         configuration,
-        ENDPOINT_CONTACTS_ENRICH,
+        __ENDPOINT_CONTACTS_ENRICH,
         {
             "matchPersonInput": [{"personId": pid} for pid in person_ids],
             "outputFields": output_fields,
@@ -1070,7 +1070,7 @@ def enrich_companies_batch(configuration: dict, company_ids: list, output_fields
     """Enriches a batch of up to 25 companies by companyId."""
     return _enrich_post(
         configuration,
-        ENDPOINT_COMPANIES_ENRICH,
+        __ENDPOINT_COMPANIES_ENRICH,
         {
             "matchCompanyInput": [{"companyId": cid} for cid in company_ids],
             "outputFields": output_fields,
@@ -1084,7 +1084,7 @@ def enrich_corp_hierarchy_batch(
     """Enriches corporate hierarchy for a batch of up to 25 companies."""
     return _enrich_post(
         configuration,
-        ENDPOINT_CORP_HIER_ENRICH,
+        __ENDPOINT_CORP_HIER_ENRICH,
         {
             "matchCompanyInput": [{"companyId": cid} for cid in company_ids],
             "outputFields": output_fields,
@@ -1132,7 +1132,7 @@ def sync_contacts(
         search_filter, configuration, state, "contacts_last_updated", "lastUpdatedDateAfter"
     )
 
-    for page_results in paginate(configuration, ENDPOINT_CONTACTS, effective_filter):
+    for page_results in paginate(configuration, __ENDPOINT_CONTACTS, effective_filter):
         for record in page_results:
             record_id = record.get("id")
             a = record.get("attributes", {})
@@ -1180,9 +1180,9 @@ def sync_contacts(
             # Intra-table checkpoint so a crash mid-pull doesn't re-fetch from
             # the previous run's cursor — resume picks up from the latest_date
             # we've seen so far.
-            if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
+            if cumulative_state is not None and count % __CHECKPOINT_EVERY_N_ROWS == 0:
                 if latest_date:
-                    cumulative_state[STATE_CONTACTS_LAST_UPDATED] = latest_date
+                    cumulative_state[__STATE_CONTACTS_LAST_UPDATED] = latest_date
                 # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
                 # from the correct position in case of next sync or interruptions.
                 # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
@@ -1234,11 +1234,11 @@ def sync_companies(configuration: dict, state: dict, search_filter: dict):
     # peak memory scales with universe × ~1 KB/row. At the documented 10K-company
     # scale this is ~10 MB, well under the 1 GB Fivetran cloud limit. For very
     # large universes, narrow the `countries` filter or split across multiple
-    # connectors instead of raising PAGE_SIZE.
+    # connectors instead of raising __PAGE_SIZE.
     buffered_rows = []
     company_ids = []
 
-    for page_results in paginate(configuration, ENDPOINT_COMPANIES, search_filter):
+    for page_results in paginate(configuration, __ENDPOINT_COMPANIES, search_filter):
         for record in page_results:
             record_id = record.get("id")
             a = record.get("attributes", {})
@@ -1270,7 +1270,8 @@ def sync_companies(configuration: dict, state: dict, search_filter: dict):
     # _fivetran_deleted=FALSE, so deletions on the ZoomInfo side propagate.
     op.truncate(table="companies")
     for row in buffered_rows:
-        # The 'upsert' operation is used to insert or update data in the destination table.
+        # Upsert one company row into the destination. 'upsert' inserts or
+        # updates the record keyed by its primary key ('id').
         op.upsert(table="companies", data=row)
 
     log.info(f"Companies sync complete — {len(buffered_rows)} records upserted")
@@ -1298,7 +1299,7 @@ def sync_scoops(
         search_filter, configuration, state, "scoops_last_updated", "publishedStartDate"
     )
 
-    for page_results in paginate(configuration, ENDPOINT_SCOOPS, effective_filter):
+    for page_results in paginate(configuration, __ENDPOINT_SCOOPS, effective_filter):
         for record in page_results:
             record_id = record.get("id")
             a = record.get("attributes", {})
@@ -1334,9 +1335,9 @@ def sync_scoops(
             record_date = a.get("publishedDate")
             latest_date = _max_cursor(latest_date, record_date)
 
-            if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
+            if cumulative_state is not None and count % __CHECKPOINT_EVERY_N_ROWS == 0:
                 if latest_date:
-                    cumulative_state[STATE_SCOOPS_LAST_UPDATED] = latest_date
+                    cumulative_state[__STATE_SCOOPS_LAST_UPDATED] = latest_date
                 # Checkpoint mid-table so progress is flushed and the next sync
                 # can resume from the latest scoops cursor.
                 op.checkpoint(state=cumulative_state)
@@ -1354,7 +1355,7 @@ def get_valid_intent_topics(configuration: dict) -> set:
     try:
         token = get_access_token(configuration)
         resp = get_with_retry(
-            f"{SEARCH_BASE}/gtm/data/v1/lookup/intent-topics", headers=get_headers_get(token)
+            f"{__SEARCH_BASE}/gtm/data/v1/lookup/intent-topics", headers=get_headers_get(token)
         )
         if resp.status_code != 200:
             log.warning(
@@ -1421,7 +1422,7 @@ def sync_intent(configuration: dict, state: dict, cumulative_state: dict = None)
     )
 
     try:
-        for page_results in paginate(configuration, ENDPOINT_INTENT, intent_filter):
+        for page_results in paginate(configuration, __ENDPOINT_INTENT, intent_filter):
             for record in page_results:
                 record_id = record.get("id")
                 a = record.get("attributes", {})
@@ -1454,9 +1455,9 @@ def sync_intent(configuration: dict, state: dict, cumulative_state: dict = None)
                 record_date = a.get("signalDate")
                 latest_date = _max_cursor(latest_date, record_date)
 
-                if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
+                if cumulative_state is not None and count % __CHECKPOINT_EVERY_N_ROWS == 0:
                     if latest_date:
-                        cumulative_state[STATE_INTENT_LAST_UPDATED] = latest_date
+                        cumulative_state[__STATE_INTENT_LAST_UPDATED] = latest_date
                     # Checkpoint mid-table so progress is flushed and the next
                     # sync can resume from the latest intent cursor.
                     op.checkpoint(state=cumulative_state)
@@ -1500,7 +1501,7 @@ def sync_news(configuration: dict, state: dict, cumulative_state: dict = None):
     )
 
     try:
-        for page_results in paginate(configuration, ENDPOINT_NEWS, news_filter):
+        for page_results in paginate(configuration, __ENDPOINT_NEWS, news_filter):
             for record in page_results:
                 record_id = record.get("id")
                 a = record.get("attributes", {})
@@ -1547,9 +1548,9 @@ def sync_news(configuration: dict, state: dict, cumulative_state: dict = None):
                 record_date = a.get("pageDate")
                 latest_date = _max_cursor(latest_date, record_date)
 
-                if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
+                if cumulative_state is not None and count % __CHECKPOINT_EVERY_N_ROWS == 0:
                     if latest_date:
-                        cumulative_state[STATE_NEWS_LAST_UPDATED] = latest_date
+                        cumulative_state[__STATE_NEWS_LAST_UPDATED] = latest_date
                     # Checkpoint mid-table so progress is flushed and the next
                     # sync can resume from the latest news cursor.
                     op.checkpoint(state=cumulative_state)
@@ -1590,9 +1591,9 @@ def _run_contact_enrichment(configuration: dict, person_ids: list, enrich_config
     skipped_mgmt = 0
 
     try:
-        for i in range(0, total, ENRICH_BATCH_SIZE):
-            batch = person_ids[i : i + ENRICH_BATCH_SIZE]
-            batch_num = (i // ENRICH_BATCH_SIZE) + 1
+        for i in range(0, total, __ENRICH_BATCH_SIZE):
+            batch = person_ids[i : i + __ENRICH_BATCH_SIZE]
+            batch_num = (i // __ENRICH_BATCH_SIZE) + 1
             log.debug(f"Enriching contact batch {batch_num} ({len(batch)} contacts)...")
 
             results = enrich_contacts_batch(configuration, batch, output_fields)
@@ -1686,7 +1687,7 @@ def sync_companies_enriched(configuration: dict, company_ids: list):
         return
 
     output_fields = _fields_config(
-        configuration, "enrich_companies_output_fields", DEFAULT_COMPANY_ENRICH_FIELDS
+        configuration, "enrich_companies_output_fields", __DEFAULT_COMPANY_ENRICH_FIELDS
     )
 
     log.info(f"Starting company enrichment — {len(company_ids)} companies queued...")
@@ -1696,9 +1697,9 @@ def sync_companies_enriched(configuration: dict, company_ids: list):
     skipped_match = 0
 
     try:
-        for i in range(0, total, ENRICH_BATCH_SIZE):
-            batch = company_ids[i : i + ENRICH_BATCH_SIZE]
-            batch_num = (i // ENRICH_BATCH_SIZE) + 1
+        for i in range(0, total, __ENRICH_BATCH_SIZE):
+            batch = company_ids[i : i + __ENRICH_BATCH_SIZE]
+            batch_num = (i // __ENRICH_BATCH_SIZE) + 1
             log.debug(f"Enriching company batch {batch_num} ({len(batch)} companies)...")
 
             results = enrich_companies_batch(configuration, batch, output_fields)
@@ -1801,10 +1802,10 @@ def _stream_per_company_enrich(
     Workers fetch a single page from the per-company enrich endpoint at a time,
     build row dicts via ``row_builder(company_id, record)``, and push them onto
     a bounded queue. The main thread drains the queue and calls ``op.upsert``
-    on each row, so memory holds at most ENRICH_QUEUE_MAX rows in flight
+    on each row, so memory holds at most __ENRICH_QUEUE_MAX rows in flight
     instead of accumulating an entire company's record list per worker.
 
-    Calls ``op.checkpoint(state=checkpoint_state)`` every CHECKPOINT_EVERY_N_ROWS
+    Calls ``op.checkpoint(state=checkpoint_state)`` every __CHECKPOINT_EVERY_N_ROWS
     successful upserts so Fivetran flushes buffered rows to the destination
     incrementally rather than buffering an entire million-row table in memory.
     Tech/scoops enrich tables don't have their own incremental cursor, so
@@ -1822,9 +1823,15 @@ def _stream_per_company_enrich(
                                          main thread logs and continues
     """
     abort = threading.Event()
-    work_queue: queue.Queue = queue.Queue(maxsize=ENRICH_QUEUE_MAX)
+    work_queue: queue.Queue = queue.Queue(maxsize=__ENRICH_QUEUE_MAX)
 
     def worker(cid: str):
+        """Fetches one company's enrich rows and pushes them onto the queue.
+
+        Runs in a thread-pool worker. Never calls op.upsert/op.checkpoint
+        directly (SDK constraint — main-thread only); instead enqueues row
+        dicts plus a terminal sentinel: ("done"/"403"/"error", cid[, exc]).
+        """
         if abort.is_set():
             work_queue.put(("done", cid))
             return
@@ -1849,7 +1856,7 @@ def _stream_per_company_enrich(
     license_missing = False
     expected_signals = len(company_ids)
 
-    with ThreadPoolExecutor(max_workers=ENRICH_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=__ENRICH_WORKERS) as pool:
         for cid in company_ids:
             pool.submit(worker, cid)
 
@@ -1867,7 +1874,7 @@ def _stream_per_company_enrich(
                 # only on the main thread (SDK constraint); workers enqueue rows.
                 op.upsert(table=table_name, data=item)
                 total_rows += 1
-                if total_rows % CHECKPOINT_EVERY_N_ROWS == 0:
+                if total_rows % __CHECKPOINT_EVERY_N_ROWS == 0:
                     # Checkpoint periodically so Fivetran flushes buffered rows
                     # to the destination incrementally instead of holding the
                     # whole table in memory.
@@ -1909,6 +1916,7 @@ class _ScoopsEnrichBuilder:
 
     @staticmethod
     def build_row(company_id: str, record: dict) -> dict:
+        """Maps one Scoops Enrich API record to a destination row dict."""
         record_id = record.get("id")
         a = record.get("attributes", {})
         company = a.get("company") or {}
@@ -1949,7 +1957,7 @@ def sync_scoops_enriched(configuration: dict, company_ids: list, cumulative_stat
 
     log.info(
         f"Starting scoops enrichment — {len(company_ids)} companies, "
-        f"{ENRICH_WORKERS} parallel workers (streaming, queue_max={ENRICH_QUEUE_MAX})..."
+        f"{__ENRICH_WORKERS} parallel workers (streaming, queue_max={__ENRICH_QUEUE_MAX})..."
     )
 
     total = _stream_per_company_enrich(
@@ -1970,6 +1978,7 @@ class _TechnologiesEnrichBuilder:
 
     @staticmethod
     def build_row(company_id: str, record: dict) -> dict:
+        """Maps one Technologies Enrich API record to a destination row dict."""
         tech_id = record.get("id")
         a = record.get("attributes", {})
         return {
@@ -2021,7 +2030,7 @@ def sync_technologies(configuration: dict, company_ids: list, cumulative_state: 
 
     log.info(
         f"Starting technologies enrichment — {len(company_ids)} companies, "
-        f"{ENRICH_WORKERS} parallel workers (streaming, queue_max={ENRICH_QUEUE_MAX})..."
+        f"{__ENRICH_WORKERS} parallel workers (streaming, queue_max={__ENRICH_QUEUE_MAX})..."
     )
 
     total = _stream_per_company_enrich(
@@ -2053,7 +2062,7 @@ def sync_corporate_hierarchy(configuration: dict, company_ids: list):
         return
 
     output_fields = _fields_config(
-        configuration, "enrich_corp_hier_output_fields", DEFAULT_CORP_HIER_FIELDS
+        configuration, "enrich_corp_hier_output_fields", __DEFAULT_CORP_HIER_FIELDS
     )
 
     log.info(f"Starting corporate hierarchy enrichment — {len(company_ids)} companies queued...")
@@ -2062,9 +2071,9 @@ def sync_corporate_hierarchy(configuration: dict, company_ids: list):
     skipped_match = 0
 
     try:
-        for i in range(0, len(company_ids), ENRICH_BATCH_SIZE):
-            batch = company_ids[i : i + ENRICH_BATCH_SIZE]
-            batch_num = (i // ENRICH_BATCH_SIZE) + 1
+        for i in range(0, len(company_ids), __ENRICH_BATCH_SIZE):
+            batch = company_ids[i : i + __ENRICH_BATCH_SIZE]
+            batch_num = (i // __ENRICH_BATCH_SIZE) + 1
             log.debug(
                 f"Enriching corporate hierarchy batch {batch_num} ({len(batch)} companies)..."
             )
@@ -2139,12 +2148,12 @@ def sync_usage(configuration: dict):
     log.info("Fetching API usage data...")
 
     token = get_access_token(configuration)
-    response = get_with_retry(f"{SEARCH_BASE}{ENDPOINT_USAGE}", headers=get_headers_get(token))
+    response = get_with_retry(f"{__SEARCH_BASE}{__ENDPOINT_USAGE}", headers=get_headers_get(token))
 
     if response.status_code == 401:
         _invalidate_token_cache()
         token = get_access_token(configuration)
-        response = get_with_retry(f"{SEARCH_BASE}{ENDPOINT_USAGE}", headers=get_headers_get(token))
+        response = get_with_retry(f"{__SEARCH_BASE}{__ENDPOINT_USAGE}", headers=get_headers_get(token))
 
     # /users/usage acts as our auth preflight. A 401/403 here is unambiguous —
     # the credentials are bad or have been revoked, not a missing-product-license
@@ -2154,7 +2163,7 @@ def sync_usage(configuration: dict):
     # 403-soft-skip logic would mask the real problem).
     if response.status_code in (401, 403):
         raise RuntimeError(
-            f"ZoomInfo auth preflight failed on {ENDPOINT_USAGE} "
+            f"ZoomInfo auth preflight failed on {__ENDPOINT_USAGE} "
             f"[HTTP {response.status_code}]. Check that your client_id and "
             f"client_secret are valid and not revoked. Details: {response.text[:200]}"
         )
@@ -2521,44 +2530,56 @@ def update(configuration: dict, state: dict):
         configuration, state, enrich_config, search_filter, cumulative_state
     )
     if contacts_latest:
-        cumulative_state[STATE_CONTACTS_LAST_UPDATED] = contacts_latest
+        cumulative_state[__STATE_CONTACTS_LAST_UPDATED] = contacts_latest
+    # Checkpoint after Contacts so its incremental cursor is persisted; the next
+    # sync resumes from here even if a later table fails.
     op.checkpoint(state=cumulative_state)
 
     # ── Companies (Search + optional downstream enrichments) ──
     companies_latest, company_ids = sync_companies(configuration, state, search_filter)
     if companies_latest:
-        cumulative_state[STATE_COMPANIES_LAST_UPDATED] = companies_latest
+        cumulative_state[__STATE_COMPANIES_LAST_UPDATED] = companies_latest
+    # Checkpoint after Companies so its cursor is persisted before the
+    # downstream enrichments (which depend on company_ids) run.
     op.checkpoint(state=cumulative_state)
 
     # ── Scoops (Search) ──
     scoops_latest = sync_scoops(configuration, state, search_filter, cumulative_state)
     if scoops_latest:
-        cumulative_state[STATE_SCOOPS_LAST_UPDATED] = scoops_latest
+        cumulative_state[__STATE_SCOOPS_LAST_UPDATED] = scoops_latest
+    # Checkpoint after Scoops so its incremental cursor is persisted.
     op.checkpoint(state=cumulative_state)
 
     # ── Intent (Search — requires topics config) ──
     intent_latest = sync_intent(configuration, state, cumulative_state)
     if intent_latest:
-        cumulative_state[STATE_INTENT_LAST_UPDATED] = intent_latest
+        cumulative_state[__STATE_INTENT_LAST_UPDATED] = intent_latest
+    # Checkpoint after Intent so its incremental cursor is persisted.
     op.checkpoint(state=cumulative_state)
 
     # ── News (Search — opt-in) ──
     news_latest = sync_news(configuration, state, cumulative_state)
     if news_latest:
-        cumulative_state[STATE_NEWS_LAST_UPDATED] = news_latest
+        cumulative_state[__STATE_NEWS_LAST_UPDATED] = news_latest
+    # Checkpoint after News so its incremental cursor is persisted.
     op.checkpoint(state=cumulative_state)
 
     # ── Company-based Enrichments (all use company_ids from Search) ──
     sync_companies_enriched(configuration, company_ids)
+    # These enrich tables have no cursor of their own; checkpoint after each so
+    # Fivetran durably flushes the rows synced so far before the next enrichment.
     op.checkpoint(state=cumulative_state)
 
     sync_scoops_enriched(configuration, company_ids, cumulative_state)
+    # Checkpoint to durably flush the Scoops-enrich rows synced so far.
     op.checkpoint(state=cumulative_state)
 
     sync_technologies(configuration, company_ids, cumulative_state)
+    # Checkpoint to durably flush the Technologies rows synced so far.
     op.checkpoint(state=cumulative_state)
 
     sync_corporate_hierarchy(configuration, company_ids)
+    # Checkpoint to durably flush the Corporate-hierarchy rows synced so far.
     op.checkpoint(state=cumulative_state)
 
     log.info("ZoomInfo Fivetran Connector — sync complete")
