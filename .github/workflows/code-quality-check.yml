@@ -95,8 +95,6 @@ jobs:
               print()
               print("📌 _Only Python files changed in this PR were checked._")
               
-          slab_doc = f"https://fivetran.slab.com/posts/connector-sdk-examples-pr-policy-and-python-coding-standards-yzr9ggss#hb2vk-linting"
-          print(f"\n🔍 [See how this check works]({slab_doc})")
           print("\n_This comment is auto-updated with every commit._")
 
           # Export environment variable
