@@ -732,8 +732,9 @@ connector = Connector(update=update, schema=schema)
 # Note: This method is not called by Fivetran when executing your connector in production.
 # Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
-    # Open the configuration.json file and load its contents.
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
-    # Test the connector locally using the debug method.
+
+    # Test the connector locally
     connector.debug(configuration=configuration)
