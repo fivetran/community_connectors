@@ -133,7 +133,7 @@ def run_backfill_phase(
                     # Round UP to the next whole second when sub-second precision
                     # is present: Oracle truncates mod_ts__lt to seconds, so
                     # mod_ts__lt=02:25:50 would exclude records at 02:25:50.440928.
-                    _prev_dt = datetime.fromisoformat(bf_prev_page_min_ts)
+                    _prev_dt = datetime.fromisoformat(bf_prev_page_min_ts.replace("Z", "+00:00"))
                     if _prev_dt.microsecond:
                         _prev_dt = _prev_dt.replace(microsecond=0) + timedelta(seconds=1)
                     bf_cursor_rollback = _prev_dt.isoformat()
@@ -225,7 +225,7 @@ def run_backfill_phase(
             and page_max_ts is not None
             and page_max_ts < bf_prev_page_min_ts
         ):
-            cursor_dt = datetime.fromisoformat(bf_prev_page_min_ts)
+            cursor_dt = datetime.fromisoformat(bf_prev_page_min_ts.replace("Z", "+00:00"))
             checkpoint_fn(cursor_dt)
             break
 

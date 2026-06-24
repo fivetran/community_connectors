@@ -132,7 +132,9 @@ def run_pre_cursor_hourly_check(
                     new_counts[entity] = {}
                 new_counts[entity][hour_str] = count
 
-            # Upsert hourly count into the monitoring table for observability.
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 "pre_cursor_hourly_counts",
                 {
@@ -143,7 +145,6 @@ def run_pre_cursor_hourly_check(
                     "is_partial": is_partial,
                 },
             )
-
     # ── Re-pull triggered hours (sequential) ─────────────────────────────────
     for entity, hour_str, gte, lt, prev_count, new_count in hours_to_repull:
         drift_msg = (

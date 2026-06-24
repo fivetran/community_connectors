@@ -54,7 +54,7 @@ def run_incremental_phase(
         (total_records, incremental_max_mod_ts)
         incremental_max_mod_ts is None if no records were returned in Phase 1.
     """
-    cursor_dt = datetime.fromisoformat(cursor)
+    cursor_dt = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
     limit_str = normalize_timestamp_to_oracle_format(sync_start_time)
     cursor_utc_str = cursor_dt.astimezone(timezone.utc).isoformat(timespec="seconds")
     sync_start_utc_str = (
@@ -127,7 +127,7 @@ def run_incremental_phase(
         if page_max_ts:
             if incremental_max_mod_ts is None or page_max_ts > incremental_max_mod_ts:
                 incremental_max_mod_ts = page_max_ts
-            page_max_dt = datetime.fromisoformat(page_max_ts)
+            page_max_dt = datetime.fromisoformat(page_max_ts.replace("Z", "+00:00"))
             if page_max_dt > cursor_dt:
                 # New timestamps seen — restart from page 1 at the advanced cursor
                 cursor_dt = page_max_dt

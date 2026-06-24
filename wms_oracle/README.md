@@ -49,13 +49,13 @@ fivetran init --template wms_oracle
 
 ```json
 {
-    "base_url": "https://<YOUR_REGION>.wms.ocs.oraclecloud.com/<YOUR_ORG>",
-    "username": "<YOUR_USERNAME>",
-    "password": "<YOUR_PASSWORD>",
-    "page_size": "1000",
-    "max_pages": "100",
-    "lookback_check_hours": "24",
-    "test_entities": ""
+  "base_url": "<YOUR_ORACLE_WMS_BASE_URL>",
+  "username": "<YOUR_ORACLE_WMS_USERNAME>",
+  "password": "<YOUR_ORACLE_WMS_PASSWORD>",
+  "page_size": "<RECORDS_PER_PAGE_DEFAULT_1000>",
+  "max_pages": "<MAX_PAGES_PER_ENTITY_PER_SYNC_DEFAULT_100>",
+  "lookback_check_hours": "<LOOKBACK_CHECK_HOURS_DEFAULT_24>",
+  "test_entities": "<COMMA_SEPARATED_ENTITY_LIST_OR_EMPTY>"
 }
 ```
 
@@ -129,7 +129,7 @@ The `lookback_check_hours` configuration key controls how many hours are probed 
 
 ## Tables created
 
-26 warehouse entity tables (all with primary key `id`):
+26 warehouse entity tables (all with primary key `id`). Columns are inferred from the Oracle WMS API responses; refer to the `schema()` function in `connector.py` for the declared primary keys:
 
 | Table | Description |
 |-------|-------------|
