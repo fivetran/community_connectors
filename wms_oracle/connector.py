@@ -44,6 +44,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # For thread-safe checkpointing across concurrent entity workers
 from threading import Lock
 
+# For funnelling op.* calls from backfill worker threads to the main thread
+import queue
+
 # Constants, entity list, exceptions, configuration validation, and timestamp utilities
 from utils import (
     ORACLE_WMS_ENTITIES,
@@ -135,6 +138,7 @@ def process_entity(
     max_pages: Optional[int] = None,
     run_incremental: bool = True,
     run_backfill: bool = True,
+    output_queue=None,
 ) -> dict:
     """
     Sync a single entity. run_incremental / run_backfill flags allow the caller
@@ -155,7 +159,10 @@ def process_entity(
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
                 # The second argument is a dictionary containing the record to be upserted.
-                op.upsert(table=entity, data=record)
+                if output_queue is not None:
+                    output_queue.put(("upsert", entity, record))
+                else:
+                    op.upsert(table=entity, data=record)
 
         def checkpoint_incremental(cursor_dt: datetime):
             """Checkpoint incremental progress when cursor advances to a new timestamp."""
@@ -181,20 +188,26 @@ def process_entity(
             cursor_str = to_utc(cursor_dt.isoformat())
             with lock:
                 in_progress_backfill_cursors[entity] = cursor_str
-                # Save backfill progress so the window cursor is preserved
-                # if the sync is interrupted.
-                op.checkpoint(
-                    {
-                        "entity_cursors": dict(entity_cursors_live),
-                        "entity_backfill_cursors": {
-                            **entity_backfill_cursors_snapshot,
-                            **dict(in_progress_backfill_cursors),
-                        },
-                        "entity_mod_ts_support": dict(entity_mod_ts_support_snapshot),
-                        "sync_in_progress": True,
-                    }
-                )
-                log.info(f"Backfill checkpoint for {entity}: cursor={cursor_str}")
+                state_snapshot = {
+                    "entity_cursors": dict(entity_cursors_live),
+                    "entity_backfill_cursors": {
+                        **entity_backfill_cursors_snapshot,
+                        **dict(in_progress_backfill_cursors),
+                    },
+                    "entity_mod_ts_support": dict(entity_mod_ts_support_snapshot),
+                    "sync_in_progress": True,
+                }
+            log.info(f"Backfill checkpoint for {entity}: cursor={cursor_str}")
+            if output_queue is not None:
+                output_queue.put(("checkpoint", state_snapshot))
+            else:
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+                op.checkpoint(state_snapshot)
 
         with requests.Session() as session:
             if not has_mod_ts:
@@ -205,7 +218,10 @@ def process_entity(
                 )
                 # Truncate soft-deletes all existing rows before the full re-scan
                 # so removed records are marked deleted.
-                op.truncate(table=entity)
+                if output_queue is not None:
+                    output_queue.put(("truncate", entity))
+                else:
+                    op.truncate(table=entity)
                 count, _, _ = fetch_entity_data(
                     base_url,
                     username,
@@ -522,7 +538,7 @@ def update(configuration: dict, state: dict):
                 new_entity_backfill_cursors[entity] = preserved
 
     def submit_entity(
-        entity: str, run_incremental: bool = True, run_backfill: bool = True
+        entity: str, run_incremental: bool = True, run_backfill: bool = True, output_queue=None
     ) -> dict:
         """Build process_entity kwargs and dispatch."""
         has_mod_ts = entity_mod_ts_support.get(entity, False)
@@ -547,6 +563,7 @@ def update(configuration: dict, state: dict):
             max_pages,
             run_incremental=run_incremental,
             run_backfill=run_backfill,
+            output_queue=output_queue,
         )
 
     try:
@@ -589,21 +606,42 @@ def update(configuration: dict, state: dict):
                 completed_entities.add(entity)
 
         # ── Pass 2: Parallel backfill / full-scan ─────────────────────────────
-        # Incremental already ran in pass 1 for entities that had a cursor.
+        # Worker threads do API fetching only. All op.* calls are funnelled
+        # through result_queue and executed on the main thread to comply with
+        # the SDK's single-threaded output stream requirement.
         if needs_backfill:
+            result_queue = queue.Queue()
+
+            def run_backfill_worker(ent):
+                try:
+                    result = submit_entity(
+                        ent, run_incremental=False, run_backfill=True, output_queue=result_queue
+                    )
+                    result_queue.put(("done", ent, result))
+                except Exception as exc:
+                    result_queue.put(("error", ent, exc))
+
             with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_ENTITIES) as executor:
-                futures = {
-                    executor.submit(submit_entity, entity, False, True): entity
-                    for entity in needs_backfill
-                }
-                for future in as_completed(futures):
-                    entity = futures[future]
-                    try:
-                        record_result(future.result())
-                    except Exception as e:
-                        log.error(f"Error processing {entity} (backfill): {e}")
+                for ent in needs_backfill:
+                    executor.submit(run_backfill_worker, ent)
+
+                remaining = len(needs_backfill)
+                while remaining > 0:
+                    msg_type, ent, data = result_queue.get()
+                    if msg_type == "upsert":
+                        op.upsert(table=ent, data=data)
+                    elif msg_type == "truncate":
+                        op.truncate(table=ent)
+                    elif msg_type == "checkpoint":
+                        op.checkpoint(data)
+                    elif msg_type == "done":
+                        remaining -= 1
+                        record_result(data)
+                    elif msg_type == "error":
+                        remaining -= 1
+                        log.error(f"Error processing {ent} (backfill): {data}")
                         all_success = False
-                        completed_entities.add(entity)
+                        completed_entities.add(ent)
 
         # ── Sync summary ──────────────────────────────────────────────────────
         results_sorted = sorted(entity_results.values(), key=lambda r: r["entity"])
