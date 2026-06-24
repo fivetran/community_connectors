@@ -107,12 +107,22 @@ def make_api_request(
     Make a single paged request to the Oracle WMS entity endpoint with retry logic.
 
     Args:
-        mod_ts_filter:        mod_ts__gte — lower bound for incremental (ASC) queries
-        mod_ts_lt_filter:     mod_ts__lt  — upper bound for backfill (DESC) queries
-        ordering:             e.g. "mod_ts,id" (ASC) or "-mod_ts,id" (DESC)
-        create_ts_gte_filter: create_ts__gte — used in Phase 1b to catch backdated records
-        create_ts_lt_filter:  create_ts__lt  — upper bound for Phase 1b (sync_start_time)
-        session:              Optional Session for connection reuse across pages
+        base_url:             Base URL of the Oracle WMS instance.
+        username:             Oracle WMS service account username.
+        password:             Oracle WMS service account password.
+        entity:               Oracle WMS entity name.
+        page:                 Page number to fetch (1-based).
+        mod_ts_filter:        mod_ts__gte — lower bound for incremental (ASC) queries.
+        mod_ts_lt_filter:     mod_ts__lt  — upper bound for backfill (DESC) queries.
+        page_size:            Number of records per page.
+        ordering:             e.g. "mod_ts,id" (ASC) or "-mod_ts,id" (DESC).
+        session:              Optional requests.Session for connection reuse across pages.
+        create_ts_gte_filter: create_ts__gte — used in Phase 1b to catch backdated records.
+        create_ts_lt_filter:  create_ts__lt  — upper bound for Phase 1b (sync_start_time).
+        fields:               Optional comma-separated field list to restrict the response.
+
+    Returns:
+        Parsed JSON response dict containing result_count, page_count, and results list.
 
     Raises:
         OrderingNotSupportedError: if the entity returns 400 for the given ordering
@@ -265,6 +275,23 @@ def fetch_entity_data(
     modifications can shift records in or out mid-stream. Only an empty page
     unambiguously means no more records exist.
 
+    Args:
+        base_url:             Base URL of the Oracle WMS instance.
+        username:             Oracle WMS service account username.
+        password:             Oracle WMS service account password.
+        entity:               Oracle WMS entity name.
+        mod_ts_filter:        Optional mod_ts__gte lower bound (incremental ASC queries).
+        mod_ts_lt_filter:     Optional mod_ts__lt upper bound (backfill DESC queries).
+        ordering:             Optional ordering parameter, e.g. "mod_ts,id" or "-mod_ts,id".
+        page_size:            Number of records per page.
+        max_pages:            Soft page limit; None means no limit.
+        checkpoint_callback:  Callable(extreme_mod_ts: str) called every CHECKPOINT_INTERVAL_PAGES.
+        records_callback:     Callable(records: list) called for each page of results.
+        session:              Optional requests.Session for connection reuse across pages.
+        create_ts_gte_filter: Optional create_ts__gte lower bound for Phase 1b catch-up.
+        create_ts_lt_filter:  Optional create_ts__lt upper bound for Phase 1b catch-up.
+        phase_label:          Optional label used in the completion log line.
+
     Returns:
         (total_records, extreme_mod_ts, finished_all_pages)
         extreme_mod_ts:     max mod_ts for ASC ordering, min for DESC — used as the next cursor.
@@ -300,11 +327,13 @@ def fetch_entity_data(
     # until the timestamp changes (handles same-ts bulk imports safely).
     ts_when_max_reached = None
 
-    while (total_pages is None or page <= total_pages) and (
-        max_pages is None
-        or pages_fetched < max_pages
-        or (is_desc and ts_when_max_reached is not None and extreme_mod_ts == ts_when_max_reached)
-    ):
+    while True:
+        pages_remaining = total_pages is None or page <= total_pages
+        under_limit = max_pages is None or pages_fetched < max_pages
+        ts_group_ongoing = is_desc and ts_when_max_reached is not None
+        ts_group_ongoing = ts_group_ongoing and extreme_mod_ts == ts_when_max_reached
+        if not pages_remaining or (not under_limit and not ts_group_ongoing):
+            break
 
         # Adaptive page size: on timeout, halve page_size and recalculate the page number
         # to preserve the same record offset. Reduction persists for all subsequent pages.
@@ -391,12 +420,10 @@ def fetch_entity_data(
         pages_fetched += 1
         pages_since_checkpoint += 1
 
-        if (
-            is_desc
-            and max_pages is not None
-            and pages_fetched == max_pages
-            and ts_when_max_reached is None
-        ):
+        first_time_at_limit = is_desc and max_pages is not None
+        first_time_at_limit = first_time_at_limit and pages_fetched == max_pages
+        first_time_at_limit = first_time_at_limit and ts_when_max_reached is None
+        if first_time_at_limit:
             ts_when_max_reached = extreme_mod_ts
             if ts_when_max_reached:
                 log.warning(
@@ -405,11 +432,9 @@ def fetch_entity_data(
                     f"continuing until timestamp changes"
                 )
 
-        if (
-            checkpoint_callback
-            and pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES
-            and extreme_mod_ts
-        ):
+        should_checkpoint = pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES
+        should_checkpoint = should_checkpoint and checkpoint_callback and extreme_mod_ts
+        if should_checkpoint:
             checkpoint_callback(extreme_mod_ts)
             pages_since_checkpoint = 0
 
