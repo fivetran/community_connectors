@@ -42,8 +42,13 @@ def check_entity_has_mod_ts(base_url: str, username: str, password: str, entity:
         entity:   Oracle WMS entity name (e.g. "inventory").
 
     Returns:
-        True if the entity's describe response includes a "mod_ts" field; False otherwise.
-        Returns False on any error so the caller falls back to a full scan.
+        True if the entity's describe response includes a "mod_ts" field; False if the entity
+        returns a permanent error (non-transient HTTP status), indicating no mod_ts support.
+
+    Raises:
+        requests.exceptions.RequestException: if all retry attempts are exhausted on a transient
+            error (408, 429, 5xx, Timeout). Raising instead of returning False prevents the
+            caller from caching an incorrect capability flag in state.
     """
     endpoint = f"{base_url}/wms/lgfapi/{API_VERSION}/entity/{entity}/describe"
     transient_status_codes = {408, 429, 500, 502, 503, 504}
@@ -63,20 +68,28 @@ def check_entity_has_mod_ts(base_url: str, username: str, password: str, entity:
                 )
                 time.sleep(backoff)
             else:
-                log.warning(
-                    f"Describe timed out for {entity} after {MAX_RETRIES} attempts. "
-                    f"Assuming no mod_ts support."
+                log.error(
+                    f"Describe timed out for {entity} after {MAX_RETRIES} attempts — "
+                    f"failing sync to avoid caching incorrect mod_ts capability."
                 )
-                return False
+                raise
         except requests.exceptions.RequestException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
-            if status in transient_status_codes and attempt < MAX_RETRIES:
-                backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                log.warning(
-                    f"Describe failed for {entity} (HTTP {status}, attempt {attempt}/{MAX_RETRIES}). "
-                    f"Retrying in {backoff}s…"
-                )
-                time.sleep(backoff)
+            if status in transient_status_codes:
+                if attempt < MAX_RETRIES:
+                    backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                    log.warning(
+                        f"Describe failed for {entity} "
+                        f"(HTTP {status}, attempt {attempt}/{MAX_RETRIES}). "
+                        f"Retrying in {backoff}s…"
+                    )
+                    time.sleep(backoff)
+                else:
+                    log.error(
+                        f"Describe failed for {entity} (HTTP {status}) after {MAX_RETRIES} "
+                        f"attempts — failing sync to avoid caching incorrect mod_ts capability."
+                    )
+                    raise
             else:
                 log.warning(
                     f"Could not check mod_ts for {entity}: {e}. Assuming no mod_ts support."
