@@ -627,7 +627,11 @@ def update(configuration: dict, state: dict):
 
                 remaining = len(needs_backfill)
                 while remaining > 0:
-                    msg_type, ent, data = result_queue.get()
+                    msg = result_queue.get()
+                    if len(msg) != 3:
+                        log.warning(f"Unexpected queue message (len={len(msg)}): {msg!r} — skipping")
+                        continue
+                    msg_type, ent, data = msg
                     if msg_type == "upsert":
                         op.upsert(table=ent, data=data)
                     elif msg_type == "truncate":
