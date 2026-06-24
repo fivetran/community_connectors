@@ -219,12 +219,9 @@ def run_backfill_phase(
                 f"{entity}: reached max_pages={max_pages} mid-timestamp group "
                 f"(current ts={page_max_ts}) — continuing until timestamp changes"
             )
-        if (
-            bf_pages_fetched >= max_pages
-            and bf_prev_page_min_ts is not None
-            and page_max_ts is not None
-            and page_max_ts < bf_prev_page_min_ts
-        ):
+        ts_boundary_cleared = bf_prev_page_min_ts is not None and page_max_ts is not None
+        ts_boundary_cleared = ts_boundary_cleared and page_max_ts < bf_prev_page_min_ts
+        if bf_pages_fetched >= max_pages and ts_boundary_cleared:
             cursor_dt = datetime.fromisoformat(bf_prev_page_min_ts.replace("Z", "+00:00"))
             checkpoint_fn(cursor_dt)
             break

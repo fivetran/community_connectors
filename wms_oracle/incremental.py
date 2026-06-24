@@ -132,10 +132,8 @@ def run_incremental_phase(
                 # New timestamps seen — restart from page 1 at the advanced cursor
                 cursor_dt = page_max_dt
                 phase1a_page = 1
-                if checkpoint_fn and (
-                    time.monotonic() - last_checkpoint_wall
-                    >= INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS
-                ):
+                elapsed = time.monotonic() - last_checkpoint_wall
+                if checkpoint_fn and elapsed >= INCREMENTAL_CHECKPOINT_INTERVAL_SECONDS:
                     checkpoint_fn(cursor_dt)
                     last_checkpoint_wall = time.monotonic()
             else:

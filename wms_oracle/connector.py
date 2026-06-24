@@ -326,7 +326,6 @@ def update(configuration: dict, state: dict):
     """
     sync_wall_start = time.time()
     log.warning("Example: Oracle WMS : wms_oracle")
-    log.info("Oracle WMS Connector: Starting sync")
 
     validate_configuration(configuration)
 
@@ -405,10 +404,8 @@ def update(configuration: dict, state: dict):
             entity_counts[probe_futures[future]] = future.result()
 
     entities_to_sync.sort(key=lambda e: entity_counts.get(e, 0), reverse=True)
-    log.info(
-        "Processing order (by record count): "
-        + ", ".join(f"{e}({entity_counts.get(e, 0):,})" for e in entities_to_sync)
-    )
+    order_str = ", ".join(f"{e}({entity_counts.get(e, 0):,})" for e in entities_to_sync)
+    log.info(f"Processing order (by record count): {order_str}")
 
     # ── Classify: incremental-only (sequential) vs backfill/full-scan (parallel) ──
     incremental_only = []
