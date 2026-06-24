@@ -301,9 +301,10 @@ def _build_filter_condition(filter_condition):
     if missing_keys:
         raise ValueError(f"Static filter is missing required keys: {', '.join(missing_keys)}")
 
-    column = str(filter_condition["column"]).strip()
-    if not isinstance(column, str) or not column:
+    column = filter_condition["column"]
+    if not isinstance(column, str) or not column.strip():
         raise ValueError("Static filter column must be a non-empty string.")
+    column = column.strip()
 
     operator = filter_condition["operator"]
     if operator not in __SUPPORTED_FILTER_OPERATORS:
@@ -657,7 +658,11 @@ def _build_plan(
     # Detect columns that require explicit typing based on their data types
     explicit_cols = detect_typed_columns(selected_cols_with_types=selected_cols_with_types)
     # Merge user-defined column_types from TABLE_SPECS; auto-detected special types take precedence
-    user_column_types = spec.get("column_types") or {}
+    user_column_types = spec.get("column_types")
+    if user_column_types is None:
+        user_column_types = {}
+    elif not isinstance(user_column_types, dict):
+        raise ValueError(f"{stream}: column_types must be a dictionary.")
     explicit_cols = {**user_column_types, **explicit_cols}
     # List of selected column names required for building the SQL query
     selected_columns = [column for column, _ in selected_cols_with_types]
