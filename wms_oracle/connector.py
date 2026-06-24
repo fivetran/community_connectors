@@ -199,7 +199,7 @@ def process_entity(
                 }
             log.info(f"Backfill checkpoint for {entity}: cursor={cursor_str}")
             if output_queue is not None:
-                output_queue.put(("checkpoint", state_snapshot))
+                output_queue.put(("checkpoint", entity, state_snapshot))
             else:
                 # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
                 # from the correct position in case of next sync or interruptions.
@@ -219,7 +219,7 @@ def process_entity(
                 # Truncate soft-deletes all existing rows before the full re-scan
                 # so removed records are marked deleted.
                 if output_queue is not None:
-                    output_queue.put(("truncate", entity))
+                    output_queue.put(("truncate", entity, None))
                 else:
                     op.truncate(table=entity)
                 count, _, _ = fetch_entity_data(
