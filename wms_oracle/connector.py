@@ -629,7 +629,9 @@ def update(configuration: dict, state: dict):
                 while remaining > 0:
                     msg = result_queue.get()
                     if len(msg) != 3:
-                        log.warning(f"Unexpected queue message (len={len(msg)}): {msg!r} — skipping")
+                        log.warning(
+                            f"Unexpected queue message (len={len(msg)}): {msg!r} — skipping"
+                        )
                         continue
                     msg_type, ent, data = msg
                     if msg_type == "upsert":
