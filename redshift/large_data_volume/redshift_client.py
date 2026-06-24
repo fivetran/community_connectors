@@ -46,6 +46,7 @@ __REDSHIFT_TO_FIVETRAN_TYPE = {
 # Replication strategy constants
 __STRATEGY_FULL = "FULL"
 __STRATEGY_INCREMENTAL = "INCREMENTAL"
+__SUPPORTED_FILTER_OPERATORS = {">", ">=", "<", "<=", "=", "!="}
 
 
 @dataclass
@@ -293,8 +294,28 @@ def _build_filter_condition(filter_condition):
     """
     if not filter_condition:
         return None, None
+    if not isinstance(filter_condition, dict):
+        raise ValueError("Static filter must be a dictionary.")
+
+    missing_keys = [key for key in ("column", "operator", "value") if key not in filter_condition]
+    if missing_keys:
+        raise ValueError(f"Static filter is missing required keys: {', '.join(missing_keys)}")
+
+    column = str(filter_condition["column"]).strip()
+    if not isinstance(column, str) or not column:
+        raise ValueError("Static filter column must be a non-empty string.")
+
+    operator = filter_condition["operator"]
+    if operator not in __SUPPORTED_FILTER_OPERATORS:
+        raise ValueError(
+            f"Unsupported filter operator '{operator}'. "
+            f"Supported operators are: {', '.join(sorted(__SUPPORTED_FILTER_OPERATORS))}"
+        )
+
+    # Escape any embedded quotes so the identifier can't break out of double-quote quoting.
+    safe_column = column.replace('"', '""')
     return (
-        f'"{filter_condition["column"]}" {filter_condition["operator"]} %s',
+        f'"{safe_column}" {operator} %s',
         filter_condition["value"],
     )
 
