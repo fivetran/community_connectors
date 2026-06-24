@@ -75,24 +75,20 @@ def check_entity_has_mod_ts(base_url: str, username: str, password: str, entity:
                 raise
         except requests.exceptions.RequestException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
-            if status in transient_status_codes:
-                if attempt < MAX_RETRIES:
-                    backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                    log.warning(
-                        f"Describe failed for {entity} "
-                        f"(HTTP {status}, attempt {attempt}/{MAX_RETRIES}). "
-                        f"Retrying in {backoff}s…"
-                    )
-                    time.sleep(backoff)
-                else:
-                    log.error(
-                        f"Describe failed for {entity} (HTTP {status}) after {MAX_RETRIES} "
-                        f"attempts — failing sync to avoid caching incorrect mod_ts capability."
-                    )
-                    raise
+            is_transient = status in transient_status_codes or status is None
+            if is_transient and attempt < MAX_RETRIES:
+                backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                log.warning(
+                    f"Describe failed for {entity} "
+                    f"({'HTTP ' + str(status) if status else type(e).__name__}, "
+                    f"attempt {attempt}/{MAX_RETRIES}). Retrying in {backoff}s…"
+                )
+                time.sleep(backoff)
             else:
                 log.error(
-                    f"Describe failed for {entity} with permanent error: {e} — "
+                    f"Describe failed for {entity} "
+                    f"({'HTTP ' + str(status) if status else type(e).__name__}) "
+                    f"after {attempt} attempt(s) — "
                     f"failing sync to avoid caching incorrect mod_ts capability."
                 )
                 raise
