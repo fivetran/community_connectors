@@ -328,11 +328,13 @@ def fetch_entity_data(
     ts_when_max_reached = None
 
     while True:
-        pages_remaining = total_pages is None or page <= total_pages
-        under_limit = max_pages is None or pages_fetched < max_pages
-        ts_group_ongoing = is_desc and ts_when_max_reached is not None
-        ts_group_ongoing = ts_group_ongoing and extreme_mod_ts == ts_when_max_reached
-        if not pages_remaining or (not under_limit and not ts_group_ongoing):
+        if total_pages is not None and page > total_pages:
+            break
+        at_page_limit = max_pages is not None and pages_fetched >= max_pages
+        ts_group_continues = (
+            ts_when_max_reached is not None and extreme_mod_ts == ts_when_max_reached
+        )
+        if at_page_limit and not (is_desc and ts_group_continues):
             break
 
         # Adaptive page size: on timeout, halve page_size and recalculate the page number
@@ -420,10 +422,8 @@ def fetch_entity_data(
         pages_fetched += 1
         pages_since_checkpoint += 1
 
-        first_time_at_limit = is_desc and max_pages is not None
-        first_time_at_limit = first_time_at_limit and pages_fetched == max_pages
-        first_time_at_limit = first_time_at_limit and ts_when_max_reached is None
-        if first_time_at_limit:
+        reached_max = pages_fetched == max_pages and max_pages is not None
+        if is_desc and reached_max and ts_when_max_reached is None:
             ts_when_max_reached = extreme_mod_ts
             if ts_when_max_reached:
                 log.warning(
@@ -432,11 +432,10 @@ def fetch_entity_data(
                     f"continuing until timestamp changes"
                 )
 
-        should_checkpoint = pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES
-        should_checkpoint = should_checkpoint and checkpoint_callback and extreme_mod_ts
-        if should_checkpoint:
-            checkpoint_callback(extreme_mod_ts)
-            pages_since_checkpoint = 0
+        if checkpoint_callback and extreme_mod_ts:
+            if pages_since_checkpoint >= CHECKPOINT_INTERVAL_PAGES:
+                checkpoint_callback(extreme_mod_ts)
+                pages_since_checkpoint = 0
 
     if ts_when_max_reached is not None and extreme_mod_ts != ts_when_max_reached:
         log.info(
