@@ -74,7 +74,14 @@ fivetran init --template wms_oracle
 
 ## Authentication
 
-The connector uses HTTP Basic Authentication. Provide your Oracle WMS service account `username` and `password` in `configuration.json`. All requests are made over HTTPS.
+The connector uses HTTP Basic Authentication. All requests are made over HTTPS.
+
+To obtain credentials:
+
+1. Log in to your Oracle WMS Cloud instance as an administrator.
+2. Navigate to **User Management** and create or identify a service account for the integration.
+3. Assign the service account read permissions on each entity you want to sync.
+4. Note the service account username and password and add them to `configuration.json` as `username` and `password`.
 
 
 ## Pagination

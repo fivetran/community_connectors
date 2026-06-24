@@ -23,14 +23,28 @@ from fivetran_connector_sdk import Logging as log
 # For supporting data operations like upsert(), update(), delete(), and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
+# For reading configuration from a JSON file
 import json
+
+# For making HTTP requests to the Oracle WMS REST API
 import requests
+
+# For parsing and manipulating timestamps
 from datetime import datetime
+
+# For type hints
 from typing import Optional
+
+# For tracking elapsed time and sync duration
 import time
+
+# For parallel entity processing during backfill and mod_ts discovery
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# For thread-safe checkpointing across concurrent entity workers
 from threading import Lock
 
+# Constants, entity list, exceptions, configuration validation, and timestamp utilities
 from utils import (
     ORACLE_WMS_ENTITIES,
     DEFAULT_PAGE_SIZE,
@@ -41,9 +55,17 @@ from utils import (
     get_current_timestamp,
     to_utc,
 )
+
+# Oracle WMS REST API client: single-page requests, pagination, count probes, and mod_ts discovery
 from api import check_entity_has_mod_ts, probe_entity_count, fetch_entity_data
+
+# Two-phase incremental sync logic (mod_ts cursor-advancement + create_ts catch-up)
 from incremental import run_incremental_phase
+
+# Historical backfill logic (descending rolling-window offset pagination)
 from backfill import run_backfill_phase
+
+# Pre-sync hourly drift detection and monitoring table writes
 from pre_sync_drift_check import run_pre_cursor_hourly_check, run_daily_counts
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -130,7 +152,9 @@ def process_entity(
 
         def handle_records(records: list):
             for record in records:
-                # Upsert each record into the destination table, inserting or updating as needed.
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table=entity, data=record)
 
         def checkpoint_incremental(cursor_dt: datetime):
@@ -285,7 +309,13 @@ def process_entity(
 
 def update(configuration: dict, state: dict):
     """
-    Entry point called by Fivetran on each sync.
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details, e.g. base_url, username, password.
+        state: A dictionary containing state information from previous runs.
+               The state dictionary is empty for the first sync or for any full re-sync.
 
     State structure:
         entity_cursors:          {entity: timestamp} — incremental cursor per entity
@@ -295,6 +325,7 @@ def update(configuration: dict, state: dict):
         sync_in_progress:        bool — True in mid-sync checkpoints, False in final checkpoint
     """
     sync_wall_start = time.time()
+    log.warning("Example: Oracle WMS : wms_oracle")
     log.info("Oracle WMS Connector: Starting sync")
 
     validate_configuration(configuration)
@@ -456,7 +487,12 @@ def update(configuration: dict, state: dict):
             else:
                 entity_cursors.pop(entity, None)
 
-            # Checkpoint after each entity completes so partial sync progress is not lost.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(
                 {
                     "entity_cursors": dict(entity_cursors),
@@ -688,6 +724,16 @@ def update(configuration: dict, state: dict):
 # Create the connector object using the schema and update functions.
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
     # Open the configuration.json file and load its contents.
     with open("configuration.json", "r") as f:

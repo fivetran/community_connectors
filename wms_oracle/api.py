@@ -1,11 +1,18 @@
 """Oracle WMS REST API client: single-page requests, multi-page fetching, and entity probing."""
 
+# For tracking elapsed time and implementing exponential backoff between retries
 import time
+
+# For making HTTP requests to the Oracle WMS REST API
 import requests
+
+# For type hints
 from typing import Optional, Tuple
 
+# For enabling logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
+# Constants, custom exceptions, and timestamp normalization utilities
 from utils import (
     API_VERSION,
     DEFAULT_PAGE_SIZE,
@@ -21,17 +28,61 @@ from utils import (
 
 
 def check_entity_has_mod_ts(base_url: str, username: str, password: str, entity: str) -> bool:
-    """Return True if the entity's describe endpoint lists a mod_ts field."""
+    """
+    Check whether an Oracle WMS entity supports mod_ts filtering.
+
+    Calls the describe endpoint for the entity and inspects the returned field list.
+    The result is cached in connector state by the caller so this is only called once
+    per entity across all syncs.
+
+    Args:
+        base_url: Base URL of the Oracle WMS instance.
+        username: Oracle WMS service account username.
+        password: Oracle WMS service account password.
+        entity:   Oracle WMS entity name (e.g. "inventory").
+
+    Returns:
+        True if the entity's describe response includes a "mod_ts" field; False otherwise.
+        Returns False on any error so the caller falls back to a full scan.
+    """
     endpoint = f"{base_url}/wms/lgfapi/{API_VERSION}/entity/{entity}/describe"
-    try:
-        response = requests.get(
-            endpoint, params={"format": "json"}, auth=(username, password), timeout=60
-        )
-        response.raise_for_status()
-        return "mod_ts" in response.json().get("fields", {})
-    except Exception as e:
-        log.warning(f"Could not check mod_ts for {entity}: {e}. Assuming no mod_ts support.")
-        return False
+    transient_status_codes = {408, 429, 500, 502, 503, 504}
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = requests.get(
+                endpoint, params={"format": "json"}, auth=(username, password), timeout=60
+            )
+            response.raise_for_status()
+            return "mod_ts" in response.json().get("fields", {})
+        except requests.exceptions.Timeout:
+            if attempt < MAX_RETRIES:
+                backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                log.warning(
+                    f"Describe timed out for {entity} (attempt {attempt}/{MAX_RETRIES}). "
+                    f"Retrying in {backoff}s…"
+                )
+                time.sleep(backoff)
+            else:
+                log.warning(
+                    f"Describe timed out for {entity} after {MAX_RETRIES} attempts. "
+                    f"Assuming no mod_ts support."
+                )
+                return False
+        except requests.exceptions.RequestException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in transient_status_codes and attempt < MAX_RETRIES:
+                backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                log.warning(
+                    f"Describe failed for {entity} (HTTP {status}, attempt {attempt}/{MAX_RETRIES}). "
+                    f"Retrying in {backoff}s…"
+                )
+                time.sleep(backoff)
+            else:
+                log.warning(
+                    f"Could not check mod_ts for {entity}: {e}. Assuming no mod_ts support."
+                )
+                return False
+    return False
 
 
 # ── Single-page request ───────────────────────────────────────────────────────
@@ -150,7 +201,18 @@ def probe_entity_count(
     """
     Fetch page 1 at page_size=1 to read result_count without loading records.
     Used to sort entities largest-first before submitting to the thread pool.
-    Returns 0 on any error so the entity sorts to the back.
+
+    Args:
+        base_url:          Base URL of the Oracle WMS instance.
+        username:          Oracle WMS service account username.
+        password:          Oracle WMS service account password.
+        entity:            Oracle WMS entity name.
+        mod_ts_filter:     Optional mod_ts__gte lower bound.
+        mod_ts_lt_filter:  Optional mod_ts__lt upper bound.
+        ordering:          Optional ordering parameter.
+
+    Returns:
+        Integer result_count from the API response, or 0 on any error.
     """
     try:
         response = make_api_request(
