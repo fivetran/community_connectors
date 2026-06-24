@@ -3,6 +3,10 @@ name: Python
 on:
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   code-quality-check:
     name: Check Code Quality
@@ -10,16 +14,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: '3.13'
 
       - name: Install dependencies
         run: |
-          pip install flake8 black
+          pip install black==26.5.1 flake8==7.3.0
 
       - name: Run black and generate diff
         id: black_check
@@ -37,96 +43,164 @@ jobs:
 
       - name: Upload formatting.diff
         if: steps.black_check.outputs.black_failed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: python-formatting-diff
           path: formatting.diff
 
-      - name: Detect changed Python files
-        id: detect_changes
+      - name: Run Flake8 on changed Python files
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          REPO="${{ github.repository }}"
-
-          # Fetch PR files and filter out removed files (only keep added, modified, renamed)
-          curl -s -f -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/files" \
-            | jq -r '.[] | select(.status != "removed") | .filename' > all_files.txt
-
-          grep '\.py$' all_files.txt > changed_files.txt || true
-
-          if [[ ! -s changed_files.txt ]]; then
-            echo "No Python files changed."
-            echo "SKIP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP=false" >> $GITHUB_ENV
-            echo "CHANGED=$(cat changed_files.txt | xargs)" >> $GITHUB_ENV
-          fi
-
-      - name: Run Flake8 on changed files
-        if: env.SKIP == 'false'
-        run: |
-          echo "Running flake8 on: $CHANGED"
-          flake8 $CHANGED > flake8_output.txt || true
-
-      - name: Format Flake8 results as PR comment
-        if: env.SKIP == 'false'
-        run: |
-          python3 <<'EOF' > flake8_summary.md
+          python3 <<'EOF'
+          import json
           import os
+          import pathlib
+          import subprocess
+          import urllib.request
 
-          try:
-              with open("flake8_output.txt") as f:
-                lines = f.read().splitlines()
-              
-          except FileNotFoundError:
-              lines = []
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event_file:
+              event = json.load(event_file)
 
-          print("### 🧹 Python Code Quality Check\n")
-          run_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          pr_number = event["pull_request"]["number"]
+          token = os.environ["GH_TOKEN"]
+          changed_files = []
+          page = 1
+          run_url = (
+              f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          )
 
-          if not lines:
-              print("✅ No issues found in Python Files.")
-              issue_present = False
-          else:
-              issue_present = True
-              print("⚠️ **Flake8 has detected issues, please fix the issues before merging:**")
-              print(f"\n📎 [Download full report from workflow artifacts]({run_url}).")  
-              print()
-              print("📌 _Only Python files changed in this PR were checked._")
-              
-          print("\n_This comment is auto-updated with every commit._")
+          while True:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files"
+                  f"?per_page=100&page={page}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  batch = json.load(response)
+              if not batch:
+                  break
 
-          # Export environment variable
-          with open(os.environ["GITHUB_ENV"], "a") as envf:
-              envf.write(f"FLAKE8_ISSUE_PRESENT={'true' if issue_present else 'false'}\n")
-              envf.write(f"RUN_URL={run_url}\n")
+              changed_files.extend(
+                  item["filename"]
+                  for item in batch
+                  if item.get("status") != "removed" and item["filename"].endswith(".py")
+              )
+              page += 1
+
+          if not changed_files:
+              print("No Python files changed.")
+              pathlib.Path("flake8_output.txt").write_text("", encoding="utf-8")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+                  env_file.write("SKIP=true\n")
+                  env_file.write("FLAKE8_ISSUE_PRESENT=false\n")
+                  env_file.write(f"RUN_URL={run_url}\n")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("### Python Code Quality Check\n\n")
+                  summary.write("Flake8 skipped: no Python files changed.\n")
+              raise SystemExit(0)
+
+          print("Running flake8 on:")
+          for filename in changed_files:
+              print(f"  {filename}")
+
+          result = subprocess.run(
+              ["flake8", "--", *changed_files],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              check=False,
+          )
+
+          pathlib.Path("flake8_output.txt").write_text(result.stdout, encoding="utf-8")
+          print(result.stdout, end="")
+
+          issue_present = result.returncode != 0
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write("SKIP=false\n")
+              env_file.write(f"FLAKE8_ISSUE_PRESENT={'true' if issue_present else 'false'}\n")
+              env_file.write(f"RUN_URL={run_url}\n")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Python Code Quality Check\n\n")
+              if issue_present:
+                  summary.write("**Flake8 detected issues. Fix them before merging.**\n\n")
+                  summary.write(f"[Download full report from workflow artifacts]({run_url}).\n")
+                  summary.write("\n_Only Python files changed in this PR were checked._\n")
+              else:
+                  summary.write("No issues found in changed Python files.\n")
+
+              summary.write("\n_This summary is updated with every commit._\n")
           EOF
 
       - name: Upload full report
         if: env.FLAKE8_ISSUE_PRESENT == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: python-code-quality-report
           path: flake8_output.txt
 
-      - name: Find existing comment
-        uses: peter-evans/find-comment@v4
-        id: find
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: github-actions[bot]
-          body-includes: "### 🧹 Python Code Quality Check"
+      - name: Generate PR comment summary
+        if: always()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BLACK_FAILED: ${{ steps.black_check.outputs.black_failed == 'true' }}
+          FLAKE8_FAILED: ${{ env.FLAKE8_ISSUE_PRESENT == 'true' }}
+          SKIP: ${{ env.SKIP }}
+        run: |
+          python3 <<'EOF'
+          import json
+          import os
+          import pathlib
 
-      - name: Create or update PR comment
-        if: env.SKIP == 'false'
-        continue-on-error: true
-        uses: peter-evans/create-or-update-comment@v4
+          skip = os.environ.get("SKIP", "")
+          flake8_failed = os.environ.get("FLAKE8_FAILED") == "true"
+          flake8_output = pathlib.Path("flake8_output.txt")
+          flake8_issue_count = 0
+
+          if flake8_output.exists():
+              flake8_issue_count = len(
+                  [
+                      line
+                      for line in flake8_output.read_text(
+                          encoding="utf-8"
+                      ).splitlines()
+                      if line.strip()
+                  ]
+              )
+
+          summary = {
+              "schema_version": 1,
+              "pr_number": int(os.environ["PR_NUMBER"]),
+              "head_sha": os.environ["HEAD_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "summary_complete": skip in {"true", "false"},
+              "black_failed": os.environ.get("BLACK_FAILED") == "true",
+              "flake8_failed": flake8_failed,
+              "python_files_checked": skip == "false",
+              "flake8_issue_count": flake8_issue_count,
+          }
+
+          pathlib.Path("pr-comment-summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          EOF
+
+      - name: Upload PR comment summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          comment-id: ${{ steps.find.outputs.comment-id }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body-path: flake8_summary.md
-          edit-mode: replace
+          name: python-pr-comment
+          path: pr-comment-summary.json
+          retention-days: 7
 
       - name: Fail if both black and flake8 failed
         if: steps.black_check.outputs.black_failed == 'true' && env.FLAKE8_ISSUE_PRESENT == 'true'
@@ -149,6 +223,6 @@ jobs:
       - name: Fail if only flake8 failed
         if: steps.black_check.outputs.black_failed != 'true' && env.FLAKE8_ISSUE_PRESENT == 'true'
         run: |
-          echo "❌  Issues detected in Python files. Please fix them before merging."
+          echo "Issues detected in Python files. Please fix them before merging."
           echo "Download the full report from here: $RUN_URL"
           exit 1
