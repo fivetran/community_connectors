@@ -91,10 +91,11 @@ def check_entity_has_mod_ts(base_url: str, username: str, password: str, entity:
                     )
                     raise
             else:
-                log.warning(
-                    f"Could not check mod_ts for {entity}: {e}. Assuming no mod_ts support."
+                log.error(
+                    f"Describe failed for {entity} with permanent error: {e} — "
+                    f"failing sync to avoid caching incorrect mod_ts capability."
                 )
-                return False
+                raise
     return False
 
 
