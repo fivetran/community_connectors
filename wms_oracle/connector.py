@@ -605,18 +605,6 @@ def update(configuration: dict, state: dict):
                         all_success = False
                         completed_entities.add(entity)
 
-        # ── Pass 3: Sequential incremental for entities with no backfill ──────
-        # Entities that finished their backfill before this sync and weren't
-        # covered by pass 1 (i.e. incremental_only entities not yet processed).
-        for entity in incremental_only:
-            if entity not in completed_entities:
-                try:
-                    record_result(submit_entity(entity))
-                except Exception as e:
-                    log.error(f"Error processing {entity}: {e}")
-                    all_success = False
-                    completed_entities.add(entity)
-
         # ── Sync summary ──────────────────────────────────────────────────────
         results_sorted = sorted(entity_results.values(), key=lambda r: r["entity"])
         total_records = sum(r.get("record_count", 0) for r in results_sorted)
