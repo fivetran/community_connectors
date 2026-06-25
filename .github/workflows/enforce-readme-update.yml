@@ -62,7 +62,13 @@ jobs:
               
               // Parse the git diff output
               return gitDiff.trim().split('\n').filter(line => line).map(line => {
-                const [status, filename] = line.split('\t');
+                const fields = line.split('\t');
+                const status = fields[0];
+                const filename =
+                  status.startsWith('R') || status.startsWith('C') ? fields[2] : fields[1];
+                if (!filename) {
+                  throw new Error(`Unexpected git diff --name-status output: ${line}`);
+                }
                 return { status, filename };
               });
             } catch (error) {
