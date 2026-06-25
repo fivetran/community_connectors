@@ -31,9 +31,10 @@ jobs:
         id: black_check
         run: |
           echo "Running black in check mode with diff output..."
-          black --check --diff --line-length 99 . > formatting.diff || true
+          black_exit=0
+          black --check --diff --line-length 99 . > formatting.diff 2>&1 || black_exit=$?
 
-          if [ -s formatting.diff ]; then
+          if [ "$black_exit" -ne 0 ]; then
             echo "Formatting issues detected:"
             cat formatting.diff
             echo "black_failed=true" >> $GITHUB_OUTPUT
