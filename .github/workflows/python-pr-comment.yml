@@ -140,7 +140,7 @@ jobs:
             });
 
             const existing = comments.find((comment) =>
-              comment.user?.type === "Bot" && comment.body?.includes(marker)
+              comment.user?.login === "github-actions[bot]" && comment.body?.includes(marker)
             );
 
             if (existing) {
