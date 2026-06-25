@@ -112,9 +112,7 @@ def connect_to_db2i(configuration: dict):
         return conn
     except Exception as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        raise RuntimeError(
-            f"ODBC connection failed after {elapsed_ms} ms: {exc}"
-        ) from exc
+        raise RuntimeError(f"ODBC connection failed after {elapsed_ms} ms: {exc}") from exc
 
 
 def fetch_and_upsert_data(conn, db_schema: str):
