@@ -1,0 +1,2 @@
+# IBM i Access ODBC Driver interface
+pyodbc==5.2.0

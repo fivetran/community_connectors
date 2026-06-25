@@ -1,0 +1,115 @@
+# IBM DB2i Connector Example
+
+## Connector overview
+
+This connector allows you to sync data from an IBM DB2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK. The connector uses the IBM i Access ODBC Driver via pyodbc to establish a connection to your IBM i system, reads data from the CUSTOMER table in batches, and upserts the rows to the destination. This example connector demonstrates extracting customer data but can be modified to work with any IBM i table.
+
+## Requirements
+
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
+- Operating system:
+  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later (arm64 or x86_64)
+- IBM i Access ODBC Driver installed on the host running the connector — see [Additional files](#additional-files) for the installation script
+
+## Getting started
+
+Refer to the [Connector SDK setup guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```
+fivetran init --template ibm_db2i
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+
+## Features
+
+- Connects to IBM DB2 for i databases using the IBM i Access ODBC Driver
+- Verifies TCP connectivity before opening the ODBC connection
+- Fetches rows in configurable batches for memory-efficient syncs
+- Checkpoints after every batch to support resumable syncs
+
+## Configuration file
+
+The connector uses a `configuration.json` file to define the connection parameters for the IBM i database. The connection parameters required are:
+
+```json
+{
+    "hostname": "<YOUR_IBM_I_HOSTNAME>",
+    "port": "<YOUR_IBM_I_PORT>",
+    "database": "<YOUR_IBM_I_DATABASE>",
+    "user_id": "<YOUR_IBM_I_USER_ID>",
+    "password": "<YOUR_IBM_I_PASSWORD>"
+}
+```
+
+The configuration parameters are:
+- `hostname`: The hostname or IP address of your IBM i system
+- `port`: The port number for the IBM i Access ODBC connection (typically `8471`)
+- `database`: The IBM i library/schema name used for both the ODBC connection and the SQL schema qualifier
+- `user_id`: The username to authenticate with the IBM i system
+- `password`: The password to authenticate with the IBM i system
+
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+
+## Requirements file
+
+The `requirements.txt` file specifies the Python libraries required by the connector. The content of `requirements.txt` required is:
+
+```
+pyodbc==5.2.0
+```
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+
+## Authentication
+
+The connector uses direct database authentication with a `user_id` and `password`. These credentials are specified in the configuration file and passed to pyodbc when building the ODBC connection string. The IBM i Access ODBC Driver handles the authentication process against the IBM i system.
+
+To obtain the required credentials:
+
+1. Log in to your IBM i system using an administrator profile
+2. Create a user profile with the necessary permissions to read from the target library and tables
+3. Note the system hostname or IP address and the port used for IBM i Access ODBC connections (typically `8471`)
+4. Record the library (database) name you want to query as the `database` value in your configuration
+5. Use the user profile name and password as the `user_id` and `password` values in your configuration
+
+## Data handling
+
+The connector performs the following data handling operations:
+- Verifies TCP connectivity to the IBM i host before opening the ODBC connection
+- Establishes an ODBC connection using the IBM i Access ODBC Driver
+- Executes a `SELECT *` query against the CUSTOMER table in the configured library/schema
+- Normalizes column names to lowercase before upserting to the destination
+- Processes and upserts rows in batches of 1000
+
+## Error handling
+
+The connector implements the following error handling strategies:
+- Configuration validation: Checks for all required configuration parameters before attempting connections
+- TCP pre-check: Tests network reachability before opening the ODBC connection, with timing information logged on both success and failure
+- Connection failures: Catches ODBC connection errors and raises a `RuntimeError` with elapsed time and the underlying exception message
+- Logging: Uses the SDK logging framework to provide detailed timing information and progress updates
+
+## Tables created
+
+The connector creates and syncs the `customer` table. The schema mirrors the columns returned by `SELECT * FROM <database>.CUSTOMER` on your IBM i system. Update the `schema()` function in `connector.py` to add explicit column type mappings and a primary key for your specific table.
+
+Schema definition from connector:
+
+```json
+{
+    "table": "customer"
+}
+```
+
+## Additional files
+
+- `drivers/installation.sh`: Bash script that installs the IBM i Access ODBC Driver (`ibm-iaccess`) and unixODBC on Debian/Ubuntu systems. Run this script on any host where the connector will execute before running `fivetran debug` or deploying.
+
+## Additional considerations
+
+The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
