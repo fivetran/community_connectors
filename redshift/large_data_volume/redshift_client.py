@@ -342,6 +342,7 @@ def _declare_cursor(cursor, table_cursor, sql_query, params):
         sql_query: SQL query string for the cursor
         params: query parameters to bind
     """
+    log.info(f"Executing query: {sql_query} | params: {params}")
     cursor.execute("BEGIN")
     cursor.execute(f"DECLARE {table_cursor} NO SCROLL CURSOR FOR {sql_query}", params)
     log.info(f"Successfully declared cursor {table_cursor}")
@@ -385,6 +386,7 @@ def _find_chunk_upper_bound(connection, plan, replication_key, bookmark, chunk_s
     """
 
     with connection.cursor() as cursor:
+        log.info(f"Executing chunk boundary query: {sql} | params: {params}")
         cursor.execute(sql, params)
         row = cursor.fetchone()
         return row[0] if row else None
@@ -879,6 +881,7 @@ def upsert_record(
 
     while True:
         # Fetch rows in batches to handle large datasets efficiently
+        log.info(f"Executing fetch: FETCH {batch_size} FROM {table_cursor}")
         cursor.execute(f"FETCH {batch_size} FROM {table_cursor}")
         rows = cursor.fetchall()
 
@@ -927,6 +930,8 @@ def sync_table_server_side_cursor(connection, replication_key, plan, state, book
         bookmark: last synced value of the replication key
         batch_size: number of rows to fetch per batch
     """
+    strategy = "INCREMENTAL" if replication_key else "FULL"
+    log.info(f"{plan.stream}: Starting {strategy} sync (bookmark: {bookmark})")
     # Build the SQL query and parameters for the SELECT statement
     sql_query, params = build_select(
         redshift_schema=plan.schema,
