@@ -21,13 +21,12 @@ import json
 import socket
 import time
 
-
 # Number of rows to fetch per batch from the database
 BATCH_SIZE = 1000
-# Set the checkpoint interval to 1000 rows
-CHECKPOINT_INTERVAL = 1000
+# Set the checkpoint interval to 10000 rows
+CHECKPOINT_INTERVAL = 10000
 # Timeout for the initial TCP connectivity check
-DEFAULT_TIMEOUT_SECONDS = 10
+DEFAULT_TIMEOUT_SECONDS = 60
 
 
 def schema(configuration: dict):
@@ -113,7 +112,9 @@ def connect_to_db2i(configuration: dict):
         return conn
     except Exception as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        raise RuntimeError(f"ODBC connection failed after {elapsed_ms} ms: {exc}") from exc
+        raise RuntimeError(
+            f"ODBC connection failed after {elapsed_ms} ms: {exc}"
+        ) from exc
 
 
 def fetch_and_upsert_data(conn, db_schema: str):
@@ -191,11 +192,11 @@ def update(configuration: dict, state: dict):
 
     hostname = configuration.get("hostname")
     port = int(configuration.get("port"))
-    timeout = float(configuration.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+    timeout_seconds = float(configuration.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
     database = configuration.get("database")
 
     # Verify TCP connectivity before opening the ODBC connection
-    test_tcp(hostname, port, timeout)
+    test_tcp(hostname, port, timeout_seconds)
 
     conn = connect_to_db2i(configuration)
     try:
