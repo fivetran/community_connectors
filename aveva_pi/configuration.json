@@ -1,9 +1,9 @@
 {
-  "base_url": "https://<PI_WEB_API_HOSTNAME>/piwebapi",
+  "base_url": "<PI_WEB_API_BASE_URL>",
   "username": "<PI_USERNAME>",
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
-  "verify_ssl": "true",
-  "start_date": "2020-01-01T00:00:00Z",
-  "sync_recorded_values": "false"
+  "verify_ssl": "<true_or_false>",
+  "start_date": "<START_DATE_ISO8601>",
+  "sync_recorded_values": "<true_or_false>"
 }
