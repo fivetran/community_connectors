@@ -6,14 +6,16 @@ This connector allows you to sync data from an IBM DB2 for i (IBM i / AS400) dat
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)   
 - Operating system:
-  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later (arm64 or x86_64)
+  - Windows: 10 or later (64-bit only)
+  - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
+  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 - IBM i Access ODBC Driver installed on the host running the connector — see [Additional files](#additional-files) for the installation script
 
 ## Getting started
 
-Refer to the [Connector SDK setup guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
@@ -30,7 +32,7 @@ fivetran init --template ibm_db2i
 - Connects to IBM DB2 for i databases using the IBM i Access ODBC Driver
 - Verifies TCP connectivity before opening the ODBC connection
 - Fetches rows in configurable batches for memory-efficient syncs
-- Checkpoints after every batch to support resumable syncs
+- Checkpoints every `CHECKPOINT_INTERVAL` rows to support resumable syncs
 
 ## Configuration file
 
@@ -52,6 +54,7 @@ The configuration parameters are:
 - `database`: The IBM i library/schema name used for both the ODBC connection and the SQL schema qualifier
 - `user_id`: The username to authenticate with the IBM i system
 - `password`: The password to authenticate with the IBM i system
+- `timeout_seconds` (optional): TCP connectivity check timeout in seconds. Defaults to `60` if not provided.
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
