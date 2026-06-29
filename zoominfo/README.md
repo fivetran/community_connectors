@@ -107,7 +107,7 @@ Each enriched contact costs one ZoomInfo credit. Combine `enrich_contacts` with 
 | `enrich_contacts` | `"false"` | When `"true"`, enriches contacts with full profile data after the Search sync. |
 | `enrich_filter` | `"has_email_or_phone"` | Which contacts are eligible for enrichment. One of: `has_email` (ZoomInfo has an email), `has_phone` (ZoomInfo has a direct or mobile phone), `has_email_or_phone` (either), `all` (enrich every contact — highest credit usage). |
 | `enrich_management_levels` | `""` (all levels) | Comma-separated list of management levels to enrich. Valid values: `Board Member`, `C Level Exec`, `VP Level Exec`, `Director`, `Manager`, `Non Manager`. Example: `"C Level Exec,VP Level Exec"`. |
-| `enrich_output_fields` | (curated default set) | Comma-separated list of fields to return from Contact Enrich. Leave blank to use the default set. See `DEFAULT_CONTACT_ENRICH_FIELDS` in `connector.py` for the default list, and ZoomInfo's `/lookup/enrich?filter[entity]=contact` for the full set of valid field names. |
+| `enrich_output_fields` | (curated default set) | Comma-separated list of fields to return from Contact Enrich. Leave blank to use the default set. See `DEFAULT_CONTACT_ENRICH_FIELDS` in `constants.py` for the default list, and ZoomInfo's `/lookup/enrich?filter[entity]=contact` for the full set of valid field names. |
 
 ### Optional — Company enrichment
 
@@ -116,11 +116,11 @@ Each enriched company costs one ZoomInfo credit per enrichment type. `enrich_sco
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enrich_companies` | `"false"` | When `"true"`, enriches companies with full firmographic data (revenue, employee count, industry, description) after the Search sync. |
-| `enrich_companies_output_fields` | (curated default set) | Comma-separated override for Company Enrich output fields. See `DEFAULT_COMPANY_ENRICH_FIELDS` in `connector.py` and ZoomInfo's `/lookup/enrich?filter[entity]=company`. |
+| `enrich_companies_output_fields` | (curated default set) | Comma-separated override for Company Enrich output fields. See `DEFAULT_COMPANY_ENRICH_FIELDS` in `constants.py` and ZoomInfo's `/lookup/enrich?filter[entity]=company`. |
 | `enrich_scoops` | `"false"` | When `"true"`, enriches each company with its latest Scoops (buying signals, hiring news, etc.). Each scoop returned counts as a record. |
 | `enrich_technologies` | `"false"` | When `"true"`, enriches each company with its technology stack. Produces ~2,600 rows per large company — a 10K-company sync can generate ~26M `technologies` rows. See "Known limitations" below. |
 | `enrich_corporate_hierarchy` | `"false"` | When `"true"`, enriches each company with its full corporate hierarchy (parent, subsidiaries, acquisitions, former names, locations). |
-| `enrich_corp_hier_output_fields` | (curated default set) | Comma-separated override for Corporate Hierarchy Enrich output fields. See `DEFAULT_CORP_HIER_FIELDS` in `connector.py` and ZoomInfo's `/lookup/enrich?filter[entity]=corporate-hierarchy`. |
+| `enrich_corp_hier_output_fields` | (curated default set) | Comma-separated override for Corporate Hierarchy Enrich output fields. See `DEFAULT_CORP_HIER_FIELDS` in `constants.py` and ZoomInfo's `/lookup/enrich?filter[entity]=corporate-hierarchy`. |
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -129,6 +129,17 @@ Each enriched company costs one ZoomInfo credit per enrichment type. `enrich_sco
 This connector requires only `requests` at runtime, which is pre-installed in the Fivetran runtime along with `fivetran_connector_sdk`. Because it has no additional runtime dependencies, this connector does not include a `requirements.txt` file.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+
+## Project structure
+
+The connector is split across several modules for readability. `connector.py` remains the entry point Fivetran loads; the rest are sibling modules imported by it.
+
+- `connector.py` — Entry point: defines `schema()` and `update()` and instantiates the `Connector` object.
+- `constants.py` — Endpoint paths, tunables (page size, worker count, retry policy, checkpoint cadence), default output-field lists, and state keys.
+- `client.py` — OAuth 2.0 token cache, retry-aware HTTP transport, and the Search / per-company Enrich pagination generators.
+- `config.py` — Configuration parsing and validation, Search-filter construction, the incremental-cursor predicate, and enrichment eligibility checks.
+- `transforms.py` — Pure value coercion helpers (safe int/float/datetime, incremental-cursor comparison). No network or SDK dependency.
+- `sync.py` — One `sync_*` function per destination table plus the bounded-memory streaming helper for per-company enrichments.
 
 ## Authentication
 
