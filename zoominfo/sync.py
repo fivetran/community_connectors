@@ -242,7 +242,7 @@ def sync_contacts(
                 # to write to the destination. For large datasets, checkpoint regularly
                 # (e.g., every N records) not only at the end. Learn more in our best
                 # practices documentation:
-                # https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets
+                # https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets  # noqa: B950
                 op.checkpoint(state=cumulative_state)
 
     log.info(f"Contacts sync complete — {count} records upserted")
