@@ -188,8 +188,10 @@ def run_incremental_phase(
             )
             total_records += count_1b
         except Exception as e:
-            log.warning(f"{entity}: Phase 2 (create_ts) skipped — {e}")
+            log.error(f"{entity}: Phase 2 (create_ts) failed — {e}")
+            raise
     except Exception as e:
-        log.warning(f"{entity}: Phase 2 (create_ts) skipped — {e}")
+        log.error(f"{entity}: Phase 2 (create_ts) failed — {e}")
+        raise
 
     return total_records, incremental_max_mod_ts

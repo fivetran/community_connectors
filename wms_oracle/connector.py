@@ -169,7 +169,12 @@ def process_entity(
             cursor_str = to_utc(cursor_dt.isoformat())
             with lock:
                 entity_cursors_live[entity] = cursor_str
-                # Save progress so the sync can resume from this cursor if interrupted.
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(
                     {
                         "entity_cursors": dict(entity_cursors_live),
@@ -639,6 +644,12 @@ def update(configuration: dict, state: dict):
                     elif msg_type == "truncate":
                         op.truncate(table=ent)
                     elif msg_type == "checkpoint":
+                        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                        # from the correct position in case of next sync or interruptions.
+                        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                        # Learn more about how and where to checkpoint by reading our best practices documentation
+                        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                         op.checkpoint(data)
                     elif msg_type == "done":
                         remaining -= 1

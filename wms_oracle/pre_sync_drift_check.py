@@ -12,7 +12,7 @@ Window design
 
 1 partial window (if cursor is not exactly on the hour):
   [cursor_aligned, cursor_dt)
-  Upserted to Snowflake for visibility but NEVER compared against previous state
+  Upserted to the destination for visibility but NEVER compared against previous state
   (this window legitimately grows each sync as the cursor advances within the
   current hour and would produce false positives if compared).
   NOT saved to state.
@@ -52,7 +52,7 @@ def run_pre_cursor_hourly_check(
     Args:
         entities:           Entities that have an incremental cursor in state.
         entity_cursors:     {entity: cursor_str} — current state values.
-        sync_start_time:    Used as batch_id for Snowflake rows.
+        sync_start_time:    Used as batch_id for destination rows.
         prev_hourly_counts: {entity: {hour_str: count}} — saved from prior sync.
         page_size:          Page size used for re-pull pagination.
 
