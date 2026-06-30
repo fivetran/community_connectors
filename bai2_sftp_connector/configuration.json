@@ -1,0 +1,9 @@
+{
+    "sftp_host": "sftp.yourbank.com",
+    "sftp_port": "22",
+    "sftp_username": "your_sftp_username",
+    "sftp_password": "your_sftp_password",
+    "sftp_remote_path": "/outgoing/bai2/",
+    "sftp_file_pattern": "",
+    "test_mode": "false"
+}

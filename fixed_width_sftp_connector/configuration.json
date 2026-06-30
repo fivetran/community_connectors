@@ -1,0 +1,8 @@
+{
+    "sftp_host": "sftp.example.com",
+    "sftp_port": "22",
+    "sftp_username": "sftp_user",
+    "sftp_password": "PLACEHOLDER_REPLACE_WITH_ACTUAL_PASSWORD",
+    "sftp_remote_path": "/",
+    "test_mode": "true"
+}
