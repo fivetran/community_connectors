@@ -159,6 +159,13 @@ def run_pre_cursor_hourly_check(
         log.info(repull_msg)
         summary_lines.append(("info", repull_msg))
 
+        def repull_records(records: list):
+            for r in records:
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
+                op.upsert(entity, r)
+
         with requests.Session() as session:
             total_pulled, _, _ = fetch_entity_data(
                 base_url,
@@ -169,7 +176,7 @@ def run_pre_cursor_hourly_check(
                 mod_ts_lt_filter=lt,
                 ordering="mod_ts,id",
                 page_size=page_size,
-                records_callback=lambda records: [op.upsert(entity, r) for r in records],
+                records_callback=repull_records,
                 session=session,
                 phase_label=f"pre-cursor re-pull {hour_str}",
             )
@@ -267,7 +274,9 @@ def run_daily_counts(
         futures = {executor.submit(fetch_count, task): task for task in tasks}
         for future in as_completed(futures):
             entity, day_str, count = future.result()
-            # Upsert daily count into the monitoring table for observability.
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 "counts_by_day",
                 {
