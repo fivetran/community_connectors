@@ -6,7 +6,7 @@ This connector allows you to sync data from an IBM DB2 for i (IBM i / AS400) dat
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)   
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -54,7 +54,7 @@ The configuration parameters are:
 - `database`: The IBM i library/schema name used for both the ODBC connection and the SQL schema qualifier
 - `user_id`: The username to authenticate with the IBM i system
 - `password`: The password to authenticate with the IBM i system
-- `timeout_seconds` (optional): TCP connectivity check timeout in seconds. Defaults to `60` if not provided.
+- `timeout_seconds` (optional): TCP connectivity check timeout in seconds. Defaults to `60`
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -99,7 +99,9 @@ The connector implements the following error handling strategies:
 
 ## Tables created
 
-The connector creates and syncs the `customer` table. The schema mirrors the columns returned by `SELECT * FROM <database>.CUSTOMER` on your IBM i system. Update the `schema()` function in `connector.py` to add explicit column type mappings and a primary key for your specific table.
+The connector creates and syncs the `customer` table. Because the connector uses `SELECT *`, the column set is determined at runtime by the CUSTOMER table on your IBM i system. Column data types are inferred by Fivetran from the values upserted.
+
+> Note: The example `schema()` definition does not declare a primary key or explicit columns. Update the `schema()` function in `connector.py` to add the primary key column(s) of your CUSTOMER table and any explicit column type mappings before deploying to production. Without a primary key, Fivetran computes `_fivetran_id` from all column values.
 
 Schema definition from connector:
 

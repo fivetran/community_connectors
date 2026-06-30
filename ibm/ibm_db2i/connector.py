@@ -17,16 +17,24 @@ from fivetran_connector_sdk import Operations as op
 # Requires the IBM i Access ODBC Driver to be installed — see drivers/installation.sh.
 import pyodbc
 
+# For reading configuration from a JSON file
 import json
+
+# For validating schema names before SQL interpolation
+import re
+
+# For testing TCP connectivity before opening the ODBC connection
 import socket
+
+# For measuring query and fetch performance
 import time
 
 # Number of rows to fetch per batch from the database
-BATCH_SIZE = 1000
+__BATCH_SIZE = 1000
 # Set the checkpoint interval to 10000 rows
-CHECKPOINT_INTERVAL = 10000
-# Timeout for the initial TCP connectivity check
-DEFAULT_TIMEOUT_SECONDS = 60
+__CHECKPOINT_INTERVAL = 10000
+# Timeout in seconds for the initial TCP connectivity check
+__DEFAULT_TIMEOUT_SECONDS = 60
 
 
 def schema(configuration: dict):
@@ -40,41 +48,49 @@ def schema(configuration: dict):
     return [
         {
             "table": "customer",  # Name of the table in the destination, required.
-            # Set primary_key to the primary key column(s) of your CUSTOMER table.
+            # Set primary_key to the primary key column(s) of your CUSTOMER table, for example: "primary_key": ["id"]
         }
     ]
 
 
 def validate_configuration(configuration: dict):
     """
-    Validate the configuration dictionary to ensure it contains all required fields.
-    This function checks if the necessary parameters for connecting to the IBM i database are present.
-    If any required parameter is missing, it raises a ValueError with an appropriate message.
+    Validate the configuration dictionary to ensure it contains all required fields with valid values.
+    This function checks if the necessary parameters for connecting to the IBM i database are present
+    and that key values are of the correct type.
+    If any required parameter is missing or invalid, it raises a ValueError with an appropriate message.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing.
+        ValueError: if any required configuration parameter is missing or invalid.
     """
     required_keys = ["hostname", "port", "database", "user_id", "password"]
     for key in required_keys:
         if key not in configuration:
             raise ValueError(f"Missing required configuration key: {key}")
 
+    # Validate that port is a valid integer
+    port_str = configuration.get("port", "")
+    try:
+        int(port_str)
+    except (ValueError, TypeError):
+        raise ValueError(f"Configuration key 'port' must be a valid integer, got: {port_str!r}")
 
-def test_tcp(host: str, port: int, timeout: float):
+
+def test_tcp(host: str, port: int, timeout_seconds: float):
     """
     Test TCP connectivity to the IBM i host before establishing the ODBC connection.
     Args:
         host: The hostname or IP address of the IBM i system.
         port: The port number to connect to.
-        timeout: The connection timeout in seconds.
+        timeout_seconds: The connection timeout in seconds.
     """
     started = time.perf_counter()
     try:
-        with socket.create_connection((host, port), timeout=timeout):
+        with socket.create_connection((host, port), timeout=timeout_seconds):
             elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
             log.info(f"TCP connectivity succeeded to {host}:{port} in {elapsed_ms} ms")
-    except Exception as exc:
+    except OSError as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
         raise RuntimeError(
             f"TCP connectivity failed to {host}:{port} after {elapsed_ms} ms: {exc}"
@@ -118,14 +134,20 @@ def connect_to_db2i(configuration: dict):
 def fetch_and_upsert_data(conn, db_schema: str, state: dict):
     """
     Fetch all rows from the CUSTOMER table and upsert them to the destination.
-    Processes rows in batches and checkpoints every CHECKPOINT_INTERVAL rows.
+    Processes rows in batches of __BATCH_SIZE and checkpoints every __CHECKPOINT_INTERVAL rows.
     Args:
         conn: A pyodbc connection object to the IBM i database.
         db_schema: The library/schema name containing the CUSTOMER table.
-        state: A dictionary containing state information from previous runs.
+        state: The state dictionary from the current sync, passed through to op.checkpoint().
     Returns:
         tuple: A tuple of (row_count, total_fetch_ms) summarising the sync.
     """
+    # Validate db_schema to prevent SQL injection via configuration values
+    if not re.match(r"^[A-Za-z0-9_]+$", db_schema):
+        raise ValueError(
+            f"Invalid schema name: {db_schema!r}. Only alphanumeric characters and underscores are allowed."
+        )
+
     cursor = conn.cursor()
     sql = f"SELECT * FROM {db_schema}.CUSTOMER"
 
@@ -140,7 +162,7 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
 
     while True:
         batch_start = time.perf_counter()
-        rows = cursor.fetchmany(BATCH_SIZE)
+        rows = cursor.fetchmany(__BATCH_SIZE)
         fetch_ms = (time.perf_counter() - batch_start) * 1000
         total_fetch_ms += fetch_ms
 
@@ -155,30 +177,27 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
             op.upsert(table="customer", data=dict(zip(columns, row)))
             row_count += 1
 
-            if row_count % CHECKPOINT_INTERVAL == 0:
+            if row_count % __CHECKPOINT_INTERVAL == 0:
                 # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
                 # from the correct position in case of next sync or interruptions.
                 # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
                 # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
                 # Learn more about how and where to checkpoint by reading our best practices documentation
                 # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-                op.checkpoint(state)
+                op.checkpoint(state=state)
 
         log.info(f"Batch {batch_num}: {len(rows)} rows in {fetch_ms:.0f} ms")
-
-    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-    # from the correct position in case of next sync or interruptions.
-    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-    # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state)
 
     avg_ms = total_fetch_ms / batch_num if batch_num > 0 else 0
     log.info(
         f"DONE: {row_count} rows, {batch_num} batches, "
         f"{total_fetch_ms:.0f} ms total, avg {avg_ms:.0f} ms/batch"
     )
+
+    # Final checkpoint ensures Fivetran receives the safe-to-write signal even when
+    # the total row count is not an exact multiple of __CHECKPOINT_INTERVAL.
+    op.checkpoint(state=state)
+
     return row_count, total_fetch_ms
 
 
@@ -194,12 +213,12 @@ def update(configuration: dict, state: dict):
     """
     log.warning("Example: Source Examples: IBM DB2 for i")
 
-    # Validate configuration before attempting any connection
-    validate_configuration(configuration)
+    # Validate the configuration to ensure it contains all required values.
+    validate_configuration(configuration=configuration)
 
     hostname = configuration.get("hostname")
     port = int(configuration.get("port"))
-    timeout_seconds = float(configuration.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+    timeout_seconds = float(configuration.get("timeout_seconds", __DEFAULT_TIMEOUT_SECONDS))
     database = configuration.get("database")
 
     # Verify TCP connectivity before opening the ODBC connection
@@ -213,7 +232,7 @@ def update(configuration: dict, state: dict):
         log.info("Connection to IBM DB2 for i closed")
 
 
-# This creates the connector object that will use the update function defined in this connector.py file.
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
 # Check if the script is being run as the main module.
