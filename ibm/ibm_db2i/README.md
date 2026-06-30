@@ -2,7 +2,7 @@
 
 ## Connector overview
 
-This connector allows you to sync data from an IBM DB2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK. The connector uses the IBM i Access ODBC Driver via pyodbc to establish a connection to your IBM i system, reads data from the CUSTOMER table in batches, and upserts the rows to the destination. This example connector demonstrates extracting customer data but can be modified to work with any IBM i table.
+This connector allows you to sync data from an IBM DB2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK. The connector uses the IBM i Access ODBC Driver via pyodbc to establish a connection to your IBM i system, reads data from the CUSTOMER table in batches, and upserts the rows to the destination. The first sync fetches all rows; subsequent syncs are incremental and fetch only rows where `UPDATE_TIMESTAMP` is greater than the highest value seen in the previous sync. This example connector demonstrates extracting customer data but can be modified to work with any IBM i table.
 
 ## Requirements
 
@@ -85,9 +85,14 @@ To obtain the required credentials:
 The connector performs the following data handling operations:
 - Verifies TCP connectivity to the IBM i host before opening the ODBC connection
 - Establishes an ODBC connection using the IBM i Access ODBC Driver
-- Executes a `SELECT *` query against the CUSTOMER table in the configured library/schema
 - Normalizes column names to lowercase before upserting to the destination
 - Processes and upserts rows in batches of 1000
+
+Incremental sync:
+- On the first sync, all rows are fetched (full load)
+- After each sync, the highest `UPDATE_TIMESTAMP` value seen is saved to state as `customer_last_update_timestamp`
+- On subsequent syncs, only rows where `UPDATE_TIMESTAMP` is greater than `customer_last_update_timestamp` are fetched, ordered by `UPDATE_TIMESTAMP` ascending
+- This requires the source CUSTOMER table to have an `UPDATE_TIMESTAMP` column that is updated whenever a row is modified
 
 ## Error handling
 
@@ -99,15 +104,16 @@ The connector implements the following error handling strategies:
 
 ## Tables created
 
-The connector creates and syncs the `customer` table. Because the connector uses `SELECT *`, the column set is determined at runtime by the CUSTOMER table on your IBM i system. Column data types are inferred by Fivetran from the values upserted.
+The connector creates and syncs the `customer` table. Because the connector uses `SELECT *`, the full column set is determined at runtime by the CUSTOMER table on your IBM i system. Column data types are inferred by Fivetran from the values upserted.
 
-> Note: The example `schema()` definition does not declare a primary key or explicit columns. Update the `schema()` function in `connector.py` to add the primary key column(s) of your CUSTOMER table and any explicit column type mappings before deploying to production. Without a primary key, Fivetran computes `_fivetran_id` from all column values.
+The primary key columns for the CUSTOMER table are `c_d_id` and `c_id`.
 
 Schema definition from connector:
 
 ```json
 {
-    "table": "customer"
+    "table": "customer",
+    "primary_key": ["c_d_id", "c_id"]
 }
 ```
 

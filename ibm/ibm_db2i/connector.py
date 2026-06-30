@@ -1,5 +1,7 @@
 # This connector syncs data from an IBM DB2 for i (IBM i / AS400) database using the IBM i Access ODBC Driver.
-# It defines an `update` method, which upserts data from the CUSTOMER table via pyodbc.
+# It defines an `update` method, which incrementally syncs the CUSTOMER table using the UPDATE_TIMESTAMP column.
+# The first sync is a full load; subsequent syncs fetch only rows where UPDATE_TIMESTAMP is greater than
+# the highest value seen in the previous sync.
 # See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
 # and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 
@@ -16,6 +18,9 @@ from fivetran_connector_sdk import Operations as op
 # Import pyodbc for connecting to IBM i via the IBM i Access ODBC Driver.
 # Requires the IBM i Access ODBC Driver to be installed — see drivers/installation.sh.
 import pyodbc
+
+# For handling incremental sync timestamps
+from datetime import datetime, timezone
 
 # For reading configuration from a JSON file
 import json
@@ -35,6 +40,8 @@ __BATCH_SIZE = 1000
 __CHECKPOINT_INTERVAL = 10000
 # Timeout in seconds for the initial TCP connectivity check
 __DEFAULT_TIMEOUT_SECONDS = 60
+# Default start timestamp for the first full sync
+__DEFAULT_SYNC_START = "1990-01-01T00:00:00"
 
 
 def schema(configuration: dict):
@@ -48,7 +55,7 @@ def schema(configuration: dict):
     return [
         {
             "table": "customer",  # Name of the table in the destination, required.
-            # Set primary_key to the primary key column(s) of your CUSTOMER table, for example: "primary_key": ["id"]
+            "primary_key": ["c_d_id", "c_id"],  # Primary key column(s) for the table, optional.
         }
     ]
 
@@ -75,6 +82,26 @@ def validate_configuration(configuration: dict):
         int(port_str)
     except (ValueError, TypeError):
         raise ValueError(f"Configuration key 'port' must be a valid integer, got: {port_str!r}")
+
+
+def parse_state_timestamp(timestamp_str: str):
+    """
+    Parse a timestamp string from the state dictionary into a datetime object.
+    If the string is missing or unparseable, returns a default datetime of 1990-01-01.
+    Args:
+        timestamp_str: A string representing the timestamp stored in state.
+    Returns:
+        A timezone-aware datetime object representing the last processed timestamp.
+    """
+    if not timestamp_str:
+        return datetime(1990, 1, 1, tzinfo=timezone.utc)
+    try:
+        dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return datetime(1990, 1, 1, tzinfo=timezone.utc)
 
 
 def test_tcp(host: str, port: int, timeout_seconds: float):
@@ -131,14 +158,17 @@ def connect_to_db2i(configuration: dict):
         raise RuntimeError(f"ODBC connection failed after {elapsed_ms} ms: {exc}") from exc
 
 
-def fetch_and_upsert_data(conn, db_schema: str, state: dict):
+def fetch_and_upsert_data(conn, db_schema: str, last_update_timestamp: str):
     """
-    Fetch all rows from the CUSTOMER table and upsert them to the destination.
+    Fetch rows from the CUSTOMER table updated after last_update_timestamp and upsert them.
+    On the first sync (empty state), fetches all rows. Subsequent syncs fetch only rows where
+    UPDATE_TIMESTAMP is greater than the highest value seen in the previous sync.
     Processes rows in batches of __BATCH_SIZE and checkpoints every __CHECKPOINT_INTERVAL rows.
     Args:
         conn: A pyodbc connection object to the IBM i database.
         db_schema: The library/schema name containing the CUSTOMER table.
-        state: The state dictionary from the current sync, passed through to op.checkpoint().
+        last_update_timestamp: ISO-format timestamp string from state; rows updated after this
+            value are fetched. On first sync this defaults to __DEFAULT_SYNC_START.
     Returns:
         tuple: A tuple of (row_count, total_fetch_ms) summarising the sync.
     """
@@ -149,13 +179,17 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
         )
 
     cursor = conn.cursor()
-    sql = f"SELECT * FROM {db_schema}.CUSTOMER"
+    # Filter by UPDATE_TIMESTAMP to enable incremental syncs; ORDER BY ensures rows arrive in
+    # ascending timestamp order so the running maximum is always the last row seen.
+    sql = f"SELECT * FROM {db_schema}.CUSTOMER WHERE UPDATE_TIMESTAMP > '{last_update_timestamp}' ORDER BY UPDATE_TIMESTAMP"
 
     query_start = time.perf_counter()
     cursor.execute(sql)
     log.info(f"Query executed in {(time.perf_counter() - query_start) * 1000:.0f} ms")
 
     columns = [desc[0].lower() for desc in cursor.description]
+    # Track the highest UPDATE_TIMESTAMP seen so it can be saved to state
+    latest_timestamp = parse_state_timestamp(last_update_timestamp)
     row_count = 0
     batch_num = 0
     total_fetch_ms = 0
@@ -171,11 +205,24 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
 
         batch_num += 1
         for row in rows:
+            data = dict(zip(columns, row))
+
             # The 'upsert' operation is used to insert or update data in the destination table.
             # The first argument is the name of the destination table.
             # The second argument is a dictionary containing the record to be upserted.
-            op.upsert(table="customer", data=dict(zip(columns, row)))
+            op.upsert(table="customer", data=data)
             row_count += 1
+
+            # Update the running maximum of UPDATE_TIMESTAMP.
+            # pyodbc may return a datetime object or a string depending on the driver version.
+            row_ts = data.get("update_timestamp")
+            if row_ts is not None:
+                if not isinstance(row_ts, datetime):
+                    row_ts = parse_state_timestamp(str(row_ts))
+                elif row_ts.tzinfo is None:
+                    row_ts = row_ts.replace(tzinfo=timezone.utc)
+                if row_ts > latest_timestamp:
+                    latest_timestamp = row_ts
 
             if row_count % __CHECKPOINT_INTERVAL == 0:
                 # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -184,7 +231,9 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
                 # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
                 # Learn more about how and where to checkpoint by reading our best practices documentation
                 # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-                op.checkpoint(state=state)
+                op.checkpoint(
+                    state={"customer_last_update_timestamp": latest_timestamp.isoformat()}
+                )
 
         log.info(f"Batch {batch_num}: {len(rows)} rows in {fetch_ms:.0f} ms")
 
@@ -194,9 +243,10 @@ def fetch_and_upsert_data(conn, db_schema: str, state: dict):
         f"{total_fetch_ms:.0f} ms total, avg {avg_ms:.0f} ms/batch"
     )
 
-    # Final checkpoint ensures Fivetran receives the safe-to-write signal even when
-    # the total row count is not an exact multiple of __CHECKPOINT_INTERVAL.
-    op.checkpoint(state=state)
+    # Final checkpoint saves the highest UPDATE_TIMESTAMP seen, which becomes the cursor
+    # for the next incremental sync. Also ensures Fivetran receives the safe-to-write signal
+    # when total row count is not an exact multiple of __CHECKPOINT_INTERVAL.
+    op.checkpoint(state={"customer_last_update_timestamp": latest_timestamp.isoformat()})
 
     return row_count, total_fetch_ms
 
@@ -221,12 +271,16 @@ def update(configuration: dict, state: dict):
     timeout_seconds = float(configuration.get("timeout_seconds", __DEFAULT_TIMEOUT_SECONDS))
     database = configuration.get("database")
 
+    # Load the last update timestamp from state; defaults to __DEFAULT_SYNC_START for the first sync
+    last_update_timestamp = state.get("customer_last_update_timestamp", __DEFAULT_SYNC_START)
+    log.info(f"Current cursor: {last_update_timestamp}")
+
     # Verify TCP connectivity before opening the ODBC connection
     test_tcp(hostname, port, timeout_seconds)
 
     conn = connect_to_db2i(configuration)
     try:
-        fetch_and_upsert_data(conn, database, state)
+        fetch_and_upsert_data(conn, database, last_update_timestamp)
     finally:
         conn.close()
         log.info("Connection to IBM DB2 for i closed")
