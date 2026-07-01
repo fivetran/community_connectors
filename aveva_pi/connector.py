@@ -106,9 +106,7 @@ def update(configuration: dict, state: dict):
     base = base_url(configuration)
     database_name = configuration.get("database_name")
     start_date = configuration.get("start_date", __EPOCH_ISO)
-    do_recorded = (
-        str(configuration.get("sync_recorded_values", "false")).lower() == "true"
-    )
+    do_recorded = str(configuration.get("sync_recorded_values", "false")).lower() == "true"
 
     db_web_id = get_database_web_id(session, base, database_name)
 

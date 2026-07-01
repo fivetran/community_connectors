@@ -37,9 +37,7 @@ __LATE_ARRIVAL_ROLLBACK_HOURS = 2
 __CHECKPOINT_INTERVAL = 10_000
 
 
-def _handle_window_failure(
-    table_name: str, window: timedelta, exc: Exception
-) -> timedelta:
+def _handle_window_failure(table_name: str, window: timedelta, exc: Exception) -> timedelta:
     """
     Halve the time window on a transient failure and raise if it drops below the minimum.
 
@@ -68,9 +66,7 @@ def _handle_window_failure(
     return new_window
 
 
-def sync_elements(
-    session: requests.Session, base: str, db_web_id: str, state: dict
-) -> None:
+def sync_elements(session: requests.Session, base: str, db_web_id: str, state: dict) -> None:
     """
     Full reimport of all PI AF elements in the database (the asset hierarchy).
 
@@ -105,9 +101,7 @@ def sync_elements(
     log.info(f"elements sync complete ({count} rows)")
 
 
-def sync_attributes(
-    session: requests.Session, base: str, db_web_id: str, state: dict
-) -> list:
+def sync_attributes(session: requests.Session, base: str, db_web_id: str, state: dict) -> list:
     """
     Full reimport of all PI AF element attributes in the database.
 
@@ -148,9 +142,7 @@ def sync_attributes(
             params={"searchFullHierarchy": "true", "maxCount": __MAX_COUNT},
         ):
             element_web_id = (
-                item["Element"]["WebId"]
-                if isinstance(item.get("Element"), dict)
-                else ""
+                item["Element"]["WebId"] if isinstance(item.get("Element"), dict) else ""
             )
             _process(item, element_web_id)
     except ValueError as exc:
@@ -158,9 +150,7 @@ def sync_attributes(
         # not available on this PI Web API version). Auth failures should surface immediately.
         if "Authentication error" in str(exc):
             raise
-        log.info(
-            "  /elementattributes not available; falling back to per-element fetch"
-        )
+        log.info("  /elementattributes not available; falling back to per-element fetch")
         for elem_item in paginate(
             session,
             f"{base}/assetdatabases/{db_web_id}/elements",
@@ -180,8 +170,7 @@ def sync_attributes(
     # Final checkpoint after all attribute rows are processed.
     op.checkpoint(state)
     log.info(
-        f"attributes sync complete ({count} rows, "
-        f"{len(pi_point_web_ids)} PI Point attributes)"
+        f"attributes sync complete ({count} rows, " f"{len(pi_point_web_ids)} PI Point attributes)"
     )
     return pi_point_web_ids
 
@@ -207,9 +196,9 @@ def sync_event_frames(
         start_date: ISO 8601 fallback start date used on the first sync.
     """
     cursors = state.setdefault("cursors", {})
-    start = parse_pi_timestamp(
-        cursors.get("event_frames", start_date)
-    ) or datetime.fromtimestamp(0, tz=timezone.utc)
+    start = parse_pi_timestamp(cursors.get("event_frames", start_date)) or datetime.fromtimestamp(
+        0, tz=timezone.utc
+    )
     now = datetime.now(timezone.utc)
     window = timedelta(days=__INITIAL_WINDOW_DAYS)
     total = 0
@@ -232,18 +221,14 @@ def sync_event_frames(
                 },
             ):
                 # The 'upsert' operation inserts or updates a row in the destination table.
-                op.upsert(
-                    table="event_frames", data=extract_event_frame(item, db_web_id)
-                )
+                op.upsert(table="event_frames", data=extract_event_frame(item, db_web_id))
                 window_count += 1
 
             cursors["event_frames"] = end.isoformat()
             # Save progress after each successful time window so the sync can
             # resume from this point if interrupted on the next window.
             op.checkpoint(state)
-            log.info(
-                f"  event_frames {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows"
-            )
+            log.info(f"  event_frames {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count
             start = end
 
@@ -334,9 +319,7 @@ def sync_recorded_values(
             cursors["recorded_values"] = end.isoformat()
             # Save progress after each complete time window across all attributes.
             op.checkpoint(state)
-            log.info(
-                f"  recorded_values {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows"
-            )
+            log.info(f"  recorded_values {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count
             start = end
 

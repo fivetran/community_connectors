@@ -78,9 +78,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
                     f"Retryable HTTP {resp.status_code} for {url}", response=resp
                 )
             if 400 <= resp.status_code < 500:
-                raise ValueError(
-                    f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}"
-                )
+                raise ValueError(f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}")
             resp.raise_for_status()
             return resp.json()
         except ValueError:
@@ -88,9 +86,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
             raise
         except requests.exceptions.RequestException as exc:
             last_exc = exc
-            log.warning(
-                f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}"
-            )
+            log.warning(f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}")
 
     raise ConnectionError(
         f"Could not reach PI Web API after {__MAX_RETRIES} attempts. URL: {url}"
@@ -120,9 +116,7 @@ def paginate(session: requests.Session, url: str, params: dict = None):
         next_params = None  # Parameters are already encoded in the Next URL
 
 
-def get_database_web_id(
-    session: requests.Session, base: str, database_name: str
-) -> str:
+def get_database_web_id(session: requests.Session, base: str, database_name: str) -> str:
     """
     Find and return the WebId of the target AF database.
 
@@ -144,17 +138,13 @@ def get_database_web_id(
         raise ValueError("No PI Asset Servers found via PI Web API. Check base_url.")
 
     for server in servers:
-        databases = api_get(
-            session, f"{base}/assetservers/{server['WebId']}/assetdatabases"
-        ).get("Items", [])
+        databases = api_get(session, f"{base}/assetservers/{server['WebId']}/assetdatabases").get(
+            "Items", []
+        )
         for db in databases:
             if database_name is None or db.get("Name") == database_name:
-                log.info(
-                    f"Connected to database '{db['Name']}' on server '{server.get('Name')}'"
-                )
+                log.info(f"Connected to database '{db['Name']}' on server '{server.get('Name')}'")
                 return db["WebId"]
 
     target = f"'{database_name}'" if database_name else "any database"
-    raise ValueError(
-        f"Could not find {target} on any PI Asset Server. Check database_name."
-    )
+    raise ValueError(f"Could not find {target} on any PI Asset Server. Check database_name.")

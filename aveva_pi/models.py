@@ -23,9 +23,7 @@ def parse_pi_timestamp(ts: str) -> Optional[datetime]:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(
-            timezone.utc
-        )
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
 
