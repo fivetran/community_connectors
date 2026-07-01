@@ -23,7 +23,9 @@ def parse_pi_timestamp(ts: str) -> Optional[datetime]:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(
+            timezone.utc
+        )
     except (ValueError, TypeError):
         return None
 
@@ -62,12 +64,12 @@ def extract_element(item: dict) -> dict:
         Record dict for upserting into the 'elements' table.
     """
     return {
-        "web_id":          item.get("WebId", ""),
-        "name":            item.get("Name", ""),
-        "description":     item.get("Description", ""),
-        "path":            item.get("Path", ""),
-        "template_name":   item.get("TemplateName", ""),
-        "category_names":  _category_names(item),
+        "web_id": item.get("WebId", ""),
+        "name": item.get("Name", ""),
+        "description": item.get("Description", ""),
+        "path": item.get("Path", ""),
+        "template_name": item.get("TemplateName", ""),
+        "category_names": _category_names(item),
     }
 
 
@@ -82,16 +84,16 @@ def extract_attribute(item: dict, element_web_id: str) -> dict:
         Record dict for upserting into the 'attributes' table.
     """
     return {
-        "web_id":              item.get("WebId", ""),
-        "element_web_id":      element_web_id,
-        "name":                item.get("Name", ""),
-        "description":         item.get("Description", ""),
-        "path":                item.get("Path", ""),
-        "type":                item.get("Type", ""),
-        "type_qualifier":      item.get("TypeQualifier", ""),
-        "data_reference":      item.get("DataReferencePlugIn", ""),
+        "web_id": item.get("WebId", ""),
+        "element_web_id": element_web_id,
+        "name": item.get("Name", ""),
+        "description": item.get("Description", ""),
+        "path": item.get("Path", ""),
+        "type": item.get("Type", ""),
+        "type_qualifier": item.get("TypeQualifier", ""),
+        "data_reference": item.get("DataReferencePlugIn", ""),
         "data_reference_path": item.get("ConfigString", ""),
-        "category_names":      _category_names(item),
+        "category_names": _category_names(item),
     }
 
 
@@ -106,13 +108,13 @@ def extract_event_frame(item: dict, db_web_id: str) -> dict:
         Record dict for upserting into the 'event_frames' table.
     """
     return {
-        "web_id":          item.get("WebId", ""),
-        "name":            item.get("Name", ""),
-        "description":     item.get("Description", ""),
-        "start_time":      parse_pi_timestamp(item.get("StartTime")),
-        "end_time":        parse_pi_timestamp(item.get("EndTime")),
-        "template_name":   item.get("TemplateName", ""),
-        "category_names":  _category_names(item),
+        "web_id": item.get("WebId", ""),
+        "name": item.get("Name", ""),
+        "description": item.get("Description", ""),
+        "start_time": parse_pi_timestamp(item.get("StartTime")),
+        "end_time": parse_pi_timestamp(item.get("EndTime")),
+        "template_name": item.get("TemplateName", ""),
+        "category_names": _category_names(item),
         "database_web_id": db_web_id,
     }
 
@@ -154,10 +156,10 @@ def extract_recorded_value(item: dict, attr_web_id: str) -> dict:
         value = str(value) if value is not None else None
 
     return {
-        "_fivetran_id":     generate_recorded_value_id(attr_web_id, ts_str),
+        "_fivetran_id": generate_recorded_value_id(attr_web_id, ts_str),
         "attribute_web_id": attr_web_id,
-        "timestamp":        parse_pi_timestamp(ts_str),
-        "value":            value,
-        "quality":          "questionable" if item.get("Questionable") else "good",
-        "good":             not item.get("Questionable", False),
+        "timestamp": parse_pi_timestamp(ts_str),
+        "value": value,
+        "quality": "questionable" if item.get("Questionable") else "good",
+        "good": not item.get("Questionable", False),
     }

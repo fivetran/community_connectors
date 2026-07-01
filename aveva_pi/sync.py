@@ -149,7 +149,8 @@ def sync_attributes(
         ):
             element_web_id = (
                 item["Element"]["WebId"]
-                if isinstance(item.get("Element"), dict) else ""
+                if isinstance(item.get("Element"), dict)
+                else ""
             )
             _process(item, element_web_id)
     except ValueError as exc:
@@ -157,7 +158,9 @@ def sync_attributes(
         # not available on this PI Web API version). Auth failures should surface immediately.
         if "Authentication error" in str(exc):
             raise
-        log.info("  /elementattributes not available; falling back to per-element fetch")
+        log.info(
+            "  /elementattributes not available; falling back to per-element fetch"
+        )
         for elem_item in paginate(
             session,
             f"{base}/assetdatabases/{db_web_id}/elements",
@@ -204,8 +207,9 @@ def sync_event_frames(
         start_date: ISO 8601 fallback start date used on the first sync.
     """
     cursors = state.setdefault("cursors", {})
-    start = parse_pi_timestamp(cursors.get("event_frames", start_date)) \
-        or datetime.fromtimestamp(0, tz=timezone.utc)
+    start = parse_pi_timestamp(
+        cursors.get("event_frames", start_date)
+    ) or datetime.fromtimestamp(0, tz=timezone.utc)
     now = datetime.now(timezone.utc)
     window = timedelta(days=__INITIAL_WINDOW_DAYS)
     total = 0
@@ -222,13 +226,15 @@ def sync_event_frames(
                 f"{base}/assetdatabases/{db_web_id}/eventframes",
                 params={
                     "searchFullHierarchy": "true",
-                    "startTime":           fmt_ts(start),
-                    "endTime":             fmt_ts(end),
-                    "maxCount":            __MAX_COUNT,
+                    "startTime": fmt_ts(start),
+                    "endTime": fmt_ts(end),
+                    "maxCount": __MAX_COUNT,
                 },
             ):
                 # The 'upsert' operation inserts or updates a row in the destination table.
-                op.upsert(table="event_frames", data=extract_event_frame(item, db_web_id))
+                op.upsert(
+                    table="event_frames", data=extract_event_frame(item, db_web_id)
+                )
                 window_count += 1
 
             cursors["event_frames"] = end.isoformat()
@@ -282,8 +288,9 @@ def sync_recorded_values(
     cursors = state.setdefault("cursors", {})
     start_str = cursors.get("recorded_values")
     is_first_sync = start_str is None
-    start = parse_pi_timestamp(start_str or start_date) \
-        or datetime.fromtimestamp(0, tz=timezone.utc)
+    start = parse_pi_timestamp(start_str or start_date) or datetime.fromtimestamp(
+        0, tz=timezone.utc
+    )
 
     if not is_first_sync:
         start = start - timedelta(hours=__LATE_ARRIVAL_ROLLBACK_HOURS)
@@ -310,8 +317,8 @@ def sync_recorded_values(
                         f"{base}/streams/{attr_web_id}/recorded",
                         params={
                             "startTime": fmt_ts(start),
-                            "endTime":   fmt_ts(end),
-                            "maxCount":  __MAX_COUNT,
+                            "endTime": fmt_ts(end),
+                            "maxCount": __MAX_COUNT,
                         },
                     ):
                         # The 'upsert' operation inserts or updates a row in the destination table.

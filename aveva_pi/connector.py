@@ -79,9 +79,9 @@ def schema(configuration: dict):
     # Four tables mapping directly to PI AF object types exposed by PI Web API.
     # Column types are not declared here; the SDK auto-detects them from upserted data.
     return [
-        {"table": "elements",        "primary_key": ["web_id"]},
-        {"table": "attributes",      "primary_key": ["web_id"]},
-        {"table": "event_frames",    "primary_key": ["web_id"]},
+        {"table": "elements", "primary_key": ["web_id"]},
+        {"table": "attributes", "primary_key": ["web_id"]},
+        {"table": "event_frames", "primary_key": ["web_id"]},
         {"table": "recorded_values", "primary_key": ["_fivetran_id"]},
     ]
 
@@ -96,7 +96,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
-    log.info("AVEVA_PI : AVEVA_PI_WEB_API")
+    log.warning("Example: AVEVA_PI : AVEVA_PI_WEB_API")
 
     # Validate the configuration to ensure it contains all required values.
     validate_configuration(configuration=configuration)
@@ -106,7 +106,9 @@ def update(configuration: dict, state: dict):
     base = base_url(configuration)
     database_name = configuration.get("database_name")
     start_date = configuration.get("start_date", __EPOCH_ISO)
-    do_recorded = str(configuration.get("sync_recorded_values", "false")).lower() == "true"
+    do_recorded = (
+        str(configuration.get("sync_recorded_values", "false")).lower() == "true"
+    )
 
     db_web_id = get_database_web_id(session, base, database_name)
 
@@ -125,7 +127,7 @@ def update(configuration: dict, state: dict):
     else:
         log.info(
             "Skipping recorded_values sync. "
-            "Set sync_recorded_values = \"true\" in configuration to enable. "
+            'Set sync_recorded_values = "true" in configuration to enable. '
             "Warning: this can generate very large data volumes on large PI deployments."
         )
 

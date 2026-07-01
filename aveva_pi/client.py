@@ -22,10 +22,12 @@ def build_session(configuration: dict) -> requests.Session:
     """
     session = requests.Session()
     session.auth = HTTPBasicAuth(configuration["username"], configuration["password"])
-    session.headers.update({
-        "Accept": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-    })
+    session.headers.update(
+        {
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+    )
     # Allow users to disable TLS verification for self-signed PI Web API certificates.
     # Only enable verification when the value is explicitly "true".
     session.verify = str(configuration.get("verify_ssl", "true")).lower() == "true"
@@ -86,7 +88,9 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
             raise
         except requests.exceptions.RequestException as exc:
             last_exc = exc
-            log.warning(f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}")
+            log.warning(
+                f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}"
+            )
 
     raise ConnectionError(
         f"Could not reach PI Web API after {__MAX_RETRIES} attempts. URL: {url}"
@@ -151,4 +155,6 @@ def get_database_web_id(
                 return db["WebId"]
 
     target = f"'{database_name}'" if database_name else "any database"
-    raise ValueError(f"Could not find {target} on any PI Asset Server. Check database_name.")
+    raise ValueError(
+        f"Could not find {target} on any PI Asset Server. Check database_name."
+    )
