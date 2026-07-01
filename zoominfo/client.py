@@ -69,15 +69,44 @@ def get_access_token(configuration: dict) -> str:
         client_secret = configuration["client_secret"]
         encoded = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
 
-        response = requests.post(
-            TOKEN_URL,
-            headers={
-                "Authorization": f"Basic {encoded}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            data={"grant_type": "client_credentials"},
-            timeout=REQUEST_TIMEOUT,
-        )
+        response = None
+        wait = RETRY_BASE_WAIT
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    TOKEN_URL,
+                    headers={
+                        "Authorization": f"Basic {encoded}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    data={"grant_type": "client_credentials"},
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except requests.exceptions.RequestException as e:
+                if attempt == MAX_RETRIES:
+                    raise RuntimeError(
+                        f"Network error requesting ZoomInfo access token after {MAX_RETRIES} attempts: {e}"
+                    )
+                wait_secs = min(wait, RETRY_MAX_WAIT)
+                log.warning(
+                    f"Token request network error ({type(e).__name__}) — backing off {wait_secs}s "
+                    f"(attempt {attempt}/{MAX_RETRIES})"
+                )
+                time.sleep(wait_secs)
+                wait *= 2
+                continue
+
+            if response.status_code in RETRY_STATUS_CODES:
+                if attempt == MAX_RETRIES:
+                    break
+                wait_secs, wait = _sleep_for_retry(response, wait)
+                log.warning(
+                    f"Retryable status {response.status_code} on token request — waited {wait_secs}s "
+                    f"(attempt {attempt}/{MAX_RETRIES})"
+                )
+                continue
+
+            break
 
         if response.status_code != 200:
             raise RuntimeError(

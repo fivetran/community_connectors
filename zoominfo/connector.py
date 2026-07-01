@@ -76,7 +76,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -374,9 +374,12 @@ def update(configuration: dict, state: dict):
 
     # ── Usage (always — free, no opt-in) ──
     sync_usage(configuration)
-    # Save the progress by checkpointing the state. This tells Fivetran it is
-    # safe to write the data synced so far to the destination, and lets the next
-    # sync resume from here. We checkpoint after each completed table below.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── Parse enrichment + filter config once ──

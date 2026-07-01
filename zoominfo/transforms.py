@@ -111,7 +111,7 @@ def _max_cursor(current, candidate):
     return candidate if n_dt > c_dt else current
 
 
-def _iso_to_yyyymmdd(iso_string: str) -> str:
+def _iso_to_yyyymmdd(iso_string: str | None) -> str | None:
     """
     Coerces an ISO 8601 timestamp like '2026-05-19T23:31:00Z' down to the
     'YYYY-MM-DD' format the ZoomInfo Search filter API expects. If the input
