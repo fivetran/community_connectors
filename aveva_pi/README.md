@@ -18,6 +18,10 @@ Key capabilities:
 ## Requirements
 
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
+- Operating system:
+  - Windows: 10 or later (64-bit only)
+  - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
+  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 - PI Web API 2019 SP1 or later, reachable over HTTPS from the connector host
 - Basic authentication enabled on the PI Web API server
 - A PI user account with read access to the target AF database
@@ -33,10 +37,9 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 Running `fivetran init --template aveva_pi` creates a new Connector SDK project pre-populated with this connector's source files. You can then update `configuration.json` with your PI Web API credentials and run `fivetran debug` to test locally against your own PI server.
 
-```bash
-fivetran init --template aveva_pi
-```
+    fivetran init --template aveva_pi
 
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 > Note: Ensure you have updated `configuration.json` with your PI Web API connection details before running `fivetran debug`. See the [Configuration file](#configuration-file) section below.
 
 1. Verify PI Web API is reachable: open `https://<PI_WEB_API_HOSTNAME>/piwebapi` in a browser and confirm you can authenticate.
