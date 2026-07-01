@@ -45,13 +45,13 @@ To run the connector locally:
 
 2. Fill in your credentials in `configuration.json`.
 
-3. Run the connector:
+3. Run the connector locally using the Fivetran debug command:
 
    ```bash
-   python connector.py
+   fivetran debug
    ```
 
-   The `connector.debug()` call at the bottom of `connector.py` runs a local sync and prints all upsert operations to stdout.
+   This executes the sync locally, prints all log output, and writes results to a local `warehouse.db` SQLite file for inspection.
 
 ---
 
@@ -267,13 +267,15 @@ No PII masking is applied in the connector. Snowflake Dynamic Data Masking is re
 
 ## Deployment
 
+To deploy the connector to Fivetran after local testing:
+
 ```bash
 fivetran connector deploy \
   --connector-id <your-connector-id> \
-  --destination <your-snowflake-group-name>
+  --destination <your-destination-group-name>
 ```
 
-The API key must be base64-encoded as `key:secret`. Use the Fivetran group name (not the group ID) for `--destination`.
+Note: The API key must be base64-encoded as `key:secret`. Use the Fivetran group name (not the group ID) for `--destination`.
 
 ---
 

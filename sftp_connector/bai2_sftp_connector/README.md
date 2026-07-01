@@ -43,15 +43,15 @@ To run the connector locally:
 
 2. Fill in your credentials in `configuration.json`.
 
-3. Run the connector:
+3. Run the connector locally using the Fivetran debug command:
 
    ```bash
-   python connector.py
+   fivetran debug
    ```
 
-   This runs `connector.debug()`, which executes the sync locally, prints all log output, and writes results to a local `warehouse.db` SQLite file for inspection.
+   This executes the sync locally, prints all log output, and writes results to a local `warehouse.db` SQLite file for inspection.
 
-To validate syntax:
+To validate syntax before debugging:
 
 ```bash
 python -m py_compile connector.py && echo "OK"
@@ -322,6 +322,20 @@ Example `configuration.json` for test mode:
 | File appears in `failed_files` state | File-level failure (SFTP error, unrecoverable parse error) | Check `error_type` and `error` fields in state for the cause; resolve the underlying issue; the file will be retried automatically on the next sync |
 | `test_mode must be 'true' or 'false'` | `test_mode` value is not a recognised string | Set `test_mode` to `"true"` or `"false"` |
 | Only 3 files processed despite more being available | `test_mode` is `"true"` | Set `test_mode` to `"false"` or remove the key once validation is complete |
+
+---
+
+## Deployment
+
+To deploy the connector to Fivetran after local testing:
+
+```bash
+fivetran connector deploy \
+  --connector-id <your-connector-id> \
+  --destination <your-destination-group-name>
+```
+
+Note: The API key must be base64-encoded as `key:secret`. Use the Fivetran group name (not the group ID) for `--destination`.
 
 ---
 
