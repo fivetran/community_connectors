@@ -889,6 +889,7 @@ def _stream_per_company_enrich(
         if abort.is_set():
             work_queue.put(("done", cid))
             return
+        sent = False
         try:
             for page_results in row_builder.paginate(configuration, cid):
                 if abort.is_set():
@@ -897,13 +898,21 @@ def _stream_per_company_enrich(
                     row = row_builder.build_row(cid, record)
                     if row is not None:
                         work_queue.put(row)
-        except Exception as e:
+        except RuntimeError as e:
             if "[HTTP 403]" in str(e):
                 work_queue.put(("403", cid))
+                sent = True
                 return
             work_queue.put(("error", cid, e))
+            sent = True
             return
-        work_queue.put(("done", cid))
+        except (requests.exceptions.RequestException, ValueError, KeyError, TypeError) as e:
+            work_queue.put(("error", cid, e))
+            sent = True
+            return
+        finally:
+            if not sent:
+                work_queue.put(("done", cid))
 
     total_rows = 0
     companies_processed = 0
