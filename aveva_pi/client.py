@@ -26,8 +26,9 @@ def build_session(configuration: dict) -> requests.Session:
         "Accept": "application/json",
         "X-Requested-With": "XMLHttpRequest",
     })
-    # Allow users to disable TLS verification for self-signed PI Web API certificates
-    session.verify = configuration.get("verify_ssl", "true").lower() != "false"
+    # Allow users to disable TLS verification for self-signed PI Web API certificates.
+    # Only enable verification when the value is explicitly "true".
+    session.verify = str(configuration.get("verify_ssl", "true")).lower() == "true"
     return session
 
 
@@ -68,6 +69,11 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
             if resp.status_code in (401, 403):
                 raise ValueError(
                     f"Authentication error ({resp.status_code}) for {url}: {resp.text[:200]}"
+                )
+            # 408 (Request Timeout) and 429 (Too Many Requests) are transient — retry them
+            if resp.status_code in (408, 429):
+                raise requests.exceptions.HTTPError(
+                    f"Retryable HTTP {resp.status_code} for {url}", response=resp
                 )
             if 400 <= resp.status_code < 500:
                 raise ValueError(

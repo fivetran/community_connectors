@@ -9,6 +9,9 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 # For reading configuration from a JSON file
 import json
 
+# For ISO 8601 timestamp validation in configuration
+from datetime import datetime
+
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 
@@ -48,7 +51,6 @@ def validate_configuration(configuration: dict):
     start_date = configuration.get("start_date")
     if start_date:
         try:
-            from datetime import datetime
             datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         except ValueError:
             raise ValueError(
@@ -57,7 +59,7 @@ def validate_configuration(configuration: dict):
             )
 
     # Validate sync_recorded_values flag if provided
-    sync_rv = configuration.get("sync_recorded_values", "false")
+    sync_rv = str(configuration.get("sync_recorded_values", "false"))
     if sync_rv.lower() not in ("true", "false"):
         raise ValueError(
             f"Invalid sync_recorded_values value '{sync_rv}'. Expected 'true' or 'false'."
@@ -94,6 +96,8 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
+    log.info("AVEVA_PI : AVEVA_PI_WEB_API")
+
     # Validate the configuration to ensure it contains all required values.
     validate_configuration(configuration=configuration)
 
@@ -102,7 +106,7 @@ def update(configuration: dict, state: dict):
     base = base_url(configuration)
     database_name = configuration.get("database_name")
     start_date = configuration.get("start_date", __EPOCH_ISO)
-    do_recorded = configuration.get("sync_recorded_values", "false").lower() == "true"
+    do_recorded = str(configuration.get("sync_recorded_values", "false")).lower() == "true"
 
     db_web_id = get_database_web_id(session, base, database_name)
 

@@ -3,7 +3,7 @@
   "username": "<PI_USERNAME>",
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
-  "verify_ssl": "<true_or_false>",
-  "start_date": "<START_DATE_ISO8601>",
-  "sync_recorded_values": "<true_or_false>"
+  "verify_ssl": "<TRUE_OR_FALSE_DEFAULT_TRUE>",
+  "start_date": "<START_DATE_ISO8601_EXAMPLE_2020_01_01T00_00_00Z>",
+  "sync_recorded_values": "<TRUE_OR_FALSE_DEFAULT_FALSE>"
 }

@@ -22,12 +22,16 @@ Key capabilities:
 - Basic authentication enabled on the PI Web API server
 - A PI user account with read access to the target AF database
 
+### OS requirements
+
+No additional operating-system packages are required. The connector communicates with PI Web API over HTTPS using the `requests` library and does not require any proprietary ODBC drivers or platform-specific software.
+
 
 ## Getting started
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
-To initialize a new Connector SDK project using this connector as a starting point, run:
+Running `fivetran init --template aveva_pi` creates a new Connector SDK project pre-populated with this connector's source files. You can then update `configuration.json` with your PI Web API credentials and run `fivetran debug` to test locally against your own PI server.
 
 ```bash
 fivetran init --template aveva_pi
@@ -63,9 +67,9 @@ fivetran init --template aveva_pi
   "username": "<PI_USERNAME>",
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
-  "verify_ssl": "<true_or_false>",
-  "start_date": "<START_DATE_ISO8601>",
-  "sync_recorded_values": "<true_or_false>"
+  "verify_ssl": "<TRUE_OR_FALSE_DEFAULT_TRUE>",
+  "start_date": "<START_DATE_ISO8601_EXAMPLE_2020_01_01T00_00_00Z>",
+  "sync_recorded_values": "<TRUE_OR_FALSE_DEFAULT_FALSE>"
 }
 ```
 
@@ -84,16 +88,12 @@ fivetran init --template aveva_pi
 
 ## Authentication
 
-The connector uses HTTP Basic authentication. Credentials are passed in each request via the `Authorization` header. The PI Web API server validates them against the configured PI identity provider.
-
-To set up authentication:
+The connector uses HTTP Basic authentication. To set up credentials:
 
 1. Log in to your PI Web API server admin interface and confirm that Basic authentication is enabled under Security settings.
 2. Create or identify a PI user account with read access to the target AF database.
 3. Add the `username` and `password` for that account to `configuration.json`.
 4. If your PI Web API server uses a self-signed TLS certificate, set `verify_ssl` to `"false"` in `configuration.json`.
-
-If a request returns a 401 or 403 response, the connector raises a `ValueError` immediately without retrying, so the sync fails fast and Fivetran prompts for updated credentials. Other 4xx errors (e.g. 404 for a missing PI Point stream) are treated as skippable warnings for individual resources.
 
 
 ## Pagination
@@ -116,7 +116,7 @@ Checkpointing occurs after each successful time window (incremental) or every 10
 
 ## Error handling
 
-- HTTP 4xx responses raise a `ValueError` immediately (no retry). Refer to `api_get()` in `client.py`.
+- HTTP 4xx responses raise a `ValueError` immediately (no retry), except for 408 (Request Timeout) and 429 (Too Many Requests) which are treated as transient and retried. Refer to `api_get()` in `client.py`.
 - HTTP 5xx and network errors retry up to 3 times with a warning logged per attempt. Refer to `api_get()` in `client.py`.
 - Incremental query failures trigger adaptive window halving rather than a hard failure. If the window cannot be halved further (below 1 hour), a `RuntimeError` is raised. Refer to `sync_event_frames()` and `sync_recorded_values()` in `sync.py`.
 - Individual `recorded_values` attribute streams that return 4xx errors are skipped with a warning (e.g. deleted PI Points). Refer to `sync_recorded_values()` in `sync.py`.

@@ -37,6 +37,37 @@ __LATE_ARRIVAL_ROLLBACK_HOURS = 2
 __CHECKPOINT_INTERVAL = 10_000
 
 
+def _handle_window_failure(
+    table_name: str, window: timedelta, exc: Exception
+) -> timedelta:
+    """
+    Halve the time window on a transient failure and raise if it drops below the minimum.
+
+    Used by both sync_event_frames and sync_recorded_values to apply the same
+    adaptive backoff policy.
+
+    Args:
+        table_name: name of the table being synced, used in log/error messages.
+        window: the current time window size.
+        exc: the exception that triggered the failure.
+    Returns:
+        The halved window timedelta.
+    Raises:
+        RuntimeError: if the halved window would drop below __MIN_WINDOW_HOURS.
+    """
+    new_window = window / 2
+    if new_window < timedelta(hours=__MIN_WINDOW_HOURS):
+        raise RuntimeError(
+            f"{table_name} sync failed; window cannot be halved below "
+            f"{__MIN_WINDOW_HOURS}h. Last error: {exc}"
+        ) from exc
+    log.warning(
+        f"  {table_name} window failed; halving to "
+        f"{int(new_window.total_seconds() // 3600)}h. Error: {exc}"
+    )
+    return new_window
+
+
 def sync_elements(
     session: requests.Session, base: str, db_web_id: str, state: dict
 ) -> None:
@@ -121,8 +152,11 @@ def sync_attributes(
                 if isinstance(item.get("Element"), dict) else ""
             )
             _process(item, element_web_id)
-    except ValueError:
-        # /elementattributes not available on this PI Web API version — iterate per element
+    except ValueError as exc:
+        # Only fall back if the endpoint returned a non-auth 4xx (e.g. 404/405 — endpoint
+        # not available on this PI Web API version). Auth failures should surface immediately.
+        if "Authentication error" in str(exc):
+            raise
         log.info("  /elementattributes not available; falling back to per-element fetch")
         for elem_item in paginate(
             session,
@@ -212,16 +246,7 @@ def sync_event_frames(
             raise
         except requests.exceptions.RequestException as exc:
             # Transient network or server error — halve the window and retry
-            window = window / 2
-            if window < timedelta(hours=__MIN_WINDOW_HOURS):
-                raise RuntimeError(
-                    f"event_frames sync failed; window cannot be halved below "
-                    f"{__MIN_WINDOW_HOURS}h. Last error: {exc}"
-                ) from exc
-            log.warning(
-                f"  event_frames window failed; halving to "
-                f"{int(window.total_seconds() // 3600)}h. Error: {exc}"
-            )
+            window = _handle_window_failure("event_frames", window, exc)
 
     log.info(f"event_frames sync complete ({total} rows)")
 
@@ -312,15 +337,6 @@ def sync_recorded_values(
             raise
         except requests.exceptions.RequestException as exc:
             # Transient network or server error — halve the window and retry
-            window = window / 2
-            if window < timedelta(hours=__MIN_WINDOW_HOURS):
-                raise RuntimeError(
-                    f"recorded_values sync failed; window cannot be halved below "
-                    f"{__MIN_WINDOW_HOURS}h. Last error: {exc}"
-                ) from exc
-            log.warning(
-                f"  recorded_values window failed; halving to "
-                f"{int(window.total_seconds() // 3600)}h. Error: {exc}"
-            )
+            window = _handle_window_failure("recorded_values", window, exc)
 
     log.info(f"recorded_values sync complete ({total} rows)")

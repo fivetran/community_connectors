@@ -7,8 +7,11 @@ import json
 # For UTC-aware datetime parsing and formatting
 from datetime import datetime, timezone
 
+# For nullable return type annotation
+from typing import Optional
 
-def parse_pi_timestamp(ts: str) -> datetime:
+
+def parse_pi_timestamp(ts: str) -> Optional[datetime]:
     """
     Parse a PI Web API ISO 8601 timestamp string to a UTC-aware datetime.
 
