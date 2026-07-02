@@ -77,10 +77,16 @@ The Bright Data API uses Bearer token authentication. Obtain your API token from
 
 ## Tables created
 
-| Table Name          | Primary Key                    | Description                                              |
-|---------------------|--------------------------------|----------------------------------------------------------|
-| `UNLOCKER_RESULTS`  | `requested_url`, `result_index`  | Flattened web unlocker results for each requested URL.   |
+The connector creates a single table named `unlocker_results` with the following schema (refer to the `schema()` function):
 
+    {
+      "table": "unlocker_results",
+      "primary_key": ["requested_url", "result_index"],
+      "columns": {
+        "requested_url": "STRING",
+        "result_index": "INT"
+      }
+    }
 ## Additional files
 
 - `helpers/validation.py` — Configuration parameter validation
