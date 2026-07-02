@@ -71,13 +71,9 @@ def update(configuration: dict, state: dict):
     urls = parse_scrape_urls(scrape_url_input)
 
     if not urls:
-        log.severe(
-            f"No URLs provided in configuration; scrape_url input: {scrape_url_input}"
-        )
-        raise RuntimeError(
-            f"No URLs provided in configuration; scrape_url input: {scrape_url_input}",
-        )
-
+        message = f"No URLs provided in configuration; scrape_url input: {scrape_url_input}"
+        log.error(message)
+        raise RuntimeError(message)
     sync_scrape_urls(api_token, dataset_id, urls, state)
 
 
