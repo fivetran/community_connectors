@@ -4,50 +4,71 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   check-readme-update:
     runs-on: ubuntu-latest
     name: Check Updates for New Examples
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0  # Fetch all history for proper diff
-
-      - name: Expose PR SHAs
-        run: |
-          echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
-          echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          echo "HEAD_REPO=${{ github.event.pull_request.head.repo.clone_url }}" >> $GITHUB_ENV
+          persist-credentials: false
 
       - name: Ensure SHAs are fetched
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
         run: |
-          git fetch --no-tags --prune origin $BASE_SHA 
-          git fetch --no-tags --prune $HEAD_REPO $HEAD_SHA
+          git fetch --no-tags --prune origin "$BASE_SHA"
+          git fetch --no-tags --prune "$HEAD_REPO" "$HEAD_SHA"
 
       - name: Create check script
         id: create-script
         run: |
           cat > check-readme-update.js << 'EOF'
-          const fs = require('fs');
           const path = require('path');
-          const { execSync } = require('child_process');
+          const { execFileSync } = require('child_process');
+
+          const SHA_RE = /^[0-9a-f]{40}$/i;
+
+          function getRequiredSha(name) {
+            const value = process.env[name];
+            if (!SHA_RE.test(value || '')) {
+              console.error(`${name} is not a valid git SHA`);
+              process.exit(1);
+            }
+            return value;
+          }
 
           // Get the list of files changed in the PR
           function getChangedFiles() {
             try {
               // Get the base branch (target) of the PR
-              const baseSha = process.env.BASE_SHA;
+              const baseSha = getRequiredSha('BASE_SHA');
               // Get current branch (source) of the PR
-              const headSha = process.env.HEAD_SHA;
+              const headSha = getRequiredSha('HEAD_SHA');
               
               // Use Git directly to get all changed files between branches
-              const gitDiff = execSync(`git diff --name-status ${baseSha}...${headSha}`, 
-                                      { encoding: 'utf-8' });
+              const gitDiff = execFileSync(
+                'git',
+                ['diff', '--name-status', `${baseSha}...${headSha}`],
+                { encoding: 'utf-8' }
+              );
               
               // Parse the git diff output
               return gitDiff.trim().split('\n').filter(line => line).map(line => {
-                const [status, filename] = line.split('\t');
+                const fields = line.split('\t');
+                const status = fields[0];
+                const filename =
+                  status.startsWith('R') || status.startsWith('C') ? fields[2] : fields[1];
+                if (!filename) {
+                  throw new Error(`Unexpected git diff --name-status output: ${line}`);
+                }
                 return { status, filename };
               });
             } catch (error) {
@@ -59,10 +80,11 @@ jobs:
           // Check if a directory exists before our PR
           function directoryExistsInBase(dirPath) {
             try {
-              const baseSha = process.env.BASE_SHA;
+              const baseSha = getRequiredSha('BASE_SHA');
               // Check if this directory exists in the base branch
-              const result = execSync(
-                `git ls-tree -d ${baseSha} ${dirPath}`,
+              const result = execFileSync(
+                'git',
+                ['ls-tree', '-d', baseSha, '--', dirPath],
                 { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
               );
               return result.trim() !== '';
@@ -147,13 +169,20 @@ jobs:
           EOF
 
       - name: Run directory check script
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node check-readme-update.js
 
       - name: Debug information
         if: always()
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
         run: |
-          echo "BASE_SHA: $BASE_SHA"
-          echo "HEAD_SHA: $HEAD_SHA"
-          echo "HEAD_REPO: $HEAD_REPO"
+          printf 'BASE_SHA: %s\n' "$BASE_SHA"
+          printf 'HEAD_SHA: %s\n' "$HEAD_SHA"
+          printf 'HEAD_REPO: %s\n' "$HEAD_REPO"
           echo "Git Branches:"
           git branch -a
