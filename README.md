@@ -126,6 +126,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[oura_ring](https://github.com/fivetran/community_connectors/tree/main/oura_ring)** - This example shows how to sync health and wellness data from the Oura Ring API v2 using Connector SDK. It syncs daily activity, sleep, readiness, stress, and heart rate data with incremental syncing, cursor-based pagination, automatic flattening of nested contributor objects, and date-range chunking for high-volume heart rate data. You need to provide your Oura Personal Access Token for this example to work.
 - **[owasp_api_vulns](https://github.com/fivetran/community_connectors/tree/main/owasp_api_vulns)** - Sync OWASP API vulnerability data from NVD 2.0
 - **[partech](https://github.com/fivetran/community_connectors/tree/main/partech)** - Sync POS data from Partech (formerly Punchh)
+- **[people_ai](https://github.com/fivetran/community_connectors/tree/main/people_ai)** - Sync activity and participant data from People.ai using OAuth2 client credentials
 - **[pindrop](https://github.com/fivetran/community_connectors/tree/main/pindrop)** - Sync nightly report data from Pindrop
 - **[prefect](https://github.com/fivetran/community_connectors/tree/main/prefect)** - Sync workflow orchestration data from Prefect Cloud
 - **[prometheus](https://github.com/fivetran/community_connectors/tree/main/prometheus)** - Sync metrics and time series from Prometheus
