@@ -45,7 +45,6 @@ import time
 # Import requests to make HTTP calls to API
 import requests
 
-
 # --- Configuration ---
 __API_BASE = "https://api.people.ai"
 
