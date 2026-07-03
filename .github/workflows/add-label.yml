@@ -4,7 +4,6 @@ on:
     types: [ opened, synchronize, reopened ]
 
 permissions:
-  contents: read
   issues: write
 
 jobs:
