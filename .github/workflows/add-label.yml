@@ -56,6 +56,10 @@ jobs:
             try {
               await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [wanted] });
             } catch (e) {
+              if (e.status === 403) {
+                core.warning(`Unable to add label ${wanted}: ${e.message}`);
+                return;
+              }
               throw e;
             }
 
@@ -77,5 +81,13 @@ jobs:
             }
 
             if (toAdd.length > 0) {
-              await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: toAdd });
+              try {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: toAdd });
+              } catch (e) {
+                if (e.status === 403) {
+                  core.warning(`Unable to add default labels ${toAdd.join(", ")}: ${e.message}`);
+                  return;
+                }
+                throw e;
+              }
             }
