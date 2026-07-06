@@ -154,7 +154,7 @@ def get_page(
                         continue  # Continue inner loop for another request
                     else:
                         # Max retries reached
-                        log.severe(
+                        log.error(
                             f"Failed to fetch page after {__MAX_RETRIES + 1} "
                             f"due to {status_code} error."
                         )
@@ -162,7 +162,7 @@ def get_page(
 
                 # --- Handle other HTTP errors (e.g., 400, 404) ---
                 else:
-                    log.severe(f"Received unrecoverable HTTP error {status_code}")
+                    log.error(f"Received unrecoverable HTTP error {status_code}")
                     raise e
 
             except requests.exceptions.RequestException as e:
@@ -173,7 +173,7 @@ def get_page(
                     continue
                 else:
                     # Max retries reached
-                    log.severe(
+                    log.error(
                         f"Failed to fetch page after {__MAX_RETRIES + 1} "
                         "retries due to connection issues."
                     )
@@ -190,11 +190,11 @@ def get_page(
                 log.info("Token refreshed successfully. Retrying request.")
                 continue  # Continue outer loop with new token
             except Exception as e:
-                log.severe(f"Failed to refresh token: {e}")
+                log.error(f"Failed to refresh token: {e}")
                 raise e  # If re-auth fails, raise the exception
         else:
             # If 401 and max reauth retries reached
-            log.severe(
+            log.error(
                 f"Authentication failed after {__REAUTH_RETRY_COUNT + 1}"
                 " re-authentication attempts."
             )
@@ -242,7 +242,7 @@ def sync_base_activities(
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.severe(f"Permanent failure fetching base activities" f" at offset {offset}: {e}")
+            log.error(f"Permanent failure fetching base activities" f" at offset {offset}: {e}")
             break
 
         if not page:
@@ -320,7 +320,7 @@ def sync_activity_type(
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.severe(f"Permanent failure fetching {activity_type}" f" at offset {offset}: {e}")
+            log.error(f"Permanent failure fetching {activity_type}" f" at offset {offset}: {e}")
             break
 
         if not page:
@@ -428,7 +428,7 @@ def update(configuration: dict, state: dict):
     try:
         access_token = get_access_token(api_key, api_secret)
     except requests.exceptions.RequestException as e:
-        log.severe(f"FATAL: Initial authentication failed: {e}")
+        log.error(f"FATAL: Initial authentication failed: {e}")
         return  # Stop the sync
 
     total_records_synced = 0
