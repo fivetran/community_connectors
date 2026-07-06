@@ -137,6 +137,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[sendcloud](https://github.com/fivetran/community_connectors/tree/main/sendcloud)** - Sync shipment data from Sendcloud API
 - **[sensor_tower](https://github.com/fivetran/community_connectors/tree/main/sensor_tower)** - Sync mobile app market intelligence from Sensor Tower
 - **[sensource](https://github.com/fivetran/community_connectors/tree/main/sensource)** - Sync traffic and occupancy metrics from SenSource
+- **[sharepoint_multi_site_connector](https://github.com/fivetran/community_connectors/tree/main/sharepoint_multi_site_connector)** - Syncs CSV and Excel file data from multiple SharePoint Online sites using the Microsoft Graph API. Supports multi-sheet Excel workbooks, recursive folder traversal, incremental sync, and deletion handling.
 - **[similarweb](https://github.com/fivetran/community_connectors/tree/main/similarweb)** - Sync website performance metrics from SimilarWeb
 - **[smartsheets](https://github.com/fivetran/community_connectors/tree/main/smartsheets)** - Sync sheets and reports from Smartsheets
 - **[snipeitapp](https://github.com/fivetran/community_connectors/tree/main/snipeitapp)** - Sync IT asset management data from Snipe-IT
