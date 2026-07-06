@@ -109,8 +109,8 @@ The connector creates the following tables:
 
 | Table name | Primary key | Description |
 |------------|-------------|-------------|
-| `ACTIVITY` | `uid` | Base People.ai activity records from `/v0/public/activities`. |
-| `PARTICIPANTS` | `uid`, `email` | Participant activity records from `/v0/public/activities/participants`. |
+| `activity` | `uid` | Base People.ai activity records from `/v0/public/activities`. |
+| `participants` | `uid`, `email` | Participant activity records from `/v0/public/activities/participants`. |
 
 ## Additional files
 
