@@ -88,9 +88,9 @@ The connector processes records in pages and writes them to destination tables u
 - `schema()` defines the `participants` table with primary key `uid`, `email`.
 - `sync_base_activities()` copies each base activity record and renames a `subject` field to `api_subject` when present.
 - `sync_activity_type()` writes participant records to the `participants` table.
-- The connector stores the most recently processed page offset in `state["activity_offset"]` after each successful page write.
+- The connector stores the most recently processed page offsets in `state["activity_offset"]` and `state["participants_offset"]` after each successful page write.
 
-This example performs page-based syncs from the beginning of each endpoint on each run. The checkpointed offset records page progress during a run, but the current implementation does not read the saved offset at the start of the next sync.
+This example resumes page-based syncs from the checkpointed offsets stored in state on subsequent runs, so it can continue from the last successfully written page.
 
 ## Error handling
 
