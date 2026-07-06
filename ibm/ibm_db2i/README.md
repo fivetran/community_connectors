@@ -60,7 +60,7 @@ The configuration parameters are:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. The content of `requirements.txt` required is:
+The `requirements.txt` file specifies the Python libraries required by the connector. The `requirements.txt` file contains:
 
 ```
 pyodbc==5.2.0
@@ -70,7 +70,7 @@ pyodbc==5.2.0
 
 ## Authentication
 
-The connector uses direct database authentication with a `user_id` and `password`. These credentials are specified in the configuration file and passed to pyodbc when building the ODBC connection string. The IBM i Access ODBC Driver handles the authentication process against the IBM i system.
+The connector uses direct database authentication with a `user_id` and `password`. These credentials are specified in the `configuration.json` file and passed to pyodbc when building the ODBC connection string. The IBM i Access ODBC Driver handles authentication with the IBM i system.
 
 To obtain the required credentials:
 
@@ -104,7 +104,7 @@ The connector implements the following error handling strategies:
 
 ## Tables created
 
-The connector creates and syncs the `customer` table. Because the connector uses `SELECT *`, the full column set is determined at runtime by the CUSTOMER table on your IBM i system. Column data types are inferred by Fivetran from the values upserted.
+The connector creates and syncs the `CUSTOMER` table. Because the connector uses `SELECT *`, the full column set is determined at runtime by the CUSTOMER table on your IBM i system. Column data types are inferred by Fivetran from the values upserted.
 
 The primary key columns for the CUSTOMER table are `c_d_id` and `c_id`.
 
