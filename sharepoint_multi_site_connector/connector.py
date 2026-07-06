@@ -476,11 +476,13 @@ def sync_one_file(
 
     last_modified = item.get("lastModifiedDateTime", "")
     if previous.get("last_modified") == last_modified:
-        log.fine(f"Skipping unchanged file: {item.get('name')}")
+        log.debug(f"Skipping unchanged file: {item.get('name')}")
         return
 
-    # Upsert file metadata record into the 'files' table
-    op.upsert("files", flatten_file_record(item, drive_id, site_id, site_name))
+    # The 'upsert' operation is used to insert or update data in the destination table.
+    # The first argument is the name of the destination table.
+    # The second argument is a dictionary containing the record to be upserted.
+    op.upsert(table="files", data=flatten_file_record(item, drive_id, site_id, site_name))
 
     content_bytes = graph_download(configuration, drive_id, item["id"])
     delimiter = configuration.get("delimiter", "").strip() or None
@@ -498,9 +500,12 @@ def sync_one_file(
         new_row_counts[sheet_key] = source_row_number
         row_count += 1
 
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(
-            "file_rows",
-            {
+            table="file_rows",
+            data={
                 "row_id": row_id,
                 "file_id": item["id"],
                 "drive_id": drive_id,
@@ -624,6 +629,7 @@ def update(configuration: dict, state: dict):
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function:
     https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+
     Args:
         configuration: A dictionary containing connection details (tenant_id, client_id,
             client_secret, and site_ids or site_urls). Optional keys: folder_path,
@@ -631,6 +637,9 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs.
             The state dictionary is empty for the first sync or for any full re-sync.
     """
+
+    log.warning("Example: Source Examples : SharePoint Multi-Site Connector")
+
     validate_configuration(configuration=configuration)
 
     sites = resolve_sites(configuration)
@@ -666,14 +675,21 @@ def update(configuration: dict, state: dict):
                 drive_id=drive_id,
                 item=item,
             )
-            # Checkpoint after each file to preserve progress on interruption.
-            # This caps re-work to a single file rather than an entire site on restart.
+            # Save the progress by checkpointing the state. This is important for
+            # ensuring that the sync process can resume from the correct position in
+            # case of next sync or interruptions. Learn more about how and where to
+            # checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connectors/connector-sdk/best-practices).
             op.checkpoint(state)
 
         # Handle files removed from SharePoint since the last sync
         handle_deleted_files_for_site(site_id, current_file_ids, state)
 
-        # Checkpoint to persist any deletion state changes before moving to the next site
+        # Save the progress by checkpointing the state. This is important for
+        # ensuring that the sync process can resume from the correct position in
+        # case of next sync or interruptions. Learn more about how and where to
+        # checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connectors/connector-sdk/best-practices).
         op.checkpoint(state)
 
         log.info(f"Completed site {index}/{len(sites)}: {site_name}")

@@ -6,7 +6,7 @@ This connector extracts structured data from CSV and Excel files stored across m
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/connector_sdk/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
     - Windows: 10 or later (64-bit only)
     - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -18,17 +18,15 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 ```bash
-fivetran init <project-path> --template connectors/sharepoint_multi_site_connector
+fivetran init --template sharepoint_multi_site_connector
 ```
 
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`.
-If you do not specify a project path, Fivetran creates the project in your current directory.
-For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/setup-guide#createyourcustomconnector).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 
-> Note : Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 
-## Key Features
+## Features
 - Multi-site ingestion which connects to multiple SharePoint sites in a single sync run
 - CSV and Excel support parses .csv, .xlsx, and .xlsm file formats
 - Row-level extraction emits each row of a parsed file as an individual record
@@ -37,9 +35,8 @@ For more information on `fivetran init`, refer to the [Connector SDK `init` docu
 - Recursive folder traversal discovers files in nested folder structures within document libraries
 
 ## Configuration file
-*Detail the configuration keys defined for your connector, which are uploaded to Fivetran from the configuration.json file.*
 
-```
+```json
 {
     "tenant_id": "<YOUR_TENANT_ID>",
     "client_id": "<YOUR_CLIENT_ID>",
@@ -50,12 +47,11 @@ For more information on `fivetran init`, refer to the [Connector SDK `init` docu
     "sync_subfolders": "<OPTIONAL_BOOLEAN_TRUE_OR_FALSE>",
     "file_pattern": "<OPTIONAL_FILENAME_SUBSTRING_FILTER>",
     "delimiter": "<OPTIONAL_CSV_DELIMITER_E.G._COMMA_OR_SEMICOLON>",
-    "skip_rows": "<OPTIONAL_NUMBER_OF_ROWS_TO_SKIP_AT_START_OF_FILE>",
+    "skip_rows": "<OPTIONAL_NUMBER_OF_ROWS_TO_SKIP_AT_START_OF_FILE>"
 }
-
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/connector_sdk/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/connector_sdk/tree/main/examples) in the open-source [Connector SDK repository](https://github.com/fivetran/connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/community_connectors/tree/main/examples) in the open-source [Community Connectors repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values.
 When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
@@ -79,8 +75,9 @@ To set up authentication:
 4. Go to Certificates & secrets > New client secret, enter a description and expiry, and click Add. Copy the secret value immediately — it will not be displayed again.
 5. Go to API permissions > Add a permission > Microsoft Graph > Application permissions and add Sites.Read.All and Files.Read.All.
 6. Click Grant admin consent to activate the permissions.
-7. Add the tenant ID, client ID, and client secret to your configuration.json file.
-   Pagination
+7. Add the tenant ID, client ID, and client secret to your `configuration.json` file.
+
+## Pagination
 
 The Microsoft Graph API returns results in pages when listing drive items. The connector follows the @odata.nextLink URL included in each API response to retrieve subsequent pages until all items have been fetched. This applies to both file discovery and recursive traversal of subfolders.
 
