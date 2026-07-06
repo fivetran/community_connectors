@@ -1,7 +1,5 @@
 # ZoomInfo Connector Example
 
-Contributed by ZoomInfo Technologies LLC. See [Accreditation](#accreditation) below for the maintenance posture.
-
 ## Connector overview
 
 This connector syncs ZoomInfo Go-To-Market data — contacts, companies, scoops, intent signals, news, and optional enrichments (contacts, companies, scoops, technologies, corporate hierarchy) — from the ZoomInfo Search and Enrich APIs into a Fivetran destination.
@@ -43,7 +41,7 @@ fivetran init --template zoominfo
 - Full-replace sync on `companies` via buffer-then-`op.truncate` + `op.upsert` (the ZoomInfo Search API does not expose a `lastUpdated`-style filter for the company entity). Pagination buffers the full universe before any destructive op — if the Search call fails partway through, the destination table is preserved.
 - OAuth Client Credentials token caching with mid-sync 401 refresh
 - Per-company enrichments (`scoops_enriched`, `technologies`) parallelized across a 3-worker thread pool, with rows streamed back through a bounded queue (max 2,000 in flight) to keep memory bounded under Fivetran's 1 GB runtime ceiling. `op.upsert` calls stay on the main thread for SDK safety.
-- Mid-sync checkpoints fire after every completed table AND every 1,000 rows inside `contacts`, `scoops`, `intent`, `news`, and the streaming per-company enrich helpers (`scoops_enriched`, `technologies`), so the destination commits incrementally instead of buffering an entire large table in flight.
+- Mid-sync checkpoints fire after every completed table and every 1,000 rows inside `contacts`, `scoops`, `intent`, `news`, and the streaming per-company enrich helpers (`scoops_enriched`, `technologies`), so the destination commits incrementally instead of buffering an entire large table in flight.
 - 403 responses on enrich endpoints (missing license) are logged as warnings and skipped — the rest of the sync continues
 - Retries with exponential backoff on 429 and transient 5xx; per-request connect/read timeouts
 
@@ -98,7 +96,7 @@ To exercise optional behavior, add any of the toggles documented below (all valu
 | `intent_topics` | `""` (skip Intent sync) | Comma-separated list of ZoomInfo Intent topics. Must be exact names from your account's licensed intent-topic list — call `GET /gtm/data/v1/lookup/intent-topics` to see valid values. Up to 50 topics per sync. Unrecognized topics are skipped with a warning. No credits consumed (records and requests are counted). |
 | `sync_news` | `"false"` | When `"true"`, syncs ZoomInfo News articles to the `news` table. No credits consumed. |
 
-### Optional — Contact enrichment
+### Optional — contact enrichment
 
 Each enriched contact costs one ZoomInfo credit. Combine `enrich_contacts` with the filters below to control credit spend.
 
@@ -109,7 +107,7 @@ Each enriched contact costs one ZoomInfo credit. Combine `enrich_contacts` with 
 | `enrich_management_levels` | `""` (all levels) | Comma-separated list of management levels to enrich. Valid values: `Board Member`, `C Level Exec`, `VP Level Exec`, `Director`, `Manager`, `Non Manager`. Example: `"C Level Exec,VP Level Exec"`. |
 | `enrich_output_fields` | (curated default set) | Comma-separated list of fields to return from Contact Enrich. Leave blank to use the default set. See `DEFAULT_CONTACT_ENRICH_FIELDS` in `constants.py` for the default list, and ZoomInfo's `/lookup/enrich?filter[entity]=contact` for the full set of valid field names. |
 
-### Optional — Company enrichment
+### Optional — company enrichment
 
 Each enriched company costs one ZoomInfo credit per enrichment type. `enrich_scoops` and `enrich_technologies` are also one credit per company, but each can produce many rows.
 
