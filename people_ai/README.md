@@ -1,37 +1,46 @@
 # People.ai Connector Example
 
 ## Connector overview
-This example demonstrates how to extract activity and participant data from the People.ai API and load it into a destination using the Fivetran Connector SDK.
-The connector:
-- Authenticates with OAuth2 using the client credentials grant type.
-- Retrieves records from `/v0/public/activities` and `/v0/public/activities/{type}` endpoints.
-- Supports token refresh and exponential backoff on transient errors.
-- Upserts all records into their respective destination tables (`activity`, `participants`).
 
-Related functions in `connector.py`:
-`schema`, `update`, `get_page`, `sync_base_activities`, `sync_activity_type`, `get_access_token`.
+This connector syncs activity data from the People.ai API into a destination using the Fivetran Connector SDK. It retrieves base activity records from `/v0/public/activities` and participant records from `/v0/public/activities/participants`.
+
+The connector uses OAuth2 client credentials authentication, refreshes the access token after an unauthorized response, retries transient API failures with exponential backoff, and writes records page by page to avoid loading the full API result set into memory.
 
 ## Requirements
-- [Supported Python versions](https://github.com/fivetran/fivetran_connector_sdk/blob/main/README.md#requirements)
+
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
-  - Linux: Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
+  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 
 ## Getting started
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) for setup instructions.
 
-For local testing, this example includes a `__main__` block that reads `configuration.json` and runs `connector.debug(...)`.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```shell
+fivetran init --template people_ai
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ## Features
-- Activity ingestion: Retrieves paginated activity data from `/v0/public/activities`.
-- Participants sync: Retrieves participant details from `/v0/public/activities/participants`.
-- Authentication: Automatically refreshes the access token when a 401 response is received.
-- Error handling: Retries failed requests with exponential backoff for transient 5xx and connection errors.
-- Schema: Defines two destination tables — `activity` and `participants`.
+
+- Syncs base activity records from `/v0/public/activities`.
+- Syncs participant records from `/v0/public/activities/participants`.
+- Authenticates with OAuth2 client credentials.
+- Refreshes the access token once after a `401 Unauthorized` response.
+- Retries transient server and network failures with exponential backoff.
+- Uses offset-based pagination and writes each page with `op.upsert(...)`.
+- Checkpoints progress after each successfully written page.
 
 ## Configuration file
-The `configuration.json` file provides API credentials required for authentication.
+
+The connector requires the following configuration parameters:
 
 ```json
 {
@@ -39,74 +48,75 @@ The `configuration.json` file provides API credentials required for authenticati
   "api_secret": "<YOUR_PEOPLE_AI_API_SECRET>"
 }
 ```
-- `api_key`: Your People.ai API key (client ID).
-- `api_secret`: Your People.ai API secret (client secret).
 
-Note: Ensure that `configuration.json` is not committed to version control. Both configuration values are required; the connector will raise an error if either is missing.
+- `api_key` - Your People.ai OAuth client ID or API key.
+- `api_secret` - Your People.ai OAuth client secret.
+
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
-This connector has no external dependencies and does not require a `requirements.txt` file.
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+This connector uses only the standard library and SDK-provided packages. No additional dependencies are required in `requirements.txt`.
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages), including `requests`, are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
-- Type: OAuth2 Client Credentials
-- Token URL: `https://api.people.ai/auth/v1/tokens`
-- Headers: `Content-Type: application/x-www-form-urlencoded`
-- Grant Type: `client_credentials`
-- Access Token Header: `Authorization: Bearer <access_token>`
 
-Authentication is handled by `get_access_token`.
-The connector uses a reauthentication closure (`reauthenticate`) to refresh the token automatically when a `401` error occurs.
+The connector uses OAuth2 client credentials authentication in `get_access_token()`.
+
+- Token URL: `https://api.people.ai/auth/v1/tokens`
+- Grant type: `client_credentials`
+- Request content type: `application/x-www-form-urlencoded`
+- Access token usage: `Authorization: Bearer <access_token>`
+
+The `update()` function performs initial authentication before syncing data. The connector passes a `reauthenticate()` closure into the page-fetching functions so `get_page()` can request a new token and retry the request after a `401 Unauthorized` response.
 
 ## Pagination
-Both `/activities` and `/activities/{type}` endpoints use offset-based pagination.
 
-- The connector fetches data in pages using `limit` and `offset` query parameters.
-- Pagination continues until fewer than `limit` records are returned.
-- Each page is upserted into the destination table using `op.upsert(...)`.
+People.ai activity endpoints use offset-based pagination. The connector handles pagination in `sync_base_activities()` and `sync_activity_type()`.
 
-Functions responsible for pagination:
-- `get_page`: Fetches a single page with retry and reauth logic.
-- `sync_base_activities`: Iterates through all pages for `/activities`.
-- `sync_activity_type`: Iterates through all pages for `/activities/{type}` (e.g., `participants`).
+- The base activities endpoint uses the `limit` and `offset` query parameters with a page size of 1000.
+- The participant activity endpoint uses the `limit` and `offset` query parameters with a page size of 100000.
+- Pagination stops when the API returns an empty page or a page with fewer records than the requested limit.
+- Each page is upserted before the connector advances and checkpoints the offset.
 
 ## Data handling
-- Schema definition: `schema(configuration)` defines two tables:
-  - `activity` (primary key: `uid`)
-  - `participants` (primary key: `uid`, `email`)
-- Renaming: The `subject` field (if present) is renamed to `api_subject` to avoid conflicts.
-- Upserts: All rows are written using `op.upsert(...)` to allow incremental updates.
-- Error resilience:
-  - Retries up to five times for `5xx` and network errors with exponential backoff.
-  - Refreshes the access token once upon a `401` error.
+
+The connector processes records in pages and writes them to destination tables using `op.upsert(...)`.
+
+- `schema()` defines the `activity` table with primary key `uid`.
+- `schema()` defines the `participants` table with primary key `uid`, `email`.
+- `sync_base_activities()` copies each base activity record and renames a `subject` field to `api_subject` when present.
+- `sync_activity_type()` writes participant records to the `participants` table.
+- The connector stores the most recently processed page offset in `state["activity_offset"]` after each successful page write.
+
+This example performs page-based syncs from the beginning of each endpoint on each run. The checkpointed offset records page progress during a run, but the current implementation does not read the saved offset at the start of the next sync.
 
 ## Error handling
-- 401 Unauthorized: Triggers a single reauthentication attempt using `reauth_func`.
-- 502–599 Server Errors: Retries the request up to 5 times, with delays increasing exponentially (`2, 4, 8, 16, 32` seconds).
-- Connection errors: Retries similarly to `5xx` cases.
-- Configuration validation: Early failure if `api_key` or `api_secret` are missing.
-- Logging: Uses `fivetran_connector_sdk.Logging` for all status, error, and retry messages.
+
+The connector implements retry and authentication handling in `get_page()`.
+
+- `401 Unauthorized` responses trigger one access token refresh and request retry.
+- `5xx` server responses are retried up to five times with exponential backoff.
+- Network and timeout errors are retried up to five times with exponential backoff.
+- Other HTTP errors are treated as unrecoverable and raised.
+- Missing `api_key` or `api_secret` values cause early validation failure in `validate_configuration()`.
+- The connector uses `fivetran_connector_sdk.Logging` for status, retry, and error messages.
 
 ## Tables created
-This connector creates two tables, `ACTIVITY` and `PARTICIPANTS`.
 
-### `ACTIVITY`
-- Primary key: `uid`
-- Selected columns (not exhaustive):
-  `uid`, `sub_type`, `created_at`, `activity_type`, `updated_at`
+The connector creates the following tables:
 
-### `PARTICIPANTS`
-- Primary key: `uid`, `email`
-- Selected columns (not exhaustive):
-  `uid`, `email`, `status`, `name`, `ingested_at`, `phone_number`
+| Table name | Primary key | Description |
+|------------|-------------|-------------|
+| `ACTIVITY` | `uid` | Base People.ai activity records from `/v0/public/activities`. |
+| `PARTICIPANTS` | `uid`, `email` | Participant activity records from `/v0/public/activities/participants`. |
 
 ## Additional files
-- `connector.py` – Contains all core logic: `schema`, `update`, `get_page`, `sync_base_activities`, `sync_activity_type`, `get_access_token`.
-- `configuration.json` – Contains API credentials (`api_key`, `api_secret`).
-- `requirements.txt` – Lists any third-party Python libraries required (e.g., `requests`).
+
+- `connector.py` - Contains the connector implementation, including schema definition, authentication, pagination, retry handling, and data writes.
+- `configuration.json` - Contains placeholder People.ai credential fields used by the connector.
 
 ## Additional considerations
-The examples provided are intended to help you effectively use Fivetran's Connector SDK.
-While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples.
-For inquiries, please reach out to our Support team.
+
+The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
