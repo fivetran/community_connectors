@@ -1,0 +1,27 @@
+sharepoint_multi_site_connector/connector.py
+  3d6c8076576b213e 479,482-485,503-505,507-508,632,640-642,678-682,688-692
+sharepoint_multi_site_connector/README.md
+  3d6c8076576b213e 9,24,39,54,78-80
+sharepoint_multi_site_connector/configuration.json
+  3d6c8076576b213e 8,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.1",
+  "base_commit_sha": "87ca181c0930276bb861a9c87a8cff1799062bcd",
+  "prompts": {
+    "3d6c8076576b213e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ceb9e4b2-0f9d-45a9-9b41-c00222cf48cb",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "unknown",
+      "messages": [],
+      "total_additions": 53,
+      "total_deletions": 40,
+      "accepted_lines": 36,
+      "overriden_lines": 0
+    }
+  }
+}
