@@ -250,7 +250,7 @@ def sync_base_activities(
                 f"Permanent failure fetching base activities"
                 f" at offset {offset}: {e}"
             )
-            break
+            raise
 
         if not page:
             break
