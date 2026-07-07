@@ -45,7 +45,7 @@ import time
 # Import requests to make HTTP calls to API
 import requests
 
-# --- Configuration ---
+# --- Constants ---
 __API_BASE = "https://api.people.ai"
 
 __ACTIVITY_TABLE = "activity"
@@ -54,17 +54,14 @@ __ACTIVITY_TYPES = ["participants"]
 __MAX_RETRIES = 5
 __INITIAL_DELAY_SECONDS = 2
 __REAUTH_RETRY_COUNT = 1
-# --- End Configuration ---
+
 
 
 def schema(configuration: dict) -> List[Dict[str, Any]]:
     """
-    Define the schema function which lets you configure the schema
-    your connector delivers.
-    See the technical reference documentation
-    for more details on the schema function:
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
-
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -346,8 +343,10 @@ def sync_activity_type(
         total += len(page)
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
         # Learn more about how and where to checkpoint by reading our best practices documentation
-        # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         state["activity_offset"] = offset + len(page)
         op.checkpoint(state)
 
@@ -400,16 +399,13 @@ def validate_configuration(configuration: dict):
 
 def update(configuration: dict, state: dict):
     """
-    Define the update function which lets you configure
-    how your connector fetches data.
-    See the technical reference documentation for more details
-    on the update function: https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
-
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
     Args:
-        configuration: A dictionary containing connection details.
-        state: A dictionary containing state information from previous runs.
-               The state dictionary is empty for the first sync or for any
-               full re-sync.
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
     """
     log.warning("Example: CONNECTORS : PEOPLE_AI")
     validate_configuration(configuration)
@@ -419,6 +415,12 @@ def update(configuration: dict, state: dict):
     api_secret = configuration["api_secret"]
 
     def reauthenticate():
+        """
+        Refresh the OAuth access token and update the token used by the sync.
+
+        Returns:
+            str: The refreshed OAuth access token.
+        """
         nonlocal access_token
         access_token = get_access_token(api_key, api_secret)
         return access_token
