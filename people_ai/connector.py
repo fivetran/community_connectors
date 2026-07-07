@@ -56,7 +56,6 @@ __INITIAL_DELAY_SECONDS = 2
 __REAUTH_RETRY_COUNT = 1
 
 
-
 def schema(configuration: dict) -> List[Dict[str, Any]]:
     """
     Define the schema function which lets you configure the schema your connector delivers.
@@ -72,7 +71,10 @@ def schema(configuration: dict) -> List[Dict[str, Any]]:
         },
         {
             "table": "participants",  # Name of the table in the destination, required.
-            "primary_key": ["uid", "email"],  # Primary key column(s) for the table, optional.
+            "primary_key": [
+                "uid",
+                "email",
+            ],  # Primary key column(s) for the table, optional.
         },
     ]
 
@@ -202,7 +204,12 @@ def get_page(
 
 
 def sync_base_activities(
-    access_token: str, state: dict, reauth_func: Callable[[], str], op: op, *, limit: int = 50
+    access_token: str,
+    state: dict,
+    reauth_func: Callable[[], str],
+    op: op,
+    *,
+    limit: int = 50,
 ) -> int:
     """
     Handles the full pagination and upsert logic for the base /activities endpoint.
@@ -239,7 +246,10 @@ def sync_base_activities(
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.error(f"Permanent failure fetching base activities" f" at offset {offset}: {e}")
+            log.error(
+                f"Permanent failure fetching base activities"
+                f" at offset {offset}: {e}"
+            )
             break
 
         if not page:
@@ -313,11 +323,16 @@ def sync_activity_type(
     while True:
         try:
             # Pass the reauth_func
-            page = get_page(access_token, reauth_func, activity_type, limit=limit, offset=offset)
+            page = get_page(
+                access_token, reauth_func, activity_type, limit=limit, offset=offset
+            )
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.error(f"Permanent failure fetching {activity_type}" f" at offset {offset}: {e}")
+            log.error(
+                f"Permanent failure fetching {activity_type}"
+                f" at offset {offset}: {e}"
+            )
             break
 
         if not page:
@@ -448,7 +463,9 @@ def update(configuration: dict, state: dict):
 
     # 3. Sync only the specific activity type
     # endpoints defined in __ACTIVITY_TYPES
-    log.info(f"\nStarting sync for the {len(__ACTIVITY_TYPES)} " "specific activity type(s).")
+    log.info(
+        f"\nStarting sync for the {len(__ACTIVITY_TYPES)} " "specific activity type(s)."
+    )
 
     for activity_type in __ACTIVITY_TYPES:
         count = sync_activity_type(
@@ -461,7 +478,10 @@ def update(configuration: dict, state: dict):
         )
         total_records_synced += count
 
-    log.info(f"\n--- All tables synced. Total records processed: " f"{total_records_synced} ---")
+    log.info(
+        f"\n--- All tables synced. Total records processed: "
+        f"{total_records_synced} ---"
+    )
 
 
 # Create the connector object using the schema and update functions
