@@ -26,18 +26,15 @@ Key capabilities:
 - Basic authentication enabled on the PI Web API server
 - A PI user account with read access to the target AF database
 
-### OS requirements
-
-No additional operating-system packages are required. The connector communicates with PI Web API over HTTPS using the `requests` library and does not require any proprietary ODBC drivers or platform-specific software.
-
-
 ## Getting started
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
 Running `fivetran init --template aveva_pi` creates a new Connector SDK project pre-populated with this connector's source files. You can then update `configuration.json` with your PI Web API credentials and run `fivetran debug` to test locally against your own PI server.
 
-    fivetran init --template aveva_pi
+```bash
+fivetran init --template aveva_pi
+```
 
 `fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 > Note: Ensure you have updated `configuration.json` with your PI Web API connection details before running `fivetran debug`. See the [Configuration file](#configuration-file) section below.
@@ -48,18 +45,6 @@ Running `fivetran init --template aveva_pi` creates a new Connector SDK project 
    ```bash
    fivetran debug
    ```
-
-
-## Features
-
-- No-driver REST connectivity via PI Web API — works in Fivetran's managed cloud environment
-- Fixed four-table schema: `elements`, `attributes`, `event_frames`, `recorded_values`
-- Cursor-based incremental sync for `event_frames` and `recorded_values`
-- Adaptive time-window backoff: starts at 30-day windows, halves automatically on request errors, minimum 1-hour window
-- 2-hour late-arrival rollback for `recorded_values` to capture late-written archive data
-- MD5 hash-based synthetic primary key (`_fivetran_id`) for `recorded_values`
-- Periodic checkpointing every 10,000 rows during full reimports
-- Paginated fetching via `Links.Next` — no large in-memory result sets
 
 
 ## Configuration file
