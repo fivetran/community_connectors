@@ -32,20 +32,6 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 Running `fivetran init --template aveva_pi` creates a new Connector SDK project pre-populated with this connector's source files. You can then update `configuration.json` with your PI Web API credentials and run `fivetran debug` to test locally against your own PI server.
 
-```bash
-fivetran init --template aveva_pi
-```
-
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
-> Note: Ensure you have updated `configuration.json` with your PI Web API connection details before running `fivetran debug`. See the [Configuration file](#configuration-file) section below.
-
-1. Verify PI Web API is reachable: open `https://<PI_WEB_API_HOSTNAME>/piwebapi` in a browser and confirm you can authenticate.
-2. Update `configuration.json` with your connection details.
-3. Test the connector locally:
-   ```bash
-   fivetran debug
-   ```
-
 
 ## Configuration file
 

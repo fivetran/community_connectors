@@ -64,6 +64,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
     Raises:
         ValueError: on 4xx HTTP responses.
         requests.exceptions.ConnectionError: after __MAX_RETRIES consecutive transient failures.
+    """
     last_exc: Exception = RuntimeError("No request attempted")
     for attempt in range(1, __MAX_RETRIES + 1):
         try:
@@ -87,6 +88,8 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
         except requests.exceptions.RequestException as exc:
             last_exc = exc
             log.warning(f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}")
+            if attempt < __MAX_RETRIES:
+                time.sleep(min(60, 2 ** (attempt - 1)))
 
     raise requests.exceptions.ConnectionError(
         f"Could not reach PI Web API after {__MAX_RETRIES} attempts. URL: {url}"
