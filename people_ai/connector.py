@@ -333,7 +333,7 @@ def sync_activity_type(
                 f"Permanent failure fetching {activity_type}"
                 f" at offset {offset}: {e}"
             )
-            break
+            raise
 
         if not page:
             break
