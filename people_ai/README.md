@@ -54,12 +54,6 @@ The connector requires the following configuration parameters:
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
-## Requirements file
-
-This connector uses only the standard library and SDK-provided packages. No additional dependencies are required in `requirements.txt`.
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages), including `requests`, are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
-
 ## Authentication
 
 The connector uses OAuth2 client credentials authentication in `get_access_token()`.
@@ -106,6 +100,8 @@ The connector implements retry and authentication handling in `get_page()`.
 ## Tables created
 
 The connector creates the following tables:
+
+Columns are inferred from the API response. The primary keys configured in `schema()` are:
 
 | Table name | Primary key | Description |
 |------------|-------------|-------------|
