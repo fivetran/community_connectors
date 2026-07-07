@@ -36,8 +36,8 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like Upsert(), Update(), Delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-# The unused imports 'Sequence' and 'Literal' have been removed.
-from typing import Any, Dict, List, Callable, Optional
+# For type annotations
+from typing import Any, Callable, Dict, List, Optional
 
 # Import time module to handle time-related tasks, such as delays.
 import time
