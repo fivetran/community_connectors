@@ -86,17 +86,27 @@ def sync_elements(session: requests.Session, base: str, db_web_id: str, state: d
         f"{base}/assetdatabases/{db_web_id}/elements",
         params={"searchFullHierarchy": "true", "maxCount": __MAX_COUNT},
     ):
-        # The 'upsert' operation inserts or updates a row in the destination table.
-        # The first argument is the destination table name.
-        # The second argument is the record dict to upsert.
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table="elements", data=extract_element(item))
         count += 1
         if count % __CHECKPOINT_INTERVAL == 0:
-            # Save progress so the sync can resume if interrupted mid-reimport.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info(f"  elements: {count} rows synced")
 
-    # Final checkpoint after all rows are processed.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
     log.info(f"elements sync complete ({count} rows)")
 
@@ -124,14 +134,24 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
     pi_point_web_ids = []
 
     def _process(item, element_web_id):
+        """
+        Upsert one attribute record and update PI Point WebId collection/checkpointing.
+        """
         nonlocal count
-        # The 'upsert' operation inserts or updates a row in the destination table.
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table="attributes", data=extract_attribute(item, element_web_id))
         count += 1
         if item.get("DataReferencePlugIn") == "PI Point":
             pi_point_web_ids.append(item["WebId"])
         if count % __CHECKPOINT_INTERVAL == 0:
-            # Save progress so the sync can resume if interrupted mid-reimport.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info(f"  attributes: {count} rows synced")
 
@@ -167,7 +187,12 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
             except ValueError as exc:
                 log.warning(f"  Skipping attributes for element {elem_web_id}: {exc}")
 
-    # Final checkpoint after all attribute rows are processed.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
     log.info(
         f"attributes sync complete ({count} rows, " f"{len(pi_point_web_ids)} PI Point attributes)"
@@ -220,13 +245,19 @@ def sync_event_frames(
                     "maxCount": __MAX_COUNT,
                 },
             ):
-                # The 'upsert' operation inserts or updates a row in the destination table.
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table="event_frames", data=extract_event_frame(item, db_web_id))
                 window_count += 1
 
             cursors["event_frames"] = end.isoformat()
-            # Save progress after each successful time window so the sync can
-            # resume from this point if interrupted on the next window.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info(f"  event_frames {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count
@@ -306,7 +337,9 @@ def sync_recorded_values(
                             "maxCount": __MAX_COUNT,
                         },
                     ):
-                        # The 'upsert' operation inserts or updates a row in the destination table.
+                        # The 'upsert' operation is used to insert or update data in the destination table.
+                        # The first argument is the name of the destination table.
+                        # The second argument is a dictionary containing the record to be upserted.
                         op.upsert(
                             table="recorded_values",
                             data=extract_recorded_value(item, attr_web_id),
@@ -317,7 +350,12 @@ def sync_recorded_values(
                     log.warning(f"  Skipping stream {attr_web_id}: {exc}")
 
             cursors["recorded_values"] = end.isoformat()
-            # Save progress after each complete time window across all attributes.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info(f"  recorded_values {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count

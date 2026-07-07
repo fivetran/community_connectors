@@ -1,4 +1,5 @@
 # For making HTTP requests to the PI Web API
+import time  # For sleep-based backoff between retry attempts
 import requests
 
 # For HTTP Basic authentication
@@ -52,7 +53,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
 
     Raises ValueError immediately on 4xx responses (auth failures, not-found) —
     these are not worth retrying. Retries up to __MAX_RETRIES times on 5xx or
-    network/connection errors using a simple linear retry strategy.
+    network/connection errors using exponential backoff (honoring Retry-After when present).
 
     Args:
         session: an authenticated requests.Session.
@@ -62,8 +63,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
         Parsed JSON response body as a dict.
     Raises:
         ValueError: on 4xx HTTP responses.
-        ConnectionError: after __MAX_RETRIES consecutive transient failures.
-    """
+        requests.exceptions.ConnectionError: after __MAX_RETRIES consecutive transient failures.
     last_exc: Exception = RuntimeError("No request attempted")
     for attempt in range(1, __MAX_RETRIES + 1):
         try:
@@ -88,7 +88,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
             last_exc = exc
             log.warning(f"Request attempt {attempt}/{__MAX_RETRIES} failed for {url}: {exc}")
 
-    raise ConnectionError(
+    raise requests.exceptions.ConnectionError(
         f"Could not reach PI Web API after {__MAX_RETRIES} attempts. URL: {url}"
     ) from last_exc
 
