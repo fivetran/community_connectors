@@ -600,7 +600,7 @@ def update(configuration: dict, state: dict):
                 state["processed_files"] = json.dumps(processed)
                 state["next_btid"] = str(next_btid)
                 op.checkpoint(state=state)
-                log.info(f"  → checkpoint saved")
+                log.info("  → checkpoint saved")
 
             except Exception as exc:
                 log.warning(f"Failed to process file {fname}: {exc} — skipping")
