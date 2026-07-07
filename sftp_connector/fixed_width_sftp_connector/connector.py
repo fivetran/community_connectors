@@ -99,6 +99,7 @@ def validate_configuration(configuration: dict):
     if configuration.get("sftp_host_key", ""):
         try:
             import base64
+
             key_bytes = base64.b64decode(configuration["sftp_host_key"])
             paramiko.RSAKey(data=key_bytes)
         except Exception as exc:
@@ -314,6 +315,7 @@ def connect_sftp(configuration: dict):
                 # Strict host-key verification: decode the base64 host key and
                 # add it to the known-hosts store, then use RejectPolicy.
                 import base64
+
                 host_key_bytes = base64.b64decode(host_key_b64)
                 host_key = paramiko.RSAKey(data=host_key_bytes)
                 ssh.get_host_keys().add(host, "ssh-rsa", host_key)
@@ -470,7 +472,7 @@ def read_and_validate_file(file_path: str, spec: dict, filename: str):
             next(lines_iter, None)  # skip header
             prev = next(lines_iter, None)
             for line in lines_iter:
-                yield prev   # prev is a confirmed detail line (not the trailer)
+                yield prev  # prev is a confirmed detail line (not the trailer)
                 prev = line
             # prev is now the trailer — do not yield it
 
@@ -522,10 +524,7 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
         try:
             record = parse_line(line, spec["fields"], implied)
         except Exception as exc:
-            log.severe(
-                f"Malformed line {line_num} in {table}: {exc}. "
-                f"Aborting this file."
-            )
+            log.severe(f"Malformed line {line_num} in {table}: {exc}. " f"Aborting this file.")
             return None
 
         if is_elan:
@@ -562,7 +561,7 @@ def parse_line(line: str, fields: list, implied_decimal: bool):
     """
     record = {}
     for field in fields:
-        start = field["start"] - 1          # convert to 0-indexed
+        start = field["start"] - 1  # convert to 0-indexed
         end = start + field["length"]
         raw = line[start:end]
         record[field["name"]] = convert_value(raw, field, implied_decimal)
@@ -600,7 +599,7 @@ def convert_value(raw: str, field: dict, implied_decimal: bool):
         dec_places = field.get("decimal_places")
         if implied_decimal and dec_places is not None:
             # COBOL implied decimal: integer digits / 10^dec_places
-            return int(stripped) / (10 ** dec_places)
+            return int(stripped) / (10**dec_places)
         else:
             return float(stripped)
 

@@ -60,9 +60,7 @@ _DEBIT_RANGE = (400, 699)
 
 # Compiled regex patterns for parsing structured ACH fields from 88 narrative text
 _ACH_PATTERNS = {
-    "ach_cust_id": re.compile(
-        r"Cust\s+ID:\s*(\S+)", re.IGNORECASE
-    ),
+    "ach_cust_id": re.compile(r"Cust\s+ID:\s*(\S+)", re.IGNORECASE),
     "ach_description": re.compile(
         r"Desc:\s*(.+?)(?=Comp\s+Name:|Comp\s+ID:|SEC:|Cust\s+Name:|Date:|\Z)",
         re.IGNORECASE | re.DOTALL,
@@ -77,13 +75,9 @@ _ACH_PATTERNS = {
         re.IGNORECASE | re.DOTALL,
     ),
     "ach_sec_code": re.compile(r"SEC:\s*(\S+)", re.IGNORECASE),
-    "ach_cust_name": re.compile(
-        r"Cust\s+Name:\s*(.+?)(?=Date:|\Z)", re.IGNORECASE | re.DOTALL
-    ),
+    "ach_cust_name": re.compile(r"Cust\s+Name:\s*(.+?)(?=Date:|\Z)", re.IGNORECASE | re.DOTALL),
     "ach_tran_date": re.compile(r"Date:\s*(\d{2}-\d{2}-\d{2})", re.IGNORECASE),
-    "ach_tran_time": re.compile(
-        r"Time:\s*(\d{2}:\d{2}\s*(?:AM|PM))", re.IGNORECASE
-    ),
+    "ach_tran_time": re.compile(r"Time:\s*(\d{2}:\d{2}\s*(?:AM|PM))", re.IGNORECASE),
     "ach_addenda": re.compile(r"Addenda:\s*(.+?)$", re.IGNORECASE | re.MULTILINE),
 }
 
@@ -95,9 +89,7 @@ def validate_configuration(configuration: dict):
     """Raise ValueError if any required configuration key is absent or invalid."""
     missing = [k for k in _REQUIRED_CONFIG_KEYS if k not in configuration]
     if missing:
-        raise ValueError(
-            f"Missing required configuration key(s): {', '.join(missing)}"
-        )
+        raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
     port_str = configuration.get("sftp_port", "22")
     try:
         port = int(port_str)
@@ -202,7 +194,9 @@ def parse_balance_groups(fields_str: str):
             result[tc] = parse_amount(amt)
         i += 4  # each group occupies: type_code, amount, item_count, funds_type
     if i < len(fields):
-        log.fine(f"Balance group parsing: {len(fields) - i} trailing field(s) ignored (incomplete group)")
+        log.fine(
+            f"Balance group parsing: {len(fields) - i} trailing field(s) ignored (incomplete group)"
+        )
     return result
 
 
@@ -218,7 +212,7 @@ def split_record_line(line: str):
     if comma_idx == -1:
         return line.rstrip("/").strip(), ""
     code = line[:comma_idx].strip()
-    content = line[comma_idx + 1:].rstrip()
+    content = line[comma_idx + 1 :].rstrip()
     if content.endswith("/"):
         content = content[:-1].rstrip()
     return code, content
@@ -482,8 +476,13 @@ def connect_sftp(configuration: dict):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
             ssh.connect(
-                host, port=port, username=username, password=password,
-                timeout=30, banner_timeout=30, auth_timeout=30,
+                host,
+                port=port,
+                username=username,
+                password=password,
+                timeout=30,
+                banner_timeout=30,
+                auth_timeout=30,
             )
             sftp = ssh.open_sftp()
             sftp.get_channel().settimeout(60)
@@ -492,9 +491,7 @@ def connect_sftp(configuration: dict):
 
         except Exception as exc:
             last_exc = exc
-            log.warning(
-                f"SFTP connection attempt {attempt}/{_SFTP_MAX_RETRIES} failed: {exc}"
-            )
+            log.warning(f"SFTP connection attempt {attempt}/{_SFTP_MAX_RETRIES} failed: {exc}")
             if attempt < _SFTP_MAX_RETRIES:
                 base_delay = _SFTP_RETRY_DELAY_SEC * (2 ** (attempt - 1))
                 delay = min(base_delay + random.uniform(0, base_delay * 0.3), 60)
@@ -573,8 +570,7 @@ def update(configuration: dict, state: dict):
         new_files = sorted(
             fname
             for fname in all_files
-            if fname not in processed
-            and (not file_pattern or re.search(file_pattern, fname))
+            if fname not in processed and (not file_pattern or re.search(file_pattern, fname))
         )
 
         if not new_files:
@@ -609,12 +605,14 @@ def update(configuration: dict, state: dict):
             except Exception as exc:
                 log.warning(f"Failed to process file {fname}: {exc} — skipping")
                 failed_files = json.loads(state.get("failed_files", "[]"))
-                failed_files.append({
-                    "filename": fname,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc)[:200],
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+                failed_files.append(
+                    {
+                        "filename": fname,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:200],
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 state["failed_files"] = json.dumps(failed_files[-100:])
                 op.checkpoint(state=state)
                 continue
