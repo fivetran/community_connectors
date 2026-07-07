@@ -246,10 +246,7 @@ def sync_base_activities(
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.error(
-                f"Permanent failure fetching base activities"
-                f" at offset {offset}: {e}"
-            )
+            log.error(f"Permanent failure fetching base activities" f" at offset {offset}: {e}")
             raise
 
         if not page:
@@ -323,16 +320,11 @@ def sync_activity_type(
     while True:
         try:
             # Pass the reauth_func
-            page = get_page(
-                access_token, reauth_func, activity_type, limit=limit, offset=offset
-            )
+            page = get_page(access_token, reauth_func, activity_type, limit=limit, offset=offset)
         except requests.exceptions.HTTPError as e:
             # The retry logic is now inside get_page,
             # so an error here means it failed permanently
-            log.error(
-                f"Permanent failure fetching {activity_type}"
-                f" at offset {offset}: {e}"
-            )
+            log.error(f"Permanent failure fetching {activity_type}" f" at offset {offset}: {e}")
             raise
 
         if not page:
@@ -463,9 +455,7 @@ def update(configuration: dict, state: dict):
 
     # 3. Sync only the specific activity type
     # endpoints defined in __ACTIVITY_TYPES
-    log.info(
-        f"\nStarting sync for the {len(__ACTIVITY_TYPES)} " "specific activity type(s)."
-    )
+    log.info(f"\nStarting sync for the {len(__ACTIVITY_TYPES)} " "specific activity type(s).")
 
     for activity_type in __ACTIVITY_TYPES:
         count = sync_activity_type(
@@ -478,10 +468,7 @@ def update(configuration: dict, state: dict):
         )
         total_records_synced += count
 
-    log.info(
-        f"\n--- All tables synced. Total records processed: "
-        f"{total_records_synced} ---"
-    )
+    log.info(f"\n--- All tables synced. Total records processed: " f"{total_records_synced} ---")
 
 
 # Create the connector object using the schema and update functions
