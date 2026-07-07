@@ -309,7 +309,8 @@ def sync_activity_type(
         int: The total number of records successfully processed (upserted) for
             the specified activity type.
     """
-    offset = 0
+    state_offset_key = f"{activity_type}_offset"
+    offset = state.get(state_offset_key, 0)
     total = 0
 
     while True:
