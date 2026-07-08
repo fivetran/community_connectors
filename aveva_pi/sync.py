@@ -100,8 +100,12 @@ def _sync_incremental_windows(
         try:
             window_count = fetch_window(start, end)
             cursors[cursor_key] = end.isoformat()
-            # Save progress after each successful time window so the sync can
-            # resume from this point if interrupted on the next window.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
             log.info(f"  {table_name} {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count
@@ -161,7 +165,13 @@ def sync_elements(session: requests.Session, base: str, db_web_id: str, state: d
     log.info(f"elements sync complete ({count} rows)")
 
 
-def sync_attributes(session: requests.Session, base: str, db_web_id: str, state: dict) -> list:
+def sync_attributes(
+    session: requests.Session,
+    base: str,
+    db_web_id: str,
+    state: dict,
+    collect_pi_points: bool = True,
+) -> list:
     """
     Full reimport of all PI AF element attributes in the database.
 
@@ -176,6 +186,9 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
         base: the PI Web API base URL.
         db_web_id: the WebId of the target AF database.
         state: the current connector state dict.
+        collect_pi_points: when True, collect and return PI Point attribute WebIds
+            for use by sync_recorded_values. Pass False when recorded_values sync is
+            disabled to avoid building a large list on large PI deployments.
     Returns:
         List of WebId strings for PI Point attributes found in the database.
     """
@@ -185,7 +198,11 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
 
     def _process(item, element_web_id):
         """
-        Upsert one attribute record and update PI Point WebId collection/checkpointing.
+        Upsert one attribute record and optionally collect PI Point WebIds.
+
+        Args:
+            item: raw attribute dict from PI Web API.
+            element_web_id: WebId of the parent element, used as a foreign key.
         """
         nonlocal count
         # The 'upsert' operation is used to insert or update data in the destination table.
@@ -193,7 +210,7 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
         # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table="attributes", data=extract_attribute(item, element_web_id))
         count += 1
-        if item.get("DataReferencePlugIn") == "PI Point":
+        if collect_pi_points and item.get("DataReferencePlugIn") == "PI Point":
             pi_point_web_ids.append(item["WebId"])
         if count % __CHECKPOINT_INTERVAL == 0:
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -235,6 +252,9 @@ def sync_attributes(session: requests.Session, base: str, db_web_id: str, state:
                 ):
                     _process(attr_item, elem_web_id)
             except ValueError as exc:
+                # Surface 401 immediately — session-level auth failure, not per-element
+                if "Authentication error (401)" in str(exc):
+                    raise
                 log.warning(f"  Skipping attributes for element {elem_web_id}: {exc}")
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -365,7 +385,10 @@ def sync_recorded_values(
                     )
                     count += 1
             except ValueError as exc:
-                # 404 = PI Point deleted; 403 = no permission — skip this attribute
+                # Surface 401 immediately — session-level auth failure affects all streams
+                if "Authentication error (401)" in str(exc):
+                    raise
+                # 404 = PI Point deleted; 403 = no access to this stream — skip
                 log.warning(f"  Skipping stream {attr_web_id}: {exc}")
         return count
 

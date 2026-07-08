@@ -53,7 +53,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
 
     Raises ValueError immediately on 4xx responses (auth failures, not-found) —
     these are not worth retrying. Retries up to __MAX_RETRIES times on 5xx or
-    network/connection errors using exponential backoff (honoring Retry-After when present).
+    network/connection errors using exponential backoff with a cap of 60 seconds.
 
     Args:
         session: an authenticated requests.Session.

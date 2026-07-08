@@ -65,6 +65,11 @@ def validate_configuration(configuration: dict):
             f"Invalid sync_recorded_values value '{sync_rv}'. Expected 'true' or 'false'."
         )
 
+    # Validate verify_ssl flag if provided — an unrecognised value silently disables TLS
+    verify_ssl = str(configuration.get("verify_ssl", "true"))
+    if verify_ssl.lower() not in ("true", "false"):
+        raise ValueError(f"Invalid verify_ssl value '{verify_ssl}'. Expected 'true' or 'false'.")
+
 
 def schema(configuration: dict):
     """
@@ -164,8 +169,10 @@ def update(configuration: dict, state: dict):
     # 1. Full reimport of the PI AF element hierarchy
     sync_elements(session, base, db_web_id, state)
 
-    # 2. Full reimport of element attributes; also returns PI Point WebIds for step 4
-    pi_point_web_ids = sync_attributes(session, base, db_web_id, state)
+    # 2. Full reimport of element attributes; collect PI Point WebIds only when needed for step 4
+    pi_point_web_ids = sync_attributes(
+        session, base, db_web_id, state, collect_pi_points=do_recorded
+    )
 
     # 3. Incremental sync of event frames by start_time cursor
     sync_event_frames(session, base, db_web_id, state, start_date)
