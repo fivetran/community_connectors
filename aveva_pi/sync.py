@@ -299,6 +299,15 @@ def sync_event_frames(
     log.info(f"Syncing event_frames (incremental from {fmt_ts(start)})")
 
     def fetch_window(start, end):
+        """
+        Fetch and upsert all event frames whose start_time falls in [start, end).
+
+        Args:
+            start: beginning of the time window (UTC-aware datetime).
+            end: end of the time window (UTC-aware datetime).
+        Returns:
+            Number of event frame rows upserted.
+        """
         count = 0
         for item in paginate(
             session,
@@ -366,6 +375,15 @@ def sync_recorded_values(
     )
 
     def fetch_window(start, end):
+        """
+        Fetch and upsert recorded values for all PI Point attributes in [start, end).
+
+        Args:
+            start: beginning of the time window (UTC-aware datetime).
+            end: end of the time window (UTC-aware datetime).
+        Returns:
+            Total number of recorded value rows upserted across all PI Point attributes.
+        """
         count = 0
         for attr_web_id in pi_point_web_ids:
             try:

@@ -34,7 +34,7 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
-```
+```bash
 fivetran init --template aveva_pi
 ```
 

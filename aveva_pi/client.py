@@ -51,9 +51,10 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
     """
     GET a PI Web API endpoint and return the parsed JSON body.
 
-    Raises ValueError immediately on 4xx responses (auth failures, not-found) —
-    these are not worth retrying. Retries up to __MAX_RETRIES times on 5xx or
-    network/connection errors using exponential backoff with a cap of 60 seconds.
+    Raises ValueError immediately on most 4xx responses (auth failures, not-found).
+    Treats 408 (Request Timeout) and 429 (Too Many Requests) as transient and retries
+    them. Retries up to __MAX_RETRIES times on 5xx or network/connection errors using
+    exponential backoff with a cap of 60 seconds.
 
     Args:
         session: an authenticated requests.Session.
@@ -119,7 +120,7 @@ def paginate(session: requests.Session, url: str, params: dict = None):
         next_params = None  # Parameters are already encoded in the Next URL
 
 
-def get_database_web_id(session: requests.Session, base: str, database_name: str) -> str:
+def get_database_web_id(session: requests.Session, base: str, database_name: str | None) -> str:
     """
     Find and return the WebId of the target AF database.
 

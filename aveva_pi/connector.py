@@ -52,9 +52,9 @@ def validate_configuration(configuration: dict):
     if not url_val.startswith(("http://", "https://")):
         raise ValueError(f"Invalid base_url '{url_val}'. Expected an http:// or https:// URL.")
 
-    # Validate start_date format if provided
+    # Validate start_date format if provided and not a template placeholder
     start_date = configuration.get("start_date")
-    if start_date:
+    if start_date and not start_date.startswith("<"):
         try:
             datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         except ValueError:
@@ -63,16 +63,16 @@ def validate_configuration(configuration: dict):
                 "Expected ISO 8601, e.g. '2020-01-01T00:00:00Z'."
             )
 
-    # Validate sync_recorded_values flag if provided
+    # Validate sync_recorded_values flag if provided and not a template placeholder
     sync_rv = str(configuration.get("sync_recorded_values", "false"))
-    if sync_rv.lower() not in ("true", "false"):
+    if not sync_rv.startswith("<") and sync_rv.lower() not in ("true", "false"):
         raise ValueError(
             f"Invalid sync_recorded_values value '{sync_rv}'. Expected 'true' or 'false'."
         )
 
     # Validate verify_ssl flag if provided — an unrecognised value silently disables TLS
     verify_ssl = str(configuration.get("verify_ssl", "true"))
-    if verify_ssl.lower() not in ("true", "false"):
+    if not verify_ssl.startswith("<") and verify_ssl.lower() not in ("true", "false"):
         raise ValueError(f"Invalid verify_ssl value '{verify_ssl}'. Expected 'true' or 'false'.")
 
 
@@ -163,9 +163,12 @@ def update(configuration: dict, state: dict):
     # Build the HTTP session and resolve the target database WebId
     session = build_session(configuration)
     base = base_url(configuration)
-    database_name = configuration.get("database_name")
-    start_date = configuration.get("start_date", __EPOCH_ISO)
-    do_recorded = str(configuration.get("sync_recorded_values", "false")).lower() == "true"
+    _raw_db = configuration.get("database_name", "")
+    database_name = None if not _raw_db or _raw_db.startswith("<") else _raw_db
+    _raw_start = configuration.get("start_date", __EPOCH_ISO)
+    start_date = __EPOCH_ISO if _raw_start.startswith("<") else _raw_start
+    _raw_rv = str(configuration.get("sync_recorded_values", "false"))
+    do_recorded = False if _raw_rv.startswith("<") else _raw_rv.lower() == "true"
 
     db_web_id = get_database_web_id(session, base, database_name)
 
