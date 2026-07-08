@@ -110,8 +110,8 @@ Columns are inferred from the API response. The primary keys configured in `sche
 
 ## Additional files
 
-- **`connector.py`** - Contains the connector implementation, including schema definition, authentication, pagination, retry handling, and data writes.
-- **`configuration.json`** - Contains placeholder People.ai credential fields used by the connector.
+- `connector.py` - Contains the connector implementation, including schema definition, authentication, pagination, retry handling, and data writes.
+- `configuration.json` - Contains placeholder People.ai credential fields used by the connector.
 
 ## Additional considerations
 

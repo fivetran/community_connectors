@@ -188,9 +188,9 @@ def get_page(
                 current_token = reauth_func()
                 log.info("Token refreshed successfully. Retrying request.")
                 continue  # Continue outer loop with new token
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 log.error(f"Failed to refresh token: {e}")
-                raise e  # If re-auth fails, raise the exception
+                raise
         else:
             # If 401 and max reauth retries reached
             log.error(
@@ -230,7 +230,7 @@ def sync_base_activities(
     Returns:
         int: The total number of records successfully processed (upserted).
     """
-    offset = 0
+    offset = state.get("activity_offset", 0)
     total = 0
 
     while True:
@@ -266,17 +266,20 @@ def sync_base_activities(
             op.upsert(table=__ACTIVITY_TABLE, data=data_to_upsert)
 
         total += len(page)
+        next_offset = offset + len(page)
+        state["activity_offset"] = next_offset
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
         # Learn more about how and where to checkpoint by reading our best practices documentation
-        # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
-        state["activity_offset"] = offset + len(page)
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state)
 
         if len(page) < limit:
             break
 
-        offset += limit
+        offset = next_offset
 
     return total
 
@@ -348,19 +351,20 @@ def sync_activity_type(
             op.upsert(table=activity_type, data=data_to_upsert)
 
         total += len(page)
+        next_offset = offset + len(page)
+        state[state_offset_key] = next_offset
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
         # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
         # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
         # Learn more about how and where to checkpoint by reading our best practices documentation
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-        state["activity_offset"] = offset + len(page)
         op.checkpoint(state)
 
         if len(page) < limit:
             break
 
-        offset += limit
+        offset = next_offset
 
     log.info(f"Completed sync for '{activity_type}'. Total records synced: {total}")
     return total
@@ -400,7 +404,8 @@ def validate_configuration(configuration: dict):
     """
     required_configs = ["api_key", "api_secret"]
     for key in required_configs:
-        if key not in configuration:
+        value = configuration.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
             raise ValueError(f"Missing required configuration value: {key}")
 
 
@@ -438,7 +443,7 @@ def update(configuration: dict, state: dict):
         access_token = get_access_token(api_key, api_secret)
     except requests.exceptions.RequestException as e:
         log.error(f"FATAL: Initial authentication failed: {e}")
-        return  # Stop the sync
+        raise
 
     total_records_synced = 0
 
