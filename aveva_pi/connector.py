@@ -77,12 +77,63 @@ def schema(configuration: dict):
     validate_configuration(configuration)
 
     # Four tables mapping directly to PI AF object types exposed by PI Web API.
-    # Column types are not declared here; the SDK auto-detects them from upserted data.
+    # Column definitions sourced from the AVEVA PI ERD:
+    # https://docs.google.com/presentation/d/1Ksupz_9XokWkOKh5HN9lVCbiqAq93liKoL8c2H0-ovY/edit#slide=id.g2103cff6d9e_0_815
     return [
-        {"table": "elements", "primary_key": ["web_id"]},
-        {"table": "attributes", "primary_key": ["web_id"]},
-        {"table": "event_frames", "primary_key": ["web_id"]},
-        {"table": "recorded_values", "primary_key": ["_fivetran_id"]},
+        {
+            "table": "elements",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id": "STRING",
+                "name": "STRING",
+                "description": "STRING",
+                "path": "STRING",
+                "template_name": "STRING",
+                "category_names": "STRING",
+            },
+        },
+        {
+            "table": "attributes",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id": "STRING",
+                "element_web_id": "STRING",
+                "name": "STRING",
+                "description": "STRING",
+                "path": "STRING",
+                "type": "STRING",
+                "type_qualifier": "STRING",
+                "data_reference": "STRING",
+                "data_reference_path": "STRING",
+                "category_names": "STRING",
+            },
+        },
+        {
+            "table": "event_frames",
+            "primary_key": ["web_id"],
+            "columns": {
+                "web_id": "STRING",
+                "name": "STRING",
+                "description": "STRING",
+                "start_time": "UTC_DATETIME",
+                "end_time": "UTC_DATETIME",
+                "template_name": "STRING",
+                "category_names": "STRING",
+                "database_web_id": "STRING",
+            },
+        },
+        {
+            "table": "recorded_values",
+            "primary_key": ["_fivetran_id"],
+            "columns": {
+                "_fivetran_id": "STRING",
+                "attribute_web_id": "STRING",
+                "timestamp": "UTC_DATETIME",
+                "value": "STRING",
+                "quality": "STRING",
+                "good": "BOOLEAN",
+            },
+        },
     ]
 
 
