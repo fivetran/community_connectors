@@ -47,6 +47,11 @@ def validate_configuration(configuration: dict):
         if not configuration.get(key):
             raise ValueError(f"Missing or empty required configuration key: '{key}'")
 
+    # Validate base_url scheme to catch common mistakes early
+    url_val = configuration.get("base_url", "")
+    if not url_val.startswith(("http://", "https://")):
+        raise ValueError(f"Invalid base_url '{url_val}'. Expected an http:// or https:// URL.")
+
     # Validate start_date format if provided
     start_date = configuration.get("start_date")
     if start_date:
@@ -82,8 +87,6 @@ def schema(configuration: dict):
     validate_configuration(configuration)
 
     # Four tables mapping directly to PI AF object types exposed by PI Web API.
-    # Column definitions sourced from the AVEVA PI ERD:
-    # https://docs.google.com/presentation/d/1Ksupz_9XokWkOKh5HN9lVCbiqAq93liKoL8c2H0-ovY/edit#slide=id.g2103cff6d9e_0_815
     return [
         {
             "table": "elements",

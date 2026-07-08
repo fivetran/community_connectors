@@ -229,7 +229,9 @@ def sync_attributes(
             params={"searchFullHierarchy": "true", "maxCount": __MAX_COUNT},
         ):
             element_web_id = (
-                item["Element"]["WebId"] if isinstance(item.get("Element"), dict) else ""
+                item.get("Element", {}).get("WebId", "")
+                if isinstance(item.get("Element"), dict)
+                else ""
             )
             _process(item, element_web_id)
     except ValueError as exc:

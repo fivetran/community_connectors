@@ -4,6 +4,8 @@
 
 This connector syncs data from AVEVA PI (formerly OSIsoft PI) to your Fivetran destination. It communicates with the PI system via the PI Web API REST interface — no proprietary ODBC drivers are required, so the connector runs in Fivetran's managed cloud environment without any additional installation.
 
+The PI Asset Framework (PI AF) is AVEVA PI's asset hierarchy layer. It organizes physical assets (such as pumps, tanks, or compressors) as *elements*, each with typed *attributes* that can link to PI Point time-series tags. *Event frames* record time-bounded operational events (for example, alarms or batches) against elements in the hierarchy.
+
 Key capabilities:
 - REST-based connectivity via PI Web API (HTTPS + Basic auth) — no ODBC driver installation required
 - Four fixed tables: `elements`, `attributes`, `event_frames`, and `recorded_values`
@@ -11,7 +13,7 @@ Key capabilities:
 - Cursor-based incremental sync for `event_frames` and `recorded_values` with adaptive time-window backoff
 - 2-hour late-arrival rollback on `recorded_values` to capture values written after their timestamps
 - MD5-based synthetic `_fivetran_id` primary key for `recorded_values`
-- Authentication-aware retry: 4xx responses surface immediately; 5xx / network errors retry up to 3 times
+- Authentication-aware retry: 4xx responses surface immediately; 408/429 and 5xx / network errors retry up to 3 times
 - `recorded_values` sync is opt-in (set `sync_recorded_values = "true"`) because it can generate very large data volumes
 
 
@@ -30,7 +32,27 @@ Key capabilities:
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
-Running `fivetran init --template aveva_pi` creates a new Connector SDK project pre-populated with this connector's source files. You can then update `configuration.json` with your PI Web API credentials and run `fivetran debug` to test locally against your own PI server.
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```
+fivetran init --template aveva_pi
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+
+
+## Features
+
+- REST-based connectivity via PI Web API (HTTPS + Basic auth) — no ODBC driver installation required
+- Four fixed tables: `elements`, `attributes`, `event_frames`, and `recorded_values`
+- Full reimport for `elements` and `attributes` (PI AF asset hierarchy: assets, their attributes, and PI Point data references)
+- Cursor-based incremental sync for `event_frames` and `recorded_values` with adaptive time-window backoff
+- 2-hour late-arrival rollback on `recorded_values` to capture values written after their timestamps
+- Explicit column type definitions in `connector.py` (including `UTC_DATETIME` for all timestamp columns)
+- `recorded_values` sync is opt-in (set `sync_recorded_values = "true"`) because it can generate very large data volumes
+- Authentication-aware retry: 4xx responses surface immediately; 408/429 and 5xx / network errors retry up to 3 times with exponential backoff
 
 
 ## Configuration file
@@ -81,7 +103,7 @@ Checkpointing occurs after each successful time window (incremental) or every 10
 
 ## Data handling
 
-- Schema: Fixed four-table schema. Column types are auto-detected by the Fivetran Connector SDK from the data values upserted during sync.
+- Schema: Fixed four-table schema. Column types are explicitly defined in `connector.py` (for example, `UTC_DATETIME` for all timestamp columns and `BOOLEAN` for the `good` column).
 - Timestamps: PI Web API returns ISO 8601 timestamps. The connector parses them to UTC-aware `datetime` objects before yielding rows to Fivetran.
 - PI digital states: When a PI recorded value is a system digital state (a JSON object like `{"Name": "Shutdown", "Value": 248}`), only the `Name` string is stored in the `value` column.
 - Hash IDs: The `recorded_values` table has no natural primary key. A `_fivetran_id` column is generated as the MD5 hex digest of `attribute_web_id|timestamp`.
@@ -155,6 +177,13 @@ Incremental by `timestamp`. Opt-in via `sync_recorded_values = "true"`. Represen
 | `value` | STRING | |
 | `quality` | STRING | `"good"` or `"questionable"` |
 | `good` | BOOLEAN | |
+
+
+## Additional files
+
+- `client.py` — HTTP session setup, authenticated API calls with retry/backoff, pagination via `Links.Next`, and AF database discovery.
+- `models.py` — Record extraction helpers that map raw PI Web API response dicts to flat table rows, plus timestamp parsing and MD5 primary key generation.
+- `sync.py` — Per-table sync strategies: full reimport for elements and attributes, cursor-based incremental sync with adaptive time-window backoff for event frames and recorded values.
 
 
 ## Additional considerations

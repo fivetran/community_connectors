@@ -130,7 +130,9 @@ def generate_recorded_value_id(attr_web_id: str, timestamp: str) -> str:
     Returns:
         A 32-character lowercase hex digest string.
     """
-    return hashlib.md5(f"{attr_web_id}|{timestamp}".encode("utf-8")).hexdigest()
+    return hashlib.md5(
+        f"{attr_web_id}|{timestamp}".encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
 
 
 def extract_recorded_value(item: dict, attr_web_id: str) -> dict:
