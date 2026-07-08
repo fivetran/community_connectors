@@ -66,6 +66,56 @@ def _handle_window_failure(table_name: str, window: timedelta, exc: Exception) -
     return new_window
 
 
+def _sync_incremental_windows(
+    table_name: str,
+    cursor_key: str,
+    start: datetime,
+    state: dict,
+    fetch_window,
+) -> int:
+    """
+    Drive the adaptive time-window loop shared by sync_event_frames and sync_recorded_values.
+
+    Iterates 30-day windows from *start* to now, calling fetch_window(start, end) for each
+    slice. Halves the window on transient errors; raises RuntimeError if it drops below
+    __MIN_WINDOW_HOURS. Checkpoints state after each successful window.
+
+    Args:
+        table_name: table name used in log messages and _handle_window_failure.
+        cursor_key: key in state["cursors"] to advance after each window.
+        start: beginning of the first time window.
+        state: connector state dict (cursors updated in place).
+        fetch_window: callable(start, end) -> int — performs the upserts for one
+            time window and returns the number of rows written.
+    Returns:
+        Total rows written across all windows.
+    """
+    cursors = state.setdefault("cursors", {})
+    now = datetime.now(timezone.utc)
+    window = timedelta(days=__INITIAL_WINDOW_DAYS)
+    total = 0
+
+    while start < now:
+        end = min(start + window, now)
+        try:
+            window_count = fetch_window(start, end)
+            cursors[cursor_key] = end.isoformat()
+            # Save progress after each successful time window so the sync can
+            # resume from this point if interrupted on the next window.
+            op.checkpoint(state)
+            log.info(f"  {table_name} {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
+            total += window_count
+            start = end
+        except ValueError:
+            # Auth / client errors are not transient — surface immediately
+            raise
+        except requests.exceptions.RequestException as exc:
+            # Transient network or server error — halve the window and retry
+            window = _handle_window_failure(table_name, window, exc)
+
+    return total
+
+
 def sync_elements(session: requests.Session, base: str, db_web_id: str, state: dict) -> None:
     """
     Full reimport of all PI AF elements in the database (the asset hierarchy).
@@ -224,52 +274,28 @@ def sync_event_frames(
     start = parse_pi_timestamp(cursors.get("event_frames", start_date)) or datetime.fromtimestamp(
         0, tz=timezone.utc
     )
-    now = datetime.now(timezone.utc)
-    window = timedelta(days=__INITIAL_WINDOW_DAYS)
-    total = 0
-
     log.info(f"Syncing event_frames (incremental from {fmt_ts(start)})")
 
-    while start < now:
-        end = min(start + window, now)
-        window_count = 0
+    def fetch_window(start, end):
+        count = 0
+        for item in paginate(
+            session,
+            f"{base}/assetdatabases/{db_web_id}/eventframes",
+            params={
+                "searchFullHierarchy": "true",
+                "startTime": fmt_ts(start),
+                "endTime": fmt_ts(end),
+                "maxCount": __MAX_COUNT,
+            },
+        ):
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
+            op.upsert(table="event_frames", data=extract_event_frame(item, db_web_id))
+            count += 1
+        return count
 
-        try:
-            for item in paginate(
-                session,
-                f"{base}/assetdatabases/{db_web_id}/eventframes",
-                params={
-                    "searchFullHierarchy": "true",
-                    "startTime": fmt_ts(start),
-                    "endTime": fmt_ts(end),
-                    "maxCount": __MAX_COUNT,
-                },
-            ):
-                # The 'upsert' operation is used to insert or update data in the destination table.
-                # The first argument is the name of the destination table.
-                # The second argument is a dictionary containing the record to be upserted.
-                op.upsert(table="event_frames", data=extract_event_frame(item, db_web_id))
-                window_count += 1
-
-            cursors["event_frames"] = end.isoformat()
-            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-            # from the correct position in case of next sync or interruptions.
-            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-            # Learn more about how and where to checkpoint by reading our best practices documentation
-            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-            op.checkpoint(state)
-            log.info(f"  event_frames {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
-            total += window_count
-            start = end
-
-        except ValueError:
-            # Auth / client errors are not transient — surface immediately
-            raise
-        except requests.exceptions.RequestException as exc:
-            # Transient network or server error — halve the window and retry
-            window = _handle_window_failure("event_frames", window, exc)
-
+    total = _sync_incremental_windows("event_frames", "event_frames", start, state, fetch_window)
     log.info(f"event_frames sync complete ({total} rows)")
 
 
@@ -312,59 +338,38 @@ def sync_recorded_values(
         start = start - timedelta(hours=__LATE_ARRIVAL_ROLLBACK_HOURS)
         log.info(f"  recorded_values: late-arrival rollback applied → {fmt_ts(start)}")
 
-    now = datetime.now(timezone.utc)
-    window = timedelta(days=__INITIAL_WINDOW_DAYS)
-    total = 0
-
     log.info(
         f"Syncing recorded_values (incremental from {fmt_ts(start)}, "
         f"{len(pi_point_web_ids)} PI Point attributes)"
     )
 
-    while start < now:
-        end = min(start + window, now)
-        window_count = 0
+    def fetch_window(start, end):
+        count = 0
+        for attr_web_id in pi_point_web_ids:
+            try:
+                for item in paginate(
+                    session,
+                    f"{base}/streams/{attr_web_id}/recorded",
+                    params={
+                        "startTime": fmt_ts(start),
+                        "endTime": fmt_ts(end),
+                        "maxCount": __MAX_COUNT,
+                    },
+                ):
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
+                    op.upsert(
+                        table="recorded_values",
+                        data=extract_recorded_value(item, attr_web_id),
+                    )
+                    count += 1
+            except ValueError as exc:
+                # 404 = PI Point deleted; 403 = no permission — skip this attribute
+                log.warning(f"  Skipping stream {attr_web_id}: {exc}")
+        return count
 
-        try:
-            for attr_web_id in pi_point_web_ids:
-                try:
-                    for item in paginate(
-                        session,
-                        f"{base}/streams/{attr_web_id}/recorded",
-                        params={
-                            "startTime": fmt_ts(start),
-                            "endTime": fmt_ts(end),
-                            "maxCount": __MAX_COUNT,
-                        },
-                    ):
-                        # The 'upsert' operation is used to insert or update data in the destination table.
-                        # The first argument is the name of the destination table.
-                        # The second argument is a dictionary containing the record to be upserted.
-                        op.upsert(
-                            table="recorded_values",
-                            data=extract_recorded_value(item, attr_web_id),
-                        )
-                        window_count += 1
-                except ValueError as exc:
-                    # 404 = PI Point deleted; 403 = no permission — skip this attribute
-                    log.warning(f"  Skipping stream {attr_web_id}: {exc}")
-
-            cursors["recorded_values"] = end.isoformat()
-            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-            # from the correct position in case of next sync or interruptions.
-            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-            # Learn more about how and where to checkpoint by reading our best practices documentation
-            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-            op.checkpoint(state)
-            log.info(f"  recorded_values {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
-            total += window_count
-            start = end
-
-        except ValueError:
-            raise
-        except requests.exceptions.RequestException as exc:
-            # Transient network or server error — halve the window and retry
-            window = _handle_window_failure("recorded_values", window, exc)
-
+    total = _sync_incremental_windows(
+        "recorded_values", "recorded_values", start, state, fetch_window
+    )
     log.info(f"recorded_values sync complete ({total} rows)")
