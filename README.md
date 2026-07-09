@@ -80,6 +80,22 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[rabbitmq](https://github.com/fivetran/community_connectors/tree/main/rabbitmq)** - Sync messages from RabbitMQ queues
 - **[solace](https://github.com/fivetran/community_connectors/tree/main/solace)** - Sync messages from Solace queue
 
+### AI and Connector SDK
+
+- **[databricks/databricks-fm-bestbuy-retail-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-bestbuy-retail-intelligence)** - Sync Best Buy product catalog data and enrich it with Databricks `ai_query()` retail intelligence for pricing, positioning, and sentiment analysis.
+- **[databricks/databricks-fm-cpsc-product-safety-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-cpsc-product-safety-intelligence)** - Sync CPSC product recall data and enrich incidents with Databricks `ai_query()` multi-agent product safety analysis.
+- **[databricks/databricks-fm-fda-drug-label-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-fda-drug-label-intelligence)** - Sync OpenFDA drug label data and enrich package inserts with Databricks `ai_query()` analysis and optional Genie Space creation.
+- **[databricks/databricks-fm-fda-faers-pv-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-fda-faers-pv-intelligence)** - Sync FDA FAERS adverse event reports and enrich serious events with Databricks `ai_query()` pharmacovigilance debate analysis.
+- **[databricks/databricks-fm-fhir-healthcare-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-fhir-healthcare-intelligence)** - Sync clinical data from a FHIR R4 server and enriches it with AI-powered hybrid analysis using Databricks `ai_query()`.
+- **[databricks/databricks-fm-noaa-weather-risk-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-noaa-weather-risk-intelligence)** - Sync NOAA severe weather alerts and use Databricks `ai_query()` for agent-driven discovery and emergency risk analysis.
+- **[databricks/databricks-fm-sec-edgar-risk-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-sec-edgar-risk-intelligence)** - Sync SEC EDGAR filings and XBRL financial facts, then enrich them with Databricks `ai_query()` credit risk intelligence.
+- **[databricks/databricks-fm-tvmaze-programming-intelligence](https://github.com/fivetran/community_connectors/tree/main/databricks/databricks-fm-tvmaze-programming-intelligence)** - Sync TVMaze show metadata and enrich each show with Databricks `ai_query()` programming renewal debate analysis.
+- **[snowflake_cortex/snowflake-cortex-code-clinical-trial-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-code-clinical-trial-intelligence)** - Sync ClinicalTrials.gov records and enrich them with Snowflake Cortex Agent clinical trial landscape intelligence.
+- **[snowflake_cortex/snowflake-cortex-code-nhtsa-safety-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-code-nhtsa-safety-intelligence)** - Sync NHTSA recalls, complaints, and vehicle specs, then use Snowflake Cortex Agent for vehicle safety discovery and analysis.
+- **[snowflake_cortex/snowflake-cortex-code-nvd-cve-threat-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-code-nvd-cve-threat-intelligence)** - Sync NVD CVE records and enrich vulnerabilities with Snowflake Cortex multi-agent threat intelligence.
+- **[snowflake_cortex/snowflake-cortex-hacker-news](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-hacker-news)** - Sync Hacker News top stories and enrich them with Snowflake Cortex sentiment and topic classification.
+- **[snowflake_cortex/snowflake-cortex-livestock-weather-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-livestock-weather-intelligence)** - Sync farm weather forecasts and enrich them with Snowflake Cortex livestock health risk assessments.
+
 ### SaaS & APIs
 
 - **[amazon_video_central](https://github.com/fivetran/community_connectors/tree/main/amazon_video_central)** - Sync report data from Amazon Video Central API
