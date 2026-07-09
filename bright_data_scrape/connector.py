@@ -7,7 +7,18 @@ and the Best Practices documentation
 
 # For reading configuration from a JSON file
 import json
+
+# For parsing URLs
 from urllib.parse import urlparse
+
+# Import required classes from fivetran_connector_sdk
+from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
+from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
+from fivetran_connector_sdk import Operations as op
 
 # Helper functions for data processing and validation
 from helpers import (
@@ -16,11 +27,6 @@ from helpers import (
     process_scrape_result,
     validate_configuration,
 )
-
-# Import required classes from fivetran_connector_sdk
-from fivetran_connector_sdk import Connector
-from fivetran_connector_sdk import Logging as log
-from fivetran_connector_sdk import Operations as op
 
 # Table name constant
 __SCRAPE_TABLE = "scrape_results"
@@ -71,7 +77,9 @@ def update(configuration: dict, state: dict):
     urls = parse_scrape_urls(scrape_url_input)
 
     if not urls:
-        message = f"No URLs provided in configuration; scrape_url input: {scrape_url_input}"
+        message = (
+            f"No URLs provided in configuration; scrape_url input: {scrape_url_input}"
+        )
         log.error(message)
         raise RuntimeError(message)
     sync_scrape_urls(api_token, dataset_id, urls, state)
@@ -90,7 +98,9 @@ def parse_scrape_urls(scrape_url_input):
 
     if isinstance(scrape_url_input, list):
         return [
-            item.strip() for item in scrape_url_input if isinstance(item, str) and item.strip()
+            item.strip()
+            for item in scrape_url_input
+            if isinstance(item, str) and item.strip()
         ]
 
     if isinstance(scrape_url_input, str):
@@ -98,7 +108,11 @@ def parse_scrape_urls(scrape_url_input):
         try:
             parsed = json.loads(scrape_url_input)
             if isinstance(parsed, list):
-                return [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
+                return [
+                    item.strip()
+                    for item in parsed
+                    if isinstance(item, str) and item.strip()
+                ]
             if isinstance(parsed, str) and parsed.strip():
                 return [parsed.strip()]
         except (json.JSONDecodeError, TypeError):
@@ -107,11 +121,15 @@ def parse_scrape_urls(scrape_url_input):
 
         # Try comma-separated format
         if "," in scrape_url_input:
-            return [item.strip() for item in scrape_url_input.split(",") if item.strip()]
+            return [
+                item.strip() for item in scrape_url_input.split(",") if item.strip()
+            ]
 
         # Try newline-separated format
         if "\n" in scrape_url_input:
-            return [item.strip() for item in scrape_url_input.split("\n") if item.strip()]
+            return [
+                item.strip() for item in scrape_url_input.split("\n") if item.strip()
+            ]
 
         # Single URL (or invalid string – downstream validation can filter)
         return [scrape_url_input.strip()] if scrape_url_input.strip() else []
@@ -217,12 +235,18 @@ def process_scrape_results(scrape_results, urls):
         )
         for result_idx, result in enumerate(scrape_results):
             if isinstance(result, dict):
-                result_url = result.get("input", {}).get("url") or result.get("url") or url
-                processed_results.append(process_scrape_result(result, result_url, result_idx))
+                result_url = (
+                    result.get("input", {}).get("url") or result.get("url") or url
+                )
+                processed_results.append(
+                    process_scrape_result(result, result_url, result_idx)
+                )
             elif isinstance(result, list):
                 for item_idx, item in enumerate(result):
                     result_url = (
-                        item.get("input", {}).get("url") if isinstance(item, dict) else url
+                        item.get("input", {}).get("url")
+                        if isinstance(item, dict)
+                        else url
                     )
                     processed_results.append(
                         process_scrape_result(item, result_url or url, item_idx)
@@ -235,7 +259,9 @@ def process_scrape_results(scrape_results, urls):
                 result = scrape_results[url_idx]
                 if isinstance(result, list):
                     for item_idx, item in enumerate(result):
-                        processed_results.append(process_scrape_result(item, url, item_idx))
+                        processed_results.append(
+                            process_scrape_result(item, url, item_idx)
+                        )
                 else:
                     processed_results.append(process_scrape_result(result, url, 0))
             else:
