@@ -21,8 +21,9 @@ To initialize a new Connector SDK project using this connector as a starting poi
 ```bash
 fivetran init <project-path> --template connectors/bright_data_serp
 ```
+```fivetran init``` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with ```fivetran debug```. For more information on ```fivetran init```, refer to the [Connector SDK init documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](https://github.com/fivetran/community_connectors/pull/41#configuration-file) section for details on the required configuration parameters.
 
 ## Features
 
