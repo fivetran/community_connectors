@@ -127,10 +127,10 @@ Full reimport. Represents PI AF elements (the asset hierarchy).
 | Column | Type | Primary key |
 |---|---|---|
 | `web_id` | STRING | Yes |
-| `name` | STRING | |
-| `description` | STRING | |
-| `path` | STRING | |
-| `template_name` | STRING | |
+| `name` | STRING |
+| `description` | STRING |
+| `path` | STRING |
+| `template_name` | STRING |
 | `category_names` | STRING | JSON array, e.g. `["Production"]` |
 
 ### attributes
@@ -140,12 +140,12 @@ Full reimport. Represents PI AF element attributes, including PI Point data refe
 | Column | Type | Primary key |
 |---|---|---|
 | `web_id` | STRING | Yes |
-| `element_web_id` | STRING | |
-| `name` | STRING | |
-| `description` | STRING | |
-| `path` | STRING | |
-| `type` | STRING | |
-| `type_qualifier` | STRING | |
+| `element_web_id` | STRING |
+| `name` | STRING |
+| `description` | STRING |
+| `path` | STRING |
+| `type` | STRING |
+| `type_qualifier` | STRING |
 | `data_reference` | STRING | e.g. `"PI Point"` |
 | `data_reference_path` | STRING | PI Point tag path |
 | `category_names` | STRING | JSON array |
@@ -157,13 +157,13 @@ Incremental by `start_time`. Represents PI AF event frames (time-bounded events)
 | Column | Type | Primary key |
 |---|---|---|
 | `web_id` | STRING | Yes |
-| `name` | STRING | |
-| `description` | STRING | |
-| `start_time` | UTC_DATETIME | |
-| `end_time` | UTC_DATETIME | |
-| `template_name` | STRING | |
+| `name` | STRING |
+| `description` | STRING |
+| `start_time` | UTC_DATETIME |
+| `end_time` | UTC_DATETIME |
+| `template_name` | STRING |
 | `category_names` | STRING | JSON array |
-| `database_web_id` | STRING | |
+| `database_web_id` | STRING |
 
 ### recorded_values
 
@@ -172,18 +172,18 @@ Incremental by `timestamp`. Opt-in via `sync_recorded_values = "true"`. Represen
 | Column | Type | Primary key |
 |---|---|---|
 | `_fivetran_id` | STRING | Yes — MD5 of `attribute_web_id\|timestamp` |
-| `attribute_web_id` | STRING | |
-| `timestamp` | UTC_DATETIME | |
-| `value` | STRING | |
+| `attribute_web_id` | STRING |
+| `timestamp` | UTC_DATETIME |
+| `value` | STRING |
 | `quality` | STRING | `"good"` or `"questionable"` |
-| `good` | BOOLEAN | |
+| `good` | BOOLEAN |
 
 
 ## Additional files
 
-- `client.py` — HTTP session setup, authenticated API calls with retry/backoff, pagination via `Links.Next`, and AF database discovery.
-- `models.py` — Record extraction helpers that map raw PI Web API response dicts to flat table rows, plus timestamp parsing and MD5 primary key generation.
-- `sync.py` — Per-table sync strategies: full reimport for elements and attributes, cursor-based incremental sync with adaptive time-window backoff for event frames and recorded values.
+- **`client.py`** — HTTP session setup, authenticated API calls with retry/backoff, pagination via `Links.Next`, and AF database discovery.
+- **`models.py`** — Record extraction helpers that map raw PI Web API response dicts to flat table rows, plus timestamp parsing and MD5 primary key generation.
+- **`sync.py`** — Per-table sync strategies: full reimport for elements and attributes, cursor-based incremental sync with adaptive time-window backoff for event frames and recorded values.
 
 
 ## Additional considerations

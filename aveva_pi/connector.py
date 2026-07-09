@@ -52,9 +52,16 @@ def validate_configuration(configuration: dict):
     if not url_val.startswith(("http://", "https://")):
         raise ValueError(f"Invalid base_url '{url_val}'. Expected an http:// or https:// URL.")
 
-    # Validate start_date format if provided and not a template placeholder
+    # Validate start_date format if provided and not a template placeholder.
+    # Require an explicit UTC offset (Z or +HH:MM) to avoid timezone-naive datetimes
+    # being interpreted in the local timezone and shifting the incremental cursor.
     start_date = configuration.get("start_date")
     if start_date and not start_date.startswith("<"):
+        if "Z" not in start_date and "+" not in start_date and "-" not in start_date[10:]:
+            raise ValueError(
+                f"Invalid start_date '{start_date}': missing timezone offset. "
+                "Expected ISO 8601 with UTC offset, e.g. '2020-01-01T00:00:00Z'."
+            )
         try:
             datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         except ValueError:

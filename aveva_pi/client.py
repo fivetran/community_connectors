@@ -30,8 +30,10 @@ def build_session(configuration: dict) -> requests.Session:
         }
     )
     # Allow users to disable TLS verification for self-signed PI Web API certificates.
-    # Only enable verification when the value is explicitly "true".
-    session.verify = str(configuration.get("verify_ssl", "true")).lower() == "true"
+    # Default to True (verification enabled). Only disable when the user explicitly sets
+    # verify_ssl to "false"; any other value (including template placeholders) keeps TLS on.
+    _verify_ssl = str(configuration.get("verify_ssl", "true"))
+    session.verify = False if _verify_ssl.lower() == "false" else True
     return session
 
 
