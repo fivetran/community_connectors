@@ -56,15 +56,16 @@ Configuration parameters:
   - Newline-separated: `"https://www.example.com\nhttps://www.example2.com"`
   - JSON array string: `"[\"https://www.example.com\",\"https://www.example2.com\"]"`
 
-Some Bright Data datasets require specific query parameters to be included in the API request. The connector automatically applies dataset-specific query parameters based on the `dataset_id` value. For example, the dataset `gd_lyy3tktm25m4avu764` automatically includes `discover_by=profile_url` and `type=discover_new` parameters. This logic is implemented in the `sync_scrape_urls()` function in `connector.py`. If you need to add query parameters for additional datasets, modify the dataset-specific conditional logic in that function.
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+
 
 ## Requirements file
 
 This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment.
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`. 
+
 
 ## Authentication
 
