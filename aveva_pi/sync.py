@@ -360,9 +360,15 @@ def sync_recorded_values(
 
     cursors = state.setdefault("cursors", {})
     start_str = cursors.get("recorded_values")
-    is_first_sync = start_str is None
-    start = parse_pi_timestamp(start_str or start_date) or datetime.fromtimestamp(
-        0, tz=timezone.utc
+    # Derive is_first_sync from whether the stored cursor parses successfully, not just
+    # whether it exists. An unparseable cursor value is treated as absent so the
+    # late-arrival rollback is not applied on what is effectively a first sync.
+    parsed_cursor = parse_pi_timestamp(start_str) if start_str else None
+    is_first_sync = parsed_cursor is None
+    start = (
+        parsed_cursor
+        or parse_pi_timestamp(start_date)
+        or datetime.fromtimestamp(0, tz=timezone.utc)
     )
 
     if not is_first_sync:
@@ -396,6 +402,14 @@ def sync_recorded_values(
                         "maxCount": __MAX_COUNT,
                     },
                 ):
+                    # Skip items with a missing or empty Timestamp to avoid generating
+                    # a degenerate _fivetran_id (attr_web_id|"") that causes primary-key
+                    # collisions across different attributes missing timestamps.
+                    if not item.get("Timestamp"):
+                        log.warning(
+                            f"  Skipping recorded value with missing Timestamp for {attr_web_id}"
+                        )
+                        continue
                     # The 'upsert' operation is used to insert or update data in the destination table.
                     # The first argument is the name of the destination table.
                     # The second argument is a dictionary containing the record to be upserted.
