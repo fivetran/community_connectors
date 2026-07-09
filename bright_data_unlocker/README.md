@@ -16,7 +16,14 @@ This connector syncs web page content from Bright Data's Web Unlocker API to you
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/setup-guide) to get started.
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```bash
+fivetran init <project-path> --template connectors/bright_data_serp
+```
+```fivetran init``` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with ```fivetran debug```. For more information on ```fivetran init```, refer to the [Connector SDK init documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](https://github.com/fivetran/community_connectors/pull/41#configuration-file) section for details on the required configuration parameters.
 
 ## Features
 
