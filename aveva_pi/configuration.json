@@ -4,6 +4,6 @@
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
   "verify_ssl": "<TRUE_OR_FALSE_DEFAULT_TRUE>",
-  "start_date": "<START_DATE_ISO8601_EXAMPLE_2020_01_01T00_00_00Z>",
+  "start_date": "<2020-01-01T00:00:00Z>",
   "sync_recorded_values": "<TRUE_OR_FALSE_DEFAULT_FALSE>"
 }

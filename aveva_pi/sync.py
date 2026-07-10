@@ -235,9 +235,13 @@ def sync_attributes(
             )
             _process(item, element_web_id)
     except ValueError as exc:
-        # Only fall back if the endpoint returned a non-auth 4xx (e.g. 404/405 — endpoint
-        # not available on this PI Web API version). Auth failures should surface immediately.
-        if "Authentication error" in str(exc):
+        exc_str = str(exc)
+        # Surface auth failures immediately.
+        if "Authentication error" in exc_str:
+            raise
+        # Only fall back on 404 (endpoint missing) or 405 (method not allowed) —
+        # other client errors (400/422/etc.) are unrelated to endpoint availability.
+        if "Client error (404)" not in exc_str and "Client error (405)" not in exc_str:
             raise
         log.info("  /elementattributes not available; falling back to per-element fetch")
         for elem_item in paginate(
@@ -365,11 +369,8 @@ def sync_recorded_values(
     # late-arrival rollback is not applied on what is effectively a first sync.
     parsed_cursor = parse_pi_timestamp(start_str) if start_str else None
     is_first_sync = parsed_cursor is None
-    start = (
-        parsed_cursor
-        or parse_pi_timestamp(start_date)
-        or datetime.fromtimestamp(0, tz=timezone.utc)
-    )
+    _fallback = parse_pi_timestamp(start_date) or datetime.fromtimestamp(0, tz=timezone.utc)
+    start = parsed_cursor if parsed_cursor is not None else _fallback
 
     if not is_first_sync:
         start = start - timedelta(hours=__LATE_ARRIVAL_ROLLBACK_HOURS)
@@ -419,10 +420,16 @@ def sync_recorded_values(
                     )
                     count += 1
             except ValueError as exc:
+                exc_str = str(exc)
                 # Surface 401 immediately — session-level auth failure affects all streams
-                if "Authentication error (401)" in str(exc):
+                if "Authentication error (401)" in exc_str:
                     raise
-                # 404 = PI Point deleted; 403 = no access to this stream — skip
+                # Only skip expected per-stream conditions:
+                # 403 = no access to this stream; 404 = PI Point deleted
+                is_auth_403 = "Authentication error (403)" in exc_str
+                is_client_404 = "Client error (404)" in exc_str
+                if not is_auth_403 and not is_client_404:
+                    raise
                 log.warning(f"  Skipping stream {attr_web_id}: {exc}")
         return count
 

@@ -64,7 +64,7 @@ fivetran init --template aveva_pi
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
   "verify_ssl": "<TRUE_OR_FALSE_DEFAULT_TRUE>",
-  "start_date": "<START_DATE_ISO8601_EXAMPLE_2020_01_01T00_00_00Z>",
+  "start_date": "<2020-01-01T00:00:00Z>",
   "sync_recorded_values": "<TRUE_OR_FALSE_DEFAULT_FALSE>"
 }
 ```
@@ -120,7 +120,7 @@ Checkpointing occurs after each successful time window (incremental) or every 10
 
 ## Tables created
 
-### elements
+### Elements
 
 Full reimport. Represents PI AF elements (the asset hierarchy).
 
@@ -133,7 +133,7 @@ Full reimport. Represents PI AF elements (the asset hierarchy).
 | `template_name` | STRING |
 | `category_names` | STRING | JSON array, e.g. `["Production"]` |
 
-### attributes
+### Attributes
 
 Full reimport. Represents PI AF element attributes, including PI Point data reference metadata.
 
@@ -150,7 +150,7 @@ Full reimport. Represents PI AF element attributes, including PI Point data refe
 | `data_reference_path` | STRING | PI Point tag path |
 | `category_names` | STRING | JSON array |
 
-### event_frames
+### Event frames
 
 Incremental by `start_time`. Represents PI AF event frames (time-bounded events).
 
@@ -165,7 +165,7 @@ Incremental by `start_time`. Represents PI AF event frames (time-bounded events)
 | `category_names` | STRING | JSON array |
 | `database_web_id` | STRING |
 
-### recorded_values
+### Recorded values
 
 Incremental by `timestamp`. Opt-in via `sync_recorded_values = "true"`. Represents PI archive (time-series) data for PI Point attributes.
 
