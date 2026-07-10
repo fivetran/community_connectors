@@ -426,6 +426,15 @@ def sync_recorded_values(
                         data=extract_recorded_value(item, attr_web_id),
                     )
                     count += 1
+                    if count % __CHECKPOINT_INTERVAL == 0:
+                        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                        # from the correct position in case of next sync or interruptions.
+                        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                        # Learn more about how and where to checkpoint by reading our best practices documentation
+                        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+                        op.checkpoint(state)
+                        log.info(f"  recorded_values: {count} rows synced")
             except PiApiError as exc:
                 # Surface 401 immediately — session-level auth failure affects all streams
                 if exc.status_code == 401:

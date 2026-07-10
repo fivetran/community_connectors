@@ -112,7 +112,7 @@ Checkpointing occurs after each successful time window (incremental) or every 10
 
 ## Error handling
 
-- HTTP 4xx responses raise a `ValueError` immediately (no retry), except for 408 (Request Timeout) and 429 (Too Many Requests) which are treated as transient and retried. Refer to `api_get()` in `client.py`.
+- HTTP 4xx responses raise a `PiApiError` immediately (no retry), except for 408 (Request Timeout) and 429 (Too Many Requests) which are treated as transient and retried. Refer to `api_get()` in `client.py`.
 - HTTP 5xx and network errors retry up to 3 times with a warning logged per attempt. Refer to `api_get()` in `client.py`.
 - Incremental query failures trigger adaptive window halving rather than a hard failure. If the window cannot be halved further (below 1 hour), a `RuntimeError` is raised. Refer to `sync_event_frames()` and `sync_recorded_values()` in `sync.py`.
 - Individual `recorded_values` attribute streams that return 4xx errors are skipped with a warning (e.g. deleted PI Points). Refer to `sync_recorded_values()` in `sync.py`.
