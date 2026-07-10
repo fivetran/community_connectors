@@ -196,7 +196,7 @@ Found an issue? Submit an [issue](https://github.com/fivetran/community_connecto
 
 ## Support
 
-Learn how we [support Fivetran Connector SDK](https://fivetran.com/docs/connector-sdk#support).
+Learn how we [support Fivetran Connector SDK](https://fivetran.com/docs/connector-sdk#supportandresourcesforconnectordevelopment).
 
 ## Additional Considerations
 
