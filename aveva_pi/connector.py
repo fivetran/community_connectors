@@ -77,7 +77,7 @@ def validate_configuration(configuration: dict):
             f"Invalid sync_recorded_values value '{sync_rv}'. Expected 'true' or 'false'."
         )
 
-    # Validate verify_ssl flag if provided — an unrecognised value silently disables TLS
+    # Validate verify_ssl flag if provided — build_session() keeps TLS enabled for any value other than "false"
     verify_ssl = str(configuration.get("verify_ssl", "true"))
     if not verify_ssl.startswith("<") and verify_ssl.lower() not in ("true", "false"):
         raise ValueError(f"Invalid verify_ssl value '{verify_ssl}'. Expected 'true' or 'false'.")

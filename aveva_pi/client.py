@@ -156,18 +156,18 @@ def get_database_web_id(session: requests.Session, base: str, database_name: str
     Raises:
         ValueError: if no matching database can be found.
     """
-    servers = api_get(session, f"{base}/assetservers").get("Items", [])
-    if not servers:
-        raise ValueError("No PI Asset Servers found via PI Web API. Check base_url.")
-
-    for server in servers:
-        databases = api_get(session, f"{base}/assetservers/{server['WebId']}/assetdatabases").get(
-            "Items", []
-        )
-        for db in databases:
+    found_any_server = False
+    for server in paginate(session, f"{base}/assetservers"):
+        found_any_server = True
+        server_web_id = server.get("WebId", "")
+        if not server_web_id:
+            continue
+        for db in paginate(session, f"{base}/assetservers/{server_web_id}/assetdatabases"):
             if database_name is None or db.get("Name") == database_name:
                 log.info(f"Connected to database '{db['Name']}' on server '{server.get('Name')}'")
-                return db["WebId"]
+                return db.get("WebId", "")
 
+    if not found_any_server:
+        raise ValueError("No PI Asset Servers found via PI Web API. Check base_url.")
     target = f"'{database_name}'" if database_name else "any database"
     raise ValueError(f"Could not find {target} on any PI Asset Server. Check database_name.")
