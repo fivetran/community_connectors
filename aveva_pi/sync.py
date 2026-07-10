@@ -211,7 +211,9 @@ def sync_attributes(
         op.upsert(table="attributes", data=extract_attribute(item, element_web_id))
         count += 1
         if collect_pi_points and item.get("DataReferencePlugIn") == "PI Point":
-            pi_point_web_ids.append(item["WebId"])
+            web_id = item.get("WebId", "")
+            if web_id:
+                pi_point_web_ids.append(web_id)
         if count % __CHECKPOINT_INTERVAL == 0:
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
@@ -249,6 +251,9 @@ def sync_attributes(
             params={"searchFullHierarchy": "true", "maxCount": __MAX_COUNT},
         ):
             elem_web_id = elem_item.get("WebId", "")
+            if not elem_web_id:
+                log.warning("  Skipping element with missing WebId in fallback fetch")
+                continue
             try:
                 for attr_item in paginate(
                     session,
