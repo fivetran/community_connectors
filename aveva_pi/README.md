@@ -64,7 +64,7 @@ fivetran init --template aveva_pi
   "password": "<PI_PASSWORD>",
   "database_name": "<PI_AF_DATABASE_NAME>",
   "verify_ssl": "<TRUE_OR_FALSE_DEFAULT_TRUE>",
-  "start_date": "<2020-01-01T00:00:00Z>",
+  "start_date": "<START_DATE_ISO8601_UTC_OPTIONAL>",
   "sync_recorded_values": "<TRUE_OR_FALSE_DEFAULT_FALSE>"
 }
 ```

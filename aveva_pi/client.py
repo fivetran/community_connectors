@@ -12,6 +12,19 @@ from fivetran_connector_sdk import Logging as log
 __MAX_RETRIES = 3
 
 
+class PiApiError(Exception):
+    """
+    Raised by api_get() for non-retryable HTTP 4xx responses from PI Web API.
+
+    Attributes:
+        status_code: the HTTP status code returned by the server.
+    """
+
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def build_session(configuration: dict) -> requests.Session:
     """
     Create an authenticated requests.Session for PI Web API calls.
@@ -53,7 +66,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
     """
     GET a PI Web API endpoint and return the parsed JSON body.
 
-    Raises ValueError immediately on most 4xx responses (auth failures, not-found).
+    Raises PiApiError immediately on most 4xx responses (auth failures, not-found).
     Treats 408 (Request Timeout) and 429 (Too Many Requests) as transient and retries
     them. Retries up to __MAX_RETRIES times on 5xx or network/connection errors using
     exponential backoff with a cap of 60 seconds.
@@ -65,7 +78,7 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
     Returns:
         Parsed JSON response body as a dict.
     Raises:
-        ValueError: on 4xx HTTP responses.
+        PiApiError: on non-retryable 4xx HTTP responses; status_code carries the HTTP status.
         requests.exceptions.ConnectionError: after __MAX_RETRIES consecutive transient failures.
     """
     last_exc: Exception = RuntimeError("No request attempted")
@@ -73,8 +86,9 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
         try:
             resp = session.get(url, params=params, timeout=30)
             if resp.status_code in (401, 403):
-                raise ValueError(
-                    f"Authentication error ({resp.status_code}) for {url}: {resp.text[:200]}"
+                raise PiApiError(
+                    status_code=resp.status_code,
+                    message=f"Authentication error ({resp.status_code}) for {url}: {resp.text[:200]}",
                 )
             # 408 (Request Timeout) and 429 (Too Many Requests) are transient — retry them
             if resp.status_code in (408, 429):
@@ -82,10 +96,13 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
                     f"Retryable HTTP {resp.status_code} for {url}", response=resp
                 )
             if 400 <= resp.status_code < 500:
-                raise ValueError(f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}")
+                raise PiApiError(
+                    status_code=resp.status_code,
+                    message=f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}",
+                )
             resp.raise_for_status()
             return resp.json()
-        except ValueError:
+        except PiApiError:
             # Auth / client errors — surface immediately, no retry
             raise
         except requests.exceptions.RequestException as exc:

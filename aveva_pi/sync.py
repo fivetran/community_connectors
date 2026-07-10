@@ -11,7 +11,7 @@ from fivetran_connector_sdk import Logging as log
 from fivetran_connector_sdk import Operations as op
 
 # Local helpers for API pagination and record extraction
-from client import paginate
+from client import paginate, PiApiError
 from models import (
     fmt_ts,
     parse_pi_timestamp,
@@ -110,7 +110,7 @@ def _sync_incremental_windows(
             log.info(f"  {table_name} {fmt_ts(start)} → {fmt_ts(end)}: {window_count} rows")
             total += window_count
             start = end
-        except ValueError:
+        except PiApiError:
             # Auth / client errors are not transient — surface immediately
             raise
         except requests.exceptions.RequestException as exc:
@@ -234,14 +234,13 @@ def sync_attributes(
                 else ""
             )
             _process(item, element_web_id)
-    except ValueError as exc:
-        exc_str = str(exc)
+    except PiApiError as exc:
         # Surface auth failures immediately.
-        if "Authentication error" in exc_str:
+        if exc.status_code in (401, 403):
             raise
         # Only fall back on 404 (endpoint missing) or 405 (method not allowed) —
         # other client errors (400/422/etc.) are unrelated to endpoint availability.
-        if "Client error (404)" not in exc_str and "Client error (405)" not in exc_str:
+        if exc.status_code not in (404, 405):
             raise
         log.info("  /elementattributes not available; falling back to per-element fetch")
         for elem_item in paginate(
@@ -257,9 +256,9 @@ def sync_attributes(
                     params={"maxCount": __MAX_COUNT},
                 ):
                     _process(attr_item, elem_web_id)
-            except ValueError as exc:
+            except PiApiError as exc:
                 # Surface 401 immediately — session-level auth failure, not per-element
-                if "Authentication error (401)" in str(exc):
+                if exc.status_code == 401:
                     raise
                 log.warning(f"  Skipping attributes for element {elem_web_id}: {exc}")
 
@@ -297,9 +296,12 @@ def sync_event_frames(
         start_date: ISO 8601 fallback start date used on the first sync.
     """
     cursors = state.setdefault("cursors", {})
-    start = parse_pi_timestamp(cursors.get("event_frames", start_date)) or datetime.fromtimestamp(
-        0, tz=timezone.utc
-    )
+    start_str = cursors.get("event_frames")
+    parsed_cursor = parse_pi_timestamp(start_str) if start_str else None
+    if start_str and parsed_cursor is None:
+        log.warning(f"  Malformed event_frames cursor '{start_str}'; falling back to start_date.")
+    _fallback = parse_pi_timestamp(start_date) or datetime.fromtimestamp(0, tz=timezone.utc)
+    start = parsed_cursor if parsed_cursor is not None else _fallback
     log.info(f"Syncing event_frames (incremental from {fmt_ts(start)})")
 
     def fetch_window(start, end):
@@ -419,16 +421,13 @@ def sync_recorded_values(
                         data=extract_recorded_value(item, attr_web_id),
                     )
                     count += 1
-            except ValueError as exc:
-                exc_str = str(exc)
+            except PiApiError as exc:
                 # Surface 401 immediately — session-level auth failure affects all streams
-                if "Authentication error (401)" in exc_str:
+                if exc.status_code == 401:
                     raise
                 # Only skip expected per-stream conditions:
                 # 403 = no access to this stream; 404 = PI Point deleted
-                is_auth_403 = "Authentication error (403)" in exc_str
-                is_client_404 = "Client error (404)" in exc_str
-                if not is_auth_403 and not is_client_404:
+                if exc.status_code not in (403, 404):
                     raise
                 log.warning(f"  Skipping stream {attr_web_id}: {exc}")
         return count
