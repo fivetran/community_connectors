@@ -70,7 +70,14 @@ _TEST_MODE_RECORD_LIMIT = 100
 
 
 def validate_configuration(configuration: dict):
-    """Raise ValueError if any required configuration key is absent or invalid."""
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    This function is called at the start of the update method to ensure that the connector has all necessary configuration values.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Raises:
+        ValueError: if any required configuration parameter is missing.
+    """
     missing = [k for k in _REQUIRED_CONFIG_KEYS if k not in configuration]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
@@ -115,14 +122,11 @@ def validate_configuration(configuration: dict):
 
 def schema(configuration: dict):
     """
-    Return the Fivetran schema for all 12 tables.
-
-    Each entry contains only the table name and primary_key list.
-    The SDK auto-detects column data types from the upserted records.
-    Tables with no primary keys (TransactionActivity) receive a
-    Fivetran-generated _fivetran_id.
-
-    See: https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
     """
     validate_configuration(configuration)
 
@@ -141,21 +145,13 @@ def schema(configuration: dict):
 
 def update(configuration: dict, state: dict):
     """
-    Main sync loop.
-
-    For each of the 12 file specs:
-      1. Locate the most-recent file on SFTP that matches the file pattern.
-      2. Download to a local temp file.
-      3. Validate header/trailer counts.
-      4. Parse all fixed-width records.
-      5. For full-refresh tables: compute soft-deletes (purge_indicator).
-      6. Upsert all records.
-      7. Checkpoint after each file.
-
-    If any file is missing → entire sync aborts (RuntimeError bubbles up).
-    If a line is malformed → that file is skipped, remaining files continue.
-
-    See: https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
     """
     validate_configuration(configuration)
 
@@ -252,9 +248,12 @@ def update(configuration: dict, state: dict):
             if test_mode:
                 log.info(f"[{table}] Test mode: checkpoint skipped")
             else:
-                # Checkpointing on skip persists state from files already processed
-                # earlier in this sync run, so a crash between files doesn't force
-                # re-processing of all previously-completed files.
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(state)
                 if file_skipped:
                     log.info(f"[{table}] Checkpoint saved (file skipped due to malformed lines)")
@@ -534,6 +533,9 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
             record["purge_indicator"] = False
             current_pks.append(_build_composite_pk(record, pk_columns))
 
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table=table, data=record)
         record_count += 1
 
@@ -547,6 +549,9 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
                 f"emitting purge_indicator=True"
             )
         for composite_pk in missing_pks:
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(table=table, data=_build_purge_record(composite_pk, pk_columns))
 
     return record_count, current_pks

@@ -35,24 +35,6 @@ Key behaviors:
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
-To run the connector locally:
-
-1. Install dependencies:
-
-   ```bash
-   pip install fivetran-connector-sdk paramiko==3.5.1
-   ```
-
-2. Fill in your credentials in `configuration.json`.
-
-3. Run the connector locally using the Fivetran debug command:
-
-   ```bash
-   fivetran debug
-   ```
-
-   This executes the sync locally, prints all log output, and writes results to a local `warehouse.db` SQLite file for inspection.
-
 ---
 
 ## Features
@@ -159,7 +141,7 @@ All keys are validated at startup. An invalid `sftp_host_key` raises `ValueError
   #                            ^^^^^^^^^^^^^^^^^^^ paste this part
   ```
 
-Note: In production, store credentials in Fivetran's encrypted secrets store rather than in `configuration.json`.
+Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ---
 
@@ -171,7 +153,7 @@ The `requirements.txt` file specifies the Python libraries required by this conn
 paramiko==3.5.1
 ```
 
-Note: The `fivetran_connector_sdk` and `requests` packages are pre-installed in the Fivetran environment and must not be declared in `requirements.txt`.
+Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ---
 

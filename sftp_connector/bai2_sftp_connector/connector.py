@@ -86,7 +86,14 @@ _ACH_PATTERNS = {
 
 
 def validate_configuration(configuration: dict):
-    """Raise ValueError if any required configuration key is absent or invalid."""
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    This function is called at the start of the update method to ensure that the connector has all necessary configuration values.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Raises:
+        ValueError: if any required configuration parameter is missing.
+    """
     missing = [k for k in _REQUIRED_CONFIG_KEYS if k not in configuration]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
@@ -509,12 +516,11 @@ def connect_sftp(configuration: dict):
 
 def schema(configuration: dict):
     """
-    Declare the bai2_transactions table.
-
-    Only the table name and primary key are declared here; the SDK
-    auto-detects all column types from the first upserted records.
-    Balance columns (balance_010, balance_015, …) appear dynamically
-    based on the type codes present in each bank's BAI2 files.
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
     """
     validate_configuration(configuration)
     return [
@@ -533,21 +539,13 @@ def schema(configuration: dict):
 
 def update(configuration: dict, state: dict):
     """
-    Main sync loop.
-
-    1. Lists the SFTP remote directory.
-    2. Filters to files not yet processed (tracked in state) that match
-       the optional sftp_file_pattern regex.
-    3. Sorts new files alphabetically — BAI2 filenames embed timestamps
-       (e.g. web.galls.prev.out.20260102.144521) so alpha order is
-       chronological order.
-    4. Parses each file into rows and upserts them.
-    5. Checkpoints after each file so a mid-run failure does not reprocess
-       already-completed files.
-
-    When test_mode = "true" in configuration, the sync is capped to 3 files
-    per run. SFTP connection is still made normally; use this for initial
-    setup validation against the live server.
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
     """
     validate_configuration(configuration)
     test_mode = configuration.get("test_mode", "false").strip().lower() == "true"
@@ -594,11 +592,20 @@ def update(configuration: dict, state: dict):
                 log.info(f"  → {len(rows)} transaction(s) parsed")
 
                 for row in rows:
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
                     op.upsert(table="bai2_transactions", data=row)
 
                 processed.append(fname)
                 state["processed_files"] = json.dumps(processed)
                 state["next_btid"] = str(next_btid)
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(state=state)
                 log.info("  → checkpoint saved")
 
@@ -614,6 +621,12 @@ def update(configuration: dict, state: dict):
                     }
                 )
                 state["failed_files"] = json.dumps(failed_files[-100:])
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(state=state)
                 continue
 
