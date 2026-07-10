@@ -163,9 +163,13 @@ def get_database_web_id(session: requests.Session, base: str, database_name: str
         if not server_web_id:
             continue
         for db in paginate(session, f"{base}/assetservers/{server_web_id}/assetdatabases"):
-            if database_name is None or db.get("Name") == database_name:
-                log.info(f"Connected to database '{db['Name']}' on server '{server.get('Name')}'")
-                return db.get("WebId", "")
+            db_name = db.get("Name", "")
+            db_web_id = db.get("WebId", "")
+            if not db_web_id:
+                continue
+            if database_name is None or db_name == database_name:
+                log.info(f"Connected to database '{db_name}' on server '{server.get('Name', '')}'")
+                return db_web_id
 
     if not found_any_server:
         raise ValueError("No PI Asset Servers found via PI Web API. Check base_url.")
