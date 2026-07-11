@@ -47,6 +47,11 @@ def build_session(configuration: dict) -> requests.Session:
     # verify_ssl to "false"; any other value (including template placeholders) keeps TLS on.
     _verify_ssl = str(configuration.get("verify_ssl", "true"))
     session.verify = False if _verify_ssl.lower() == "false" else True
+    if not session.verify:
+        log.warning(
+            "TLS certificate verification is disabled (verify_ssl=false). "
+            "Only use this for self-signed certificates in trusted environments."
+        )
     return session
 
 
