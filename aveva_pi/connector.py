@@ -45,8 +45,14 @@ def validate_configuration(configuration: dict):
     """
     required = ("base_url", "username", "password")
     for key in required:
-        if not configuration.get(key):
+        val = configuration.get(key, "")
+        if not val:
             raise ValueError(f"Missing or empty required configuration key: '{key}'")
+        if val.startswith("<"):
+            raise ValueError(
+                f"Required configuration key '{key}' still contains a placeholder value. "
+                "Replace it with a real value before running the connector."
+            )
 
     # Validate base_url scheme to catch common mistakes early
     url_val = configuration.get("base_url", "")
