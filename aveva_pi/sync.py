@@ -355,8 +355,8 @@ def sync_recorded_values(
     the cursor is rolled back by __LATE_ARRIVAL_ROLLBACK_HOURS to capture values that
     were written slightly after their timestamps.
 
-    Individual attribute streams that return 4xx errors (e.g. deleted PI Points) are
-    skipped with a warning so one bad attribute does not fail the entire sync.
+    Individual attribute streams that return a 403 (no access) or 404 (deleted PI Point)
+    are skipped with a warning so one bad attribute does not fail the entire sync.
 
     Args:
         session: an authenticated requests.Session.
