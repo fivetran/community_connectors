@@ -91,8 +91,6 @@ def schema(configuration: dict):
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
-    validate_configuration(configuration)
-
     # Four tables mapping directly to PI AF object types exposed by PI Web API.
     return [
         {
