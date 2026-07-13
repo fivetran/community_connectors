@@ -176,7 +176,7 @@ def sync_attributes(
     Full reimport of all PI AF element attributes in the database.
 
     Attempts the database-wide /elementattributes endpoint first (PI Web API 2019+).
-    Falls back to iterating each element individually if that endpoint returns a 4xx error.
+    Falls back to iterating each element individually if that endpoint is unavailable (404/405).
 
     Returns the list of WebIds for PI Point attributes, which are used by
     sync_recorded_values to fetch time-series data.
