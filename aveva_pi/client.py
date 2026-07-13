@@ -106,7 +106,12 @@ def api_get(session: requests.Session, url: str, params: dict = None) -> dict:
                     message=f"Client error ({resp.status_code}) for {url}: {resp.text[:200]}",
                 )
             resp.raise_for_status()
-            return resp.json()
+            try:
+                return resp.json()
+            except ValueError as exc:
+                raise requests.exceptions.RequestException(
+                    f"Non-JSON response from {url}: {exc}"
+                ) from exc
         except PiApiError:
             # Auth / client errors — surface immediately, no retry
             raise

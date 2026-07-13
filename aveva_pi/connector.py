@@ -9,8 +9,9 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 # For reading configuration from a JSON file
 import json
 
-# For ISO 8601 timestamp validation in configuration
+# For ISO 8601 timestamp validation and URL parsing in configuration
 from datetime import datetime
+from urllib.parse import urlparse
 
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
@@ -51,6 +52,13 @@ def validate_configuration(configuration: dict):
     url_val = configuration.get("base_url", "")
     if not url_val.startswith(("http://", "https://")):
         raise ValueError(f"Invalid base_url '{url_val}'. Expected an http:// or https:// URL.")
+    # Reject embedded credentials in base_url — they would be written to logs in plain text
+    parsed = urlparse(url_val)
+    if parsed.username or parsed.password:
+        raise ValueError(
+            "base_url must not contain embedded credentials. "
+            "Provide credentials via the 'username' and 'password' fields."
+        )
 
     # Validate start_date format if provided and not a template placeholder.
     # Require an explicit UTC offset (Z or +HH:MM) to avoid timezone-naive datetimes
