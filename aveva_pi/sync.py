@@ -375,6 +375,10 @@ def sync_recorded_values(
     # whether it exists. An unparseable cursor value is treated as absent so the
     # late-arrival rollback is not applied on what is effectively a first sync.
     parsed_cursor = parse_pi_timestamp(start_str) if start_str else None
+    if start_str and parsed_cursor is None:
+        log.warning(
+            f"  Malformed recorded_values cursor '{start_str}'; falling back to start_date."
+        )
     is_first_sync = parsed_cursor is None
     _fallback = parse_pi_timestamp(start_date) or datetime.fromtimestamp(0, tz=timezone.utc)
     start = parsed_cursor if parsed_cursor is not None else _fallback
