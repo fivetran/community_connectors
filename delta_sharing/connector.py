@@ -5,7 +5,7 @@ Single connection, all tables in one destination schema.
 
 Destination layout:
   Catalog tables  : shares, schemas, tables
-  Data tables     : {schema}__{table}  (e.g. fivetran_log__account)
+  Data tables     : {schema}__{table}  (e.g. customers__account)
 
 Uses the delta_sharing Python library to handle DeletionVectors and other
 advanced Delta table features unsupported by the raw parquet query API.

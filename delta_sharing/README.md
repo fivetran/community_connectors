@@ -15,7 +15,7 @@ Delta Sharing is an open protocol for secure, real-time exchange of large datase
 | `shares` | Names of all shares accessible to the recipient |
 | `schemas` | Names of all schemas found across those shares |
 | `tables` | Catalog of all tables (share, schema, name) |
-| `{schema}__{table}` | Actual data — one table per shared table (e.g. `fivetran_log__account`) |
+| `{schema}__{table}` | Actual data — one table per shared table (e.g. `customers__account`) |
 
 Incremental syncs are supported: after the first full load, each subsequent sync fetches only rows changed since the last known Delta table version.
 
