@@ -61,6 +61,7 @@ def schema(configuration: dict):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_profile(endpoint, bearer_token):
     """Write a Delta Sharing profile JSON to a temp file; return its path."""
     profile = {
@@ -76,10 +77,7 @@ def _write_profile(endpoint, bearer_token):
 
 def _get_table_version(endpoint, bearer_token, share, schema_name, table_name):
     """GET .../version  →  current Delta-Table-Version as int."""
-    url = (
-        f"{endpoint}/shares/{share}/schemas/{schema_name}"
-        f"/tables/{table_name}/version"
-    )
+    url = f"{endpoint}/shares/{share}/schemas/{schema_name}" f"/tables/{table_name}/version"
     resp = requests.get(
         url,
         headers={"Authorization": f"Bearer {bearer_token}"},
@@ -92,6 +90,7 @@ def _get_table_version(endpoint, bearer_token, share, schema_name, table_name):
 # ---------------------------------------------------------------------------
 # Catalog sync
 # ---------------------------------------------------------------------------
+
 
 def _sync_catalog(client):
     """Upsert shares, schemas, and table names into the catalog tables."""
@@ -106,16 +105,20 @@ def _sync_catalog(client):
                 seen_schemas.add(schema_obj.name)
 
             for tbl in client.list_tables(schema_obj):
-                op.upsert("tables", {
-                    "share": share.name,
-                    "schema_name": schema_obj.name,
-                    "name": tbl.name,
-                })
+                op.upsert(
+                    "tables",
+                    {
+                        "share": share.name,
+                        "schema_name": schema_obj.name,
+                        "name": tbl.name,
+                    },
+                )
 
 
 # ---------------------------------------------------------------------------
 # Data sync
 # ---------------------------------------------------------------------------
+
 
 def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_name, state):
     """
@@ -132,7 +135,9 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
     table_url = f"{profile_path}#{share}.{schema_name}.{table_name}"
 
     try:
-        current_version = _get_table_version(endpoint, bearer_token, share, schema_name, table_name)
+        current_version = _get_table_version(
+            endpoint, bearer_token, share, schema_name, table_name
+        )
     except Exception as e:
         log.warning(f"Cannot get version for {dest}, skipping: {e}")
         return state
@@ -153,8 +158,11 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
             if "_change_type" in df.columns:
                 df = df[df["_change_type"].isin(["insert", "update_postimage"])]
                 df = df.drop(
-                    columns=[c for c in ["_change_type", "_commit_version", "_commit_timestamp"]
-                              if c in df.columns]
+                    columns=[
+                        c
+                        for c in ["_change_type", "_commit_version", "_commit_timestamp"]
+                        if c in df.columns
+                    ]
                 )
         else:
             df = delta_sharing.load_as_pandas(table_url)
@@ -181,6 +189,7 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
 # Entry points
 # ---------------------------------------------------------------------------
 
+
 def update(configuration: dict, state: dict):
     validate_configuration(configuration)
     endpoint = configuration["endpoint"].rstrip("/")
@@ -203,8 +212,7 @@ def update(configuration: dict, state: dict):
 
         for share_name, schema_name, table_name in all_tables:
             state = _sync_table(
-                profile_path, endpoint, bearer_token,
-                share_name, schema_name, table_name, state
+                profile_path, endpoint, bearer_token, share_name, schema_name, table_name, state
             )
 
         op.checkpoint(state)
