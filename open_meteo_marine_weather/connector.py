@@ -12,14 +12,11 @@ and the Best Practices documentation
 (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
-# For reading configuration from a JSON file
-import json
-
 # For time-based operations and rate limiting
 import time
 
 # For date manipulation and incremental sync cursor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # For making HTTP requests to external APIs
 import requests
@@ -74,29 +71,6 @@ def _is_placeholder(value):
     return value.startswith("<") and value.endswith(">")
 
 
-def _parse_bool(value, default=False):
-    """Parse a config string as bool.
-
-    Args:
-        value: The string value to parse.
-        default: Default value if placeholder.
-
-    Returns:
-        The parsed boolean value.
-
-    Raises:
-        ValueError: If the value is not 'true' or 'false'.
-    """
-    if isinstance(value, bool):
-        return value
-    if _is_placeholder(value):
-        return default
-    normalized = str(value).strip().lower()
-    if normalized in ("true", "false"):
-        return normalized == "true"
-    raise ValueError(f"Boolean config must be 'true' or 'false', got: {value!r}")
-
-
 def _optional_int(configuration, key, default):
     """Read optional int; placeholder/invalid returns default.
 
@@ -132,6 +106,39 @@ def _optional_str(configuration, key, default):
     if value is None or _is_placeholder(value):
         return default
     return str(value)
+
+
+def _safe_index(data, key, index):
+    """Return data[key][index], or None if the key is missing or the array is short.
+
+    Args:
+        data: The data dictionary containing arrays.
+        key: The key to access.
+        index: The array index.
+
+    Returns:
+        The value at data[key][index], or None if missing/short.
+    """
+    values = data.get(key)
+    if not values or index >= len(values):
+        return None
+    return values[index]
+
+
+def _build_location_id(latitude, longitude):
+    """Build a normalized composite location_id with fixed precision.
+
+    Equivalent coordinate representations (e.g., 37.75 vs 37.750) produce the
+    same location_id so upsert deduplication works correctly.
+
+    Args:
+        latitude: The latitude config value (already validated as a float).
+        longitude: The longitude config value (already validated as a float).
+
+    Returns:
+        A normalized location_id string with 6-decimal precision.
+    """
+    return f"{round(float(latitude), 6)}_{round(float(longitude), 6)}"
 
 
 def validate_configuration(configuration: dict):
@@ -194,8 +201,6 @@ def validate_configuration(configuration: dict):
             f"past_days must be between 0 and {__MAX_PAST_DAYS_CEILING}, got: {past_days}"
         )
 
-    log.info("Configuration validation passed.")
-
 
 def fetch_data_with_retry(session, url, params=None):
     """Fetch data from the API with exponential backoff retry logic.
@@ -251,14 +256,18 @@ def fetch_data_with_retry(session, url, params=None):
     raise RuntimeError("Unexpected: exhausted retries without returning or raising")
 
 
-def _normalize_timestamp(ts):
+def _normalize_timestamp(ts, utc_offset_seconds=0):
     """Normalize Open-Meteo timestamp to full ISO 8601 format with UTC timezone.
 
     Open-Meteo returns timestamps like '2026-05-24T00:00' (no seconds, no tz offset).
     The Fivetran SDK UTC_DATETIME type requires '%Y-%m-%dT%H:%M:%S%z' format.
+    If utc_offset_seconds is nonzero (e.g., for a non-UTC timezone config),
+    subtract it from the naive local timestamp to convert to true UTC.
 
     Args:
         ts: The timestamp string from Open-Meteo API.
+        utc_offset_seconds: The UTC offset of the API response timezone in seconds
+                            (e.g., -25200 for America/Los_Angeles). Default 0 (UTC).
 
     Returns:
         A normalized timestamp string with seconds and +00:00 timezone.
@@ -268,13 +277,19 @@ def _normalize_timestamp(ts):
     # Add seconds if missing (format: 2026-05-24T00:00 -> 2026-05-24T00:00:00)
     if len(ts) == 16:  # YYYY-MM-DDTHH:MM
         ts = ts + ":00"
+    if utc_offset_seconds != 0 and len(ts) == 19:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+        dt = dt - timedelta(seconds=utc_offset_seconds)
+        ts = dt.strftime("%Y-%m-%dT%H:%M:%S")
     # Add UTC timezone offset if missing
     if "+" not in ts and "Z" not in ts and len(ts) == 19:
         ts = ts + "+00:00"
     return ts
 
 
-def build_hourly_record(location_id, timestamp, hourly_data, index, elevation, timezone):
+def build_hourly_record(
+    location_id, timestamp, hourly_data, index, elevation, timezone, utc_offset_seconds=0
+):
     """Build a single hourly marine weather record from API response arrays.
 
     Args:
@@ -284,24 +299,25 @@ def build_hourly_record(location_id, timestamp, hourly_data, index, elevation, t
         index: The array index for this time step.
         elevation: The elevation in meters from the API response metadata.
         timezone: The timezone string from the API response metadata.
+        utc_offset_seconds: UTC offset in seconds for the API response timezone.
 
     Returns:
         A dictionary representing one hourly record.
     """
     return {
         "location_id": location_id,
-        "timestamp": _normalize_timestamp(timestamp),
-        "wave_height": hourly_data.get("wave_height", [None])[index],
-        "wave_direction": hourly_data.get("wave_direction", [None])[index],
-        "wave_period": hourly_data.get("wave_period", [None])[index],
-        "wind_wave_height": hourly_data.get("wind_wave_height", [None])[index],
-        "wind_wave_direction": hourly_data.get("wind_wave_direction", [None])[index],
-        "wind_wave_period": hourly_data.get("wind_wave_period", [None])[index],
-        "swell_wave_height": hourly_data.get("swell_wave_height", [None])[index],
-        "swell_wave_direction": hourly_data.get("swell_wave_direction", [None])[index],
-        "swell_wave_period": hourly_data.get("swell_wave_period", [None])[index],
-        "ocean_current_velocity": hourly_data.get("ocean_current_velocity", [None])[index],
-        "ocean_current_direction": hourly_data.get("ocean_current_direction", [None])[index],
+        "timestamp": _normalize_timestamp(timestamp, utc_offset_seconds),
+        "wave_height": _safe_index(hourly_data, "wave_height", index),
+        "wave_direction": _safe_index(hourly_data, "wave_direction", index),
+        "wave_period": _safe_index(hourly_data, "wave_period", index),
+        "wind_wave_height": _safe_index(hourly_data, "wind_wave_height", index),
+        "wind_wave_direction": _safe_index(hourly_data, "wind_wave_direction", index),
+        "wind_wave_period": _safe_index(hourly_data, "wind_wave_period", index),
+        "swell_wave_height": _safe_index(hourly_data, "swell_wave_height", index),
+        "swell_wave_direction": _safe_index(hourly_data, "swell_wave_direction", index),
+        "swell_wave_period": _safe_index(hourly_data, "swell_wave_period", index),
+        "ocean_current_velocity": _safe_index(hourly_data, "ocean_current_velocity", index),
+        "ocean_current_direction": _safe_index(hourly_data, "ocean_current_direction", index),
         "elevation": elevation,
         "timezone": timezone,
     }
@@ -324,18 +340,18 @@ def build_daily_record(location_id, date_str, daily_data, index, elevation, time
     return {
         "location_id": location_id,
         "date": date_str,
-        "wave_height_max": daily_data.get("wave_height_max", [None])[index],
-        "wave_direction_dominant": daily_data.get("wave_direction_dominant", [None])[index],
-        "wave_period_max": daily_data.get("wave_period_max", [None])[index],
-        "wind_wave_height_max": daily_data.get("wind_wave_height_max", [None])[index],
-        "wind_wave_direction_dominant": daily_data.get("wind_wave_direction_dominant", [None])[
-            index
-        ],
-        "wind_wave_period_max": daily_data.get("wind_wave_period_max", [None])[index],
-        "swell_wave_height_max": daily_data.get("swell_wave_height_max", [None])[index],
-        "swell_wave_direction_dominant": daily_data.get("swell_wave_direction_dominant", [None])[
-            index
-        ],
+        "wave_height_max": _safe_index(daily_data, "wave_height_max", index),
+        "wave_direction_dominant": _safe_index(daily_data, "wave_direction_dominant", index),
+        "wave_period_max": _safe_index(daily_data, "wave_period_max", index),
+        "wind_wave_height_max": _safe_index(daily_data, "wind_wave_height_max", index),
+        "wind_wave_direction_dominant": _safe_index(
+            daily_data, "wind_wave_direction_dominant", index
+        ),
+        "wind_wave_period_max": _safe_index(daily_data, "wind_wave_period_max", index),
+        "swell_wave_height_max": _safe_index(daily_data, "swell_wave_height_max", index),
+        "swell_wave_direction_dominant": _safe_index(
+            daily_data, "swell_wave_direction_dominant", index
+        ),
         "elevation": elevation,
         "timezone": timezone,
     }
@@ -406,17 +422,17 @@ def update(configuration: dict, state: dict):
 
     latitude = configuration.get("latitude")
     longitude = configuration.get("longitude")
-    timezone = _optional_str(configuration, "timezone", "America/Los_Angeles")
+    tz_config = _optional_str(configuration, "timezone", "America/Los_Angeles")
     forecast_days = _optional_int(configuration, "forecast_days", __DEFAULT_FORECAST_DAYS)
     past_days = _optional_int(configuration, "past_days", __DEFAULT_PAST_DAYS)
 
     # Build a location_id from lat/lon for the composite primary key
-    location_id = f"{latitude}_{longitude}"
+    location_id = _build_location_id(latitude, longitude)
 
     # Determine the date range for incremental sync
     # Use state to track last synced date; overlap by 1 day to handle inclusive boundaries
     last_synced_date = state.get("last_synced_date")
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
 
     if last_synced_date:
         # Overlap by 1 day to handle inclusive date boundary dedup
@@ -432,7 +448,7 @@ def update(configuration: dict, state: dict):
         "longitude": longitude,
         "hourly": __HOURLY_VARIABLES,
         "daily": __DAILY_VARIABLES,
-        "timezone": timezone,
+        "timezone": tz_config,
         "start_date": start_date.strftime("%Y-%m-%d"),
         "end_date": end_date.strftime("%Y-%m-%d"),
     }
@@ -448,6 +464,7 @@ def update(configuration: dict, state: dict):
         # Extract location metadata returned at the top level of each API response
         elevation = data.get("elevation")
         resp_timezone = data.get("timezone", "UTC")
+        utc_offset_seconds = data.get("utc_offset_seconds", 0)
 
         # Process hourly data
         hourly_data = data.get("hourly", {})
@@ -457,7 +474,13 @@ def update(configuration: dict, state: dict):
         log.info(f"Processing {len(hourly_times)} hourly records")
         for index, timestamp in enumerate(hourly_times):
             record = build_hourly_record(
-                location_id, timestamp, hourly_data, index, elevation, resp_timezone
+                location_id,
+                timestamp,
+                hourly_data,
+                index,
+                elevation,
+                resp_timezone,
+                utc_offset_seconds,
             )
             if not record.get("location_id") or not record.get("timestamp"):
                 log.info("Skipping hourly record without primary key fields")
@@ -468,7 +491,6 @@ def update(configuration: dict, state: dict):
             op.upsert(table="marine_hourly", data=record)
             hourly_count += 1
             if hourly_count % __CHECKPOINT_INTERVAL == 0:
-                # Checkpoint mid-loop to enable resume without reprocessing from the beginning.
                 op.checkpoint(state={"last_synced_date": today.strftime("%Y-%m-%d")})
 
         log.info(f"Successfully processed {hourly_count} hourly records")
@@ -492,7 +514,6 @@ def update(configuration: dict, state: dict):
             op.upsert(table="marine_daily", data=record)
             daily_count += 1
             if daily_count % __CHECKPOINT_INTERVAL == 0:
-                # Checkpoint mid-loop to enable resume without reprocessing from the beginning.
                 op.checkpoint(state={"last_synced_date": today.strftime("%Y-%m-%d")})
 
         log.info(f"Successfully processed {daily_count} daily records")
@@ -516,10 +537,13 @@ def update(configuration: dict, state: dict):
 # Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development.
 if __name__ == "__main__":
-    # Open the configuration.json file and load its contents
-    with open("configuration.json", "r") as f:
-        configuration = json.load(f)
-
     # Test the connector locally
-    connector.debug(configuration=configuration)
+    connector.debug()
