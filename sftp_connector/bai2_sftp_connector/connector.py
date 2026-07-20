@@ -30,24 +30,39 @@ Key behaviours:
 See: https://fivetran.com/docs/connectors/connector-sdk/technical-reference
 """
 
+# For reading configuration from a JSON file
 import json
+
+# For generating random jitter in SFTP retry delays
 import random
+
+# For BAI2 file pattern matching using regular expressions
 import re
+
+# For implementing exponential backoff delays in SFTP retries
 import time
+
+# For BAI2 date field parsing
 from datetime import datetime
 
+# For SFTP connectivity and file transfer
 import paramiko
 
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-_SFTP_MAX_RETRIES = 5
-_SFTP_RETRY_DELAY_SEC = 5
+__SFTP_MAX_RETRIES = 5
+__SFTP_RETRY_DELAY_SEC = 5
 
-_REQUIRED_CONFIG_KEYS = [
+__REQUIRED_CONFIG_KEYS = [
     "sftp_host",
     "sftp_username",
     "sftp_password",
@@ -55,11 +70,11 @@ _REQUIRED_CONFIG_KEYS = [
 ]
 
 # BAI2 type code ranges for debit/credit classification
-_CREDIT_RANGE = (100, 399)
-_DEBIT_RANGE = (400, 699)
+__CREDIT_RANGE = (100, 399)
+__DEBIT_RANGE = (400, 699)
 
 # Compiled regex patterns for parsing structured ACH fields from 88 narrative text
-_ACH_PATTERNS = {
+__ACH_PATTERNS = {
     "ach_cust_id": re.compile(r"Cust\s+ID:\s*(\S+)", re.IGNORECASE),
     "ach_description": re.compile(
         r"Desc:\s*(.+?)(?=Comp\s+Name:|Comp\s+ID:|SEC:|Cust\s+Name:|Date:|\Z)",
@@ -94,7 +109,7 @@ def validate_configuration(configuration: dict):
     Raises:
         ValueError: if any required configuration parameter is missing.
     """
-    missing = [k for k in _REQUIRED_CONFIG_KEYS if k not in configuration]
+    missing = [k for k in __REQUIRED_CONFIG_KEYS if k not in configuration]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
     port_str = configuration.get("sftp_port", "22")
@@ -155,9 +170,9 @@ def debit_credit_mark(type_code: str):
     """Return 'C', 'D', or None based on the BAI2 type code range."""
     try:
         code = int(type_code)
-        if _CREDIT_RANGE[0] <= code <= _CREDIT_RANGE[1]:
+        if __CREDIT_RANGE[0] <= code <= __CREDIT_RANGE[1]:
             return "C"
-        if _DEBIT_RANGE[0] <= code <= _DEBIT_RANGE[1]:
+        if __DEBIT_RANGE[0] <= code <= __DEBIT_RANGE[1]:
             return "D"
     except (ValueError, TypeError):
         pass
@@ -170,7 +185,7 @@ def parse_ach_fields(text: str):
     Returns a dict of ach_* keys; value is None when a field is absent.
     """
     result = {}
-    for field, pattern in _ACH_PATTERNS.items():
+    for field, pattern in __ACH_PATTERNS.items():
         m = pattern.search(text)
         result[field] = m.group(1).strip() if m else None
     return result
@@ -201,7 +216,7 @@ def parse_balance_groups(fields_str: str):
             result[tc] = parse_amount(amt)
         i += 4  # each group occupies: type_code, amount, item_count, funds_type
     if i < len(fields):
-        log.fine(
+        log.debug(
             f"Balance group parsing: {len(fields) - i} trailing field(s) ignored (incomplete group)"
         )
     return result
@@ -468,7 +483,7 @@ def connect_sftp(configuration: dict):
     Returns (SSHClient, SFTPClient). The caller is responsible for closing
     both objects to fully release the SSH transport.
 
-    Retries up to _SFTP_MAX_RETRIES times with _SFTP_RETRY_DELAY_SEC delay.
+    Retries up to __SFTP_MAX_RETRIES times with __SFTP_RETRY_DELAY_SEC delay.
     Raises RuntimeError after all attempts are exhausted.
     """
     host = configuration["sftp_host"]
@@ -477,7 +492,7 @@ def connect_sftp(configuration: dict):
     password = configuration["sftp_password"]
 
     last_exc = None
-    for attempt in range(1, _SFTP_MAX_RETRIES + 1):
+    for attempt in range(1, __SFTP_MAX_RETRIES + 1):
         try:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -498,16 +513,16 @@ def connect_sftp(configuration: dict):
 
         except Exception as exc:
             last_exc = exc
-            log.warning(f"SFTP connection attempt {attempt}/{_SFTP_MAX_RETRIES} failed: {exc}")
-            if attempt < _SFTP_MAX_RETRIES:
-                base_delay = _SFTP_RETRY_DELAY_SEC * (2 ** (attempt - 1))
+            log.warning(f"SFTP connection attempt {attempt}/{__SFTP_MAX_RETRIES} failed: {exc}")
+            if attempt < __SFTP_MAX_RETRIES:
+                base_delay = __SFTP_RETRY_DELAY_SEC * (2 ** (attempt - 1))
                 delay = min(base_delay + random.uniform(0, base_delay * 0.3), 60)
                 log.info(f"Retrying in {delay:.1f}s...")
                 time.sleep(delay)
 
     raise RuntimeError(
         f"Failed to connect to SFTP at {host}:{port} "
-        f"after {_SFTP_MAX_RETRIES} attempts: {last_exc}"
+        f"after {__SFTP_MAX_RETRIES} attempts: {last_exc}"
     )
 
 
@@ -645,9 +660,23 @@ def update(configuration: dict, state: dict):
     log.info("bai2_sftp_connector: sync complete")
 
 
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
+
+    # Test the connector locally
     connector.debug(configuration=configuration)
