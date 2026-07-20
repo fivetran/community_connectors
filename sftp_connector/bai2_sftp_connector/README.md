@@ -30,8 +30,17 @@ This connector:
 ---
 
 ## Getting started
-
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```
+fivetran init --template sftp_connector/bai2_sftp_connector
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ---
 
@@ -93,7 +102,7 @@ Example `configuration.json`:
 }
 ```
 
-Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ---
 
@@ -105,7 +114,7 @@ The `requirements.txt` file specifies the Python libraries required by this conn
 paramiko==3.5.1
 ```
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ---
 

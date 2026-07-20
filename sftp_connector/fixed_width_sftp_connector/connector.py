@@ -32,27 +32,43 @@ See the Technical Reference documentation:
 https://fivetran.com/docs/connectors/connector-sdk/technical-reference
 """
 
+# For reading configuration from a JSON file
 import json
+
+# For OS-level file path operations
 import os
+
+# For creating temporary files during SFTP download
 import tempfile
+
+# For implementing exponential backoff delays in SFTP retries
 import time
+
+# For parsing date fields from fixed-width records
 from datetime import datetime
 
+# For SFTP connectivity and file transfer
 import paramiko
 
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
+# Table specifications for all 12 fixed-width files
 from table_specs import FILE_SPECS
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-_SFTP_MAX_RETRIES = 5
-_SFTP_RETRY_DELAY_SEC = 5
-_SFTP_OPERATION_TIMEOUT_SEC = 300  # timeout for individual SFTP file/listing operations
+__SFTP_MAX_RETRIES = 5
+__SFTP_RETRY_DELAY_SEC = 5
+__SFTP_OPERATION_TIMEOUT_SEC = 300  # timeout for individual SFTP file/listing operations
 
-_REQUIRED_CONFIG_KEYS = [
+__REQUIRED_CONFIG_KEYS = [
     "sftp_host",
     "sftp_username",
     "sftp_password",
@@ -60,10 +76,10 @@ _REQUIRED_CONFIG_KEYS = [
 ]
 
 # Composite PK separator used when joining multiple PK values into a single state key
-_PK_SEP = "|"
+__PK_SEP = "|"
 
 # Maximum records upserted per file when test_mode is enabled
-_TEST_MODE_RECORD_LIMIT = 100
+__TEST_MODE_RECORD_LIMIT = 100
 
 
 # ── Configuration validation ──────────────────────────────────────────────────
@@ -78,7 +94,7 @@ def validate_configuration(configuration: dict):
     Raises:
         ValueError: if any required configuration parameter is missing.
     """
-    missing = [k for k in _REQUIRED_CONFIG_KEYS if k not in configuration]
+    missing = [k for k in __REQUIRED_CONFIG_KEYS if k not in configuration]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
@@ -159,7 +175,7 @@ def update(configuration: dict, state: dict):
     if test_mode:
         log.warning(
             f"TEST MODE ENABLED: all 12 files will be validated and parsed, "
-            f"but only the first {_TEST_MODE_RECORD_LIMIT} records per file will be "
+            f"but only the first {__TEST_MODE_RECORD_LIMIT} records per file will be "
             f"upserted. State and checkpoints will NOT be saved — the next normal "
             f"sync will re-process all files from scratch."
         )
@@ -295,7 +311,7 @@ def connect_sftp(configuration: dict):
     host-key verification (recommended for production).  When absent the
     connector falls back to AutoAddPolicy and emits a warning.
 
-    Retries up to _SFTP_MAX_RETRIES times with exponential backoff.
+    Retries up to __SFTP_MAX_RETRIES times with exponential backoff.
     Raises RuntimeError after all retries are exhausted.
     """
     host = configuration["sftp_host"]
@@ -305,7 +321,7 @@ def connect_sftp(configuration: dict):
     host_key_b64 = configuration.get("sftp_host_key", "")
 
     last_exc = None
-    for attempt in range(1, _SFTP_MAX_RETRIES + 1):
+    for attempt in range(1, __SFTP_MAX_RETRIES + 1):
         sftp = None
         try:
             ssh = paramiko.SSHClient()
@@ -328,7 +344,7 @@ def connect_sftp(configuration: dict):
 
             ssh.connect(host, port=port, username=username, password=password, timeout=30)
             sftp = ssh.open_sftp()
-            sftp.get_channel().settimeout(_SFTP_OPERATION_TIMEOUT_SEC)
+            sftp.get_channel().settimeout(__SFTP_OPERATION_TIMEOUT_SEC)
             log.info(f"SFTP connected to {host}:{port} (attempt {attempt})")
             return ssh, sftp
 
@@ -345,14 +361,14 @@ def connect_sftp(configuration: dict):
                 ssh.close()
             except Exception:
                 pass
-            log.warning(f"SFTP connection attempt {attempt}/{_SFTP_MAX_RETRIES} failed: {exc}")
-            if attempt < _SFTP_MAX_RETRIES:
-                delay = _SFTP_RETRY_DELAY_SEC * (2 ** (attempt - 1))  # 5, 10, 20, 40 s
+            log.warning(f"SFTP connection attempt {attempt}/{__SFTP_MAX_RETRIES} failed: {exc}")
+            if attempt < __SFTP_MAX_RETRIES:
+                delay = __SFTP_RETRY_DELAY_SEC * (2 ** (attempt - 1))  # 5, 10, 20, 40 s
                 log.warning(f"Retrying in {delay}s...")
                 time.sleep(delay)
 
     raise RuntimeError(
-        f"Failed to connect to SFTP at {host}:{port} after {_SFTP_MAX_RETRIES} attempts: {last_exc}"
+        f"Failed to connect to SFTP at {host}:{port} after {__SFTP_MAX_RETRIES} attempts: {last_exc}"
     )
 
 
@@ -495,7 +511,7 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
     Incremental tables (spec["purge"] is False) never receive a purge_indicator.
 
     In test_mode:
-      - Upserts at most _TEST_MODE_RECORD_LIMIT records then stops.
+      - Upserts at most __TEST_MODE_RECORD_LIMIT records then stops.
       - Purge logic is skipped entirely (a partial record set would generate
         false soft-deletes against the previous full PK set in state).
 
@@ -513,9 +529,9 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
     record_count = 0
 
     for line_num, line in enumerate(lines, start=1):
-        if test_mode and record_count >= _TEST_MODE_RECORD_LIMIT:
+        if test_mode and record_count >= __TEST_MODE_RECORD_LIMIT:
             log.info(
-                f"[{table}] Test mode: reached {_TEST_MODE_RECORD_LIMIT}-record limit, "
+                f"[{table}] Test mode: reached {__TEST_MODE_RECORD_LIMIT}-record limit, "
                 f"stopping early"
             )
             break
@@ -523,7 +539,7 @@ def stream_and_upsert_records(lines: list, spec: dict, state: dict, test_mode: b
         try:
             record = parse_line(line, spec["fields"], implied)
         except Exception as exc:
-            log.severe(f"Malformed line {line_num} in {table}: {exc}. " f"Aborting this file.")
+            log.error(f"Malformed line {line_num} in {table}: {exc}. Aborting this file.")
             return None
 
         if is_elan:
@@ -643,8 +659,8 @@ def _apply_elan_signs(record: dict):
 
 
 def _build_composite_pk(record: dict, pk_columns: list):
-    """Join PK column values with _PK_SEP into a single string key."""
-    return _PK_SEP.join(str(record.get(col, "")) for col in pk_columns)
+    """Join PK column values with __PK_SEP into a single string key."""
+    return __PK_SEP.join(str(record.get(col, "")) for col in pk_columns)
 
 
 def _build_purge_record(composite_pk: str, pk_columns: list):
@@ -652,7 +668,7 @@ def _build_purge_record(composite_pk: str, pk_columns: list):
     Reconstruct a minimal record dict from a composite PK string.
     Sets purge_indicator = True and all non-PK fields to None.
     """
-    pk_values = composite_pk.split(_PK_SEP)
+    pk_values = composite_pk.split(__PK_SEP)
     record = {col: val for col, val in zip(pk_columns, pk_values)}
     record["purge_indicator"] = True
     return record
@@ -660,10 +676,23 @@ def _build_purge_record(composite_pk: str, pk_columns: list):
 
 # ── Connector entry point ─────────────────────────────────────────────────────
 
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
 
+    # Test the connector locally
     connector.debug(configuration=configuration)
