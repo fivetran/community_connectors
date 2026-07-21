@@ -203,9 +203,13 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
         op.upsert(dest, record)
         count += 1
         if count % CHECKPOINT_INTERVAL == 0:
-            state[state_key] = current_version
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
-
     state[state_key] = current_version
     log.info(f"{dest}: upserted {count} row(s) at version {current_version}")
     return state
