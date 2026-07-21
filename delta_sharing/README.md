@@ -98,8 +98,7 @@ Delta Sharing uses **bearer token authentication**. Both the endpoint URL and th
 
 4. Copy the `bearerToken` and `endpoint` values from the profile file into `configuration.json`.
 
-> **Note:** The bearer token has an expiration time. When it expires, request a new activation link from the data provider and update `configuration.json` and redeploy.
-
+> Note: The bearer token has an expiration time. When it expires, request a new activation link from the data provider and update `configuration.json` and redeploy.
 ---
 
 ## Requirements File
