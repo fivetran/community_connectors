@@ -4,11 +4,11 @@ A Fivetran Connector SDK connector that syncs data from any [Delta Sharing](http
 
 ---
 
-## Overview
+## Connector overview
 
 Delta Sharing is an open protocol for secure, real-time exchange of large datasets across platforms. This connector discovers all shares, schemas, and tables exposed by a Delta Sharing server and syncs them into a single Fivetran destination schema.
 
-**Destination layout:**
+Destination layout:
 
 | Table | Description |
 |---|---|
