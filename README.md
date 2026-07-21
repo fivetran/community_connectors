@@ -174,6 +174,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 ## Documentation & Resources
 
 - **[_template_connector](https://github.com/fivetran/community_connectors/tree/main/_template_connector)** - Reference template for building new connectors
+- **[empty-project](https://github.com/fivetran/community_connectors/tree/main/empty-project)** - Blank skeleton connector to start from scratch
 - **[CONTRIBUTING.md](https://github.com/fivetran/community_connectors/blob/main/CONTRIBUTING.md)** - Guide for contributing to this repository
 - **[PYTHON_CODING_STANDARDS.md](https://github.com/fivetran/community_connectors/blob/main/PYTHON_CODING_STANDARDS.md)** - Python coding standards and best practices
 - **[FIVETRAN_CODING_PRINCIPLES.md](https://github.com/fivetran/community_connectors/blob/main/FIVETRAN_CODING_PRINCIPLES.md)** - Code review principles and PR guidelines
