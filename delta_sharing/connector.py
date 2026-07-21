@@ -214,6 +214,17 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
 
 
 def update(configuration: dict, state: dict):
+    """
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
+    """
+    log.warning("Example: Cloud Data Warehouses : Delta Sharing")
+
     validate_configuration(configuration)
     endpoint = configuration["endpoint"].rstrip("/")
     bearer_token = configuration["bearer_token"]
