@@ -118,28 +118,28 @@ def _get_table_version(endpoint, bearer_token, share, schema_name, table_name):
 def _sync_catalog(client):
     """Upsert shares, schemas, and table names into the catalog tables."""
     seen_schemas = set()
-
-for share in client.list_shares():
-        # The 'upsert' operation is used to insert or update data in the destination table.
-        # The first argument is the name of the destination table.
-        # The second argument is a dictionary containing the record to be upserted.
+    for share in client.list_shares():
+          # The 'upsert' operation is used to insert or update data in the destination table.
+          # The first argument is the name of the destination table.
+          # The second argument is a dictionary containing the record to be upserted.
+    
         op.upsert(table="shares", data={"name": share.name})
-
+  
         for schema_obj in client.list_schemas(share):
             if schema_obj.name not in seen_schemas:
                 op.upsert("schemas", {"name": schema_obj.name})
                 seen_schemas.add(schema_obj.name)
-
-            for tbl in client.list_tables(schema_obj):
-                op.upsert(
-                    "tables",
-                    {
-                        "share": share.name,
-                        "schema_name": schema_obj.name,
-                        "name": tbl.name,
-                    },
-                )
-
+                
+                for tbl in client.list_tables(schema_obj):
+                    op.upsert(
+                        "tables",
+                        {
+                            "share": share.name,
+                            "schema_name": schema_obj.name,
+                            "name": tbl.name,
+                        },
+                    )
+  
 
 # ---------------------------------------------------------------------------
 # Data sync
