@@ -28,9 +28,25 @@ CHECKPOINT_INTERVAL = 1000
 
 
 def validate_configuration(configuration: dict):
-    for key in ("endpoint", "bearer_token"):
-        if key not in configuration:
-            raise ValueError(f"Missing required configuration: {key}")
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    This function is called at the start of the update method to ensure that the connector has all necessary configuration values.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Raises:
+        ValueError: if any required configuration parameter is missing or invalid.
+    """
+    endpoint = configuration.get("endpoint")
+    bearer_token = configuration.get("bearer_token")
+
+    if not endpoint:
+        raise ValueError("Missing required configuration value: endpoint")
+    if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
+        raise ValueError(
+            "Invalid configuration value for endpoint: must be a URL starting with http:// or https://"
+        )
+    if not bearer_token:
+        raise ValueError("Missing required configuration value: bearer_token")
 
 
 def schema(configuration: dict):
