@@ -1,8 +1,8 @@
-# IBM DB2i Connector Example
+# IBM Db2 for i Connector Example
 
 ## Connector overview
 
-This connector allows you to sync data from an IBM Db2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK. The connector uses the IBM i Access ODBC Driver via `pyodbc` to establish a connection to your IBM i system, reads data from the `CUSTOMER` table in batches, and upserts the rows to the destination. The first sync fetches all rows, while subsequent syncs are incremental and fetch only rows where `UPDATE_TIMESTAMP` is greater than the highest value seen in the previous sync. 
+This connector allows you to sync data from an IBM Db2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK. The connector uses the IBM i Access ODBC Driver via `pyodbc` to establish a connection to your IBM i system, reads data from the `CUSTOMER` table in batches, and upserts the rows to the destination. The first sync fetches all rows, while subsequent syncs are incremental and fetch only rows where `UPDATE_TIMESTAMP` is greater than the highest value seen in the previous sync.
 
 This example connector demonstrates extracting customer data but can be modified to work with any IBM i table.
 
@@ -34,7 +34,7 @@ fivetran init --template ibm_db2i
 - Connects to a IBM Db2 for i database using the IBM i Access ODBC Driver
 - Verifies TCP connectivity before opening the ODBC connection
 - Fetches rows in configurable batches for memory-efficient syncs
-- Checkpoints every `CHECKPOINT_INTERVAL` rows to support resumable syncs
+- Checkpoints every 10,000 rows to support resumable syncs
 
 ## Configuration file
 
@@ -76,11 +76,11 @@ The connector uses direct database authentication with a `user_id` and `password
 
 To obtain the required credentials:
 
-1. Log in to your IBM i system using an administrator profile
-2. Create a user profile with the necessary permissions to read from the target library and tables
-3. Note the system hostname or IP address and the port used for IBM i Access ODBC connections (typically `8471`)
-4. Record the library (database) name you want to query as the `database` value in your configuration
-5. Use the user profile name and password as the `user_id` and `password` values in your configuration
+1. Log in to your IBM i system using an administrator profile.
+2. Create a user profile with the necessary permissions to read from the target library and tables.
+3. Note the system hostname or IP address and the port used for IBM i Access ODBC connections (typically `8471`).
+4. Record the library (database) name you want to query as the `database` value in your configuration.
+5. Use the user profile name and password as the `user_id` and `password` values in your configuration.
 
 ## Data handling
 
@@ -122,6 +122,11 @@ Schema definition from connector:
 ## Additional files
 
 The connector uses the `drivers/installation.sh` bash script that installs the IBM i Access ODBC Driver (`ibm-iaccess`) and unixODBC on Debian/Ubuntu systems. Run this script on any host where the connector will execute before running `fivetran debug` or deploying.
+<<<<<<< HEAD
+=======
+
+The `ibm-iaccess_1.1.0.29-1.0_amd64.deb` package is bundled in the connector directory and is referenced by the installation script. It is included because the target environment cannot reach IBM's download servers directly.
+>>>>>>> e6d0dfc (docs(ibm_db2i): address PR review comments on README and root README)
 
 ## Additional considerations
 
