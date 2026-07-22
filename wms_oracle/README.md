@@ -4,8 +4,6 @@
 
 This connector syncs warehouse management data from the Oracle WMS Cloud REST API to a Fivetran destination. It supports 26 warehouse entities including orders, inventory, containers, and purchasing documents, plus two monitoring tables that record daily volume probes and hourly drift counts.
 
-The connector uses a two-phase incremental strategy per entity: Phase 1 advances a `mod_ts` cursor forward in time, and Phase 2 catches up records that were created after the cursor with a backdated `mod_ts`. Historical backfill runs in descending order across rolling 30-day windows so recent data reaches the destination first. A pre-cursor hourly drift check runs before each sync to detect and re-pull any records modified in already-advanced windows. Entities with active backfills run in parallel via `ThreadPoolExecutor`; incremental-only entities run sequentially to avoid checkpoint contention.
-
 
 ## Requirements
 
@@ -14,7 +12,7 @@ The connector uses a two-phase incremental strategy per entity: Phase 1 advances
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
   - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
-- An Oracle WMS Cloud instance with REST API access and a service account with read permissions on the entities you want to sync
+- An [Oracle WMS Cloud](https://www.oracle.com/scm/warehouse-management/) instance with REST API access and a service account with read permissions on the entities you want to sync
 
 
 ## Getting started
@@ -42,7 +40,7 @@ fivetran init --template wms_oracle
 - Automatic full-scan fallback for entities that do not support DESC ordering
 - `mod_ts` support discovered once per entity and cached in state, avoiding repeated describe-endpoint calls
 - Entities sorted largest-first before processing using a lightweight count probe
-- Two monitoring tables (`counts_by_day`, `pre_cursor_hourly_counts`) written each sync for observability
+- Two monitoring tables (`COUNTS_BY_DAY`, `PRE_CURSOR_HOURLY_COUNTS`) written each sync for observability
 
 
 ## Configuration file
@@ -69,9 +67,6 @@ fivetran init --template wms_oracle
 | `lookback_check_hours` | No | Number of hours before each entity's cursor to probe for drift (default `24`) |
 | `test_entities` | No | Comma-separated list of entity names to sync; leave empty to sync all entities |
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
-
-
 ## Authentication
 
 The connector uses HTTP Basic Authentication. All requests are made over HTTPS.
@@ -97,8 +92,6 @@ On timeout, the connector halves `page_size` (down to a minimum of 25) and recal
 
 The connector determines whether each entity supports incremental sync by calling the Oracle WMS describe endpoint on the entity's first sync. If the response includes a `mod_ts` field, the entity uses cursor-based incremental sync; otherwise it receives a full scan each sync, preceded by `op.truncate()` to soft-delete records removed from the source. The describe result is cached in connector state so the call is only made once per entity. To force re-detection — for example, after an Oracle WMS upgrade that adds `mod_ts` support to an entity — remove that entity's entry from the `mod_ts_support` key in connector state.
 
-Note: a crash between `op.truncate()` and the first `op.upsert()` for a full-scan entity leaves the destination table empty until the next sync completes a full re-fetch.
-
 To add an entity, append its Oracle WMS API name to `ORACLE_WMS_ENTITIES` in `utils.py` and add a corresponding entry to the `schema()` function in `connector.py`:
 
 ```python
@@ -109,8 +102,8 @@ On the first sync after adding an entity the connector automatically detects the
 
 Each record is delivered via `op.upsert()` using `id` as the primary key. The two monitoring tables use composite primary keys:
 
-- `counts_by_day`: `(table_name, mod_ts_day, batch_id)`
-- `pre_cursor_hourly_counts`: `(table_name, hour_start, batch_id)`
+- `COUNTS_BY_DAY`: `(table_name, mod_ts_day, batch_id)`
+- `PRE_CURSOR_HOURLY_COUNTS`: `(table_name, hour_start, batch_id)`
 
 Timestamps are normalized to second precision before being used as Oracle WMS query parameters, as the API rejects sub-second values.
 
@@ -119,7 +112,7 @@ Timestamps are normalized to second precision before being used as Oracle WMS qu
 
 Before each sync, the connector probes the Oracle WMS record count for each clock-aligned hourly window in the `lookback_check_hours` period immediately before each entity's incremental cursor. These counts are compared against the counts recorded during the prior sync. If a window's count has increased — indicating a long-running transaction that committed with a `mod_ts` inside an already-advanced window — the connector re-pulls all records for that window and upserts them before the main sync begins.
 
-A partial window (the sub-hour gap between the last full clock-aligned hour and the cursor's exact position) is probed and written to the `pre_cursor_hourly_counts` monitoring table for visibility, but is never compared against prior counts. This window grows legitimately each sync as the cursor advances within the current hour; comparing it would produce false positives.
+A partial window (the sub-hour gap between the last full clock-aligned hour and the cursor's exact position) is probed and written to the `PRE_CURSOR_HOURLY_COUNTS` monitoring table for visibility, but is never compared against prior counts. This window grows legitimately each sync as the cursor advances within the current hour; comparing it would produce false positives.
 
 After each re-pull, the connector probes the count again to verify it matches the value that triggered the re-pull. A mismatch is logged as a warning, indicating the data may still be in flux.
 
@@ -140,36 +133,36 @@ The `lookback_check_hours` configuration key controls how many hours are probed 
 
 | Table | Description |
 |-------|-------------|
-| `allocation` | Inventory allocations to orders |
-| `batch_number` | Lot/batch tracking numbers |
-| `company` | Company master records |
-| `container` | Physical storage containers |
-| `container_lock_xref` | Container lock cross-references |
-| `facility` | Warehouse facility records |
-| `history_activity` | Warehouse activity history |
-| `ib_container` | Inbound containers |
-| `ib_shipment` | Inbound shipment headers |
-| `ib_shipment_dtl` | Inbound shipment detail lines |
-| `inventory` | Current inventory positions |
-| `inventory_attribute` | Inventory attribute values |
-| `inventory_lock` | Inventory lock records |
-| `inventory_status` | Inventory status codes |
-| `item` | Item master records |
-| `item_metric` | Item measurement metrics |
-| `location` | Warehouse location master |
-| `order_dtl` | Outbound order detail lines |
-| `order_hdr` | Outbound order headers |
-| `order_status` | Order status codes |
-| `order_type` | Order type codes |
-| `purchase_order_dtl` | Purchase order detail lines |
-| `purchase_order_hdr` | Purchase order headers |
-| `purchase_order_status` | Purchase order status codes |
-| `putaway_type` | Putaway type codes |
-| `vendor` | Vendor master records |
+| `ALLOCATION` | Inventory allocations to orders |
+| `BATCH_NUMBER` | Lot/batch tracking numbers |
+| `COMPANY` | Company master records |
+| `CONTAINER` | Physical storage containers |
+| `CONTAINER_LOCK_XREF` | Container lock cross-references |
+| `FACILITY` | Warehouse facility records |
+| `HISTORY_ACTIVITY` | Warehouse activity history |
+| `IB_CONTAINER` | Inbound containers |
+| `IB_SHIPMENT` | Inbound shipment headers |
+| `IB_SHIPMENT_DTL` | Inbound shipment detail lines |
+| `INVENTORY` | Current inventory positions |
+| `INVENTORY_ATTRIBUTE` | Inventory attribute values |
+| `INVENTORY_LOCK` | Inventory lock records |
+| `INVENTORY_STATUS` | Inventory status codes |
+| `ITEM` | Item master records |
+| `ITEM_METRIC` | Item measurement metrics |
+| `LOCATION` | Warehouse location master |
+| `ORDER_DTL` | Outbound order detail lines |
+| `ORDER_HDR` | Outbound order headers |
+| `ORDER_STATUS` | Order status codes |
+| `ORDER_TYPE` | Order type codes |
+| `PURCHASE_ORDER_DTL` | Purchase order detail lines |
+| `PURCHASE_ORDER_HDR` | Purchase order headers |
+| `PURCHASE_ORDER_STATUS` | Purchase order status codes |
+| `PUTAWAY_TYPE` | Putaway type codes |
+| `VENDOR` | Vendor master records |
 
 2 monitoring tables written each sync for observability:
 
-`counts_by_day` records the number of records with a `mod_ts` on each calendar day for the last 30 days per entity. Use it to track daily modification volume, detect unexpected drops or spikes, and verify that recent days are receiving writes.
+`COUNTS_BY_DAY` records the number of records with a `mod_ts` on each calendar day for the last 30 days per entity. Use it to track daily modification volume, detect unexpected drops or spikes, and verify that recent days are receiving writes.
 
 | Column | Primary key | Description |
 |--------|-------------|-------------|
@@ -178,7 +171,7 @@ The `lookback_check_hours` configuration key controls how many hours are probed 
 | `batch_id` | Yes | Sync start timestamp; identifies which sync wrote the row |
 | `record_count` | No | Number of records with a `mod_ts` on this day |
 
-`pre_cursor_hourly_counts` records `mod_ts` counts for each clock-aligned hourly window in the drift-check lookback period before each entity's cursor. Use it to audit drift-check activity: compare `record_count` across `batch_id` values for the same `(table_name, hour_start)` to see which hours increased between syncs and triggered a re-pull.
+`PRE_CURSOR_HOURLY_COUNTS` records `mod_ts` counts for each clock-aligned hourly window in the drift-check lookback period before each entity's cursor. Use it to audit drift-check activity: compare `record_count` across `batch_id` values for the same `(table_name, hour_start)` to see which hours increased between syncs and triggered a re-pull.
 
 | Column | Primary key | Description |
 |--------|-------------|-------------|
