@@ -169,7 +169,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[vercel](https://github.com/fivetran/community_connectors/tree/main/vercel)** - Sync deployment data from Vercel REST API
 - **[weights_and_biases](https://github.com/fivetran/community_connectors/tree/main/weights_and_biases)** - This example shows how to sync machine learning experiment tracking data from Weights & Biases (W&B), including projects, runs (experiments), and artifacts (models and datasets), using the Fivetran Connector SDK The connector uses the W&B Python SDK to retrieve data and implements robust error handling. You need to provide your W&B API key and entity name for this example to work.
 - **[zigpoll](https://github.com/fivetran/community_connectors/tree/main/zigpoll)** - Sync polling data from Zigpoll
-
+- **[zoominfo](https://github.com/fivetran/community_connectors/tree/main/zoominfo)** - Sync contacts, companies, scoops, intent, news, and enrichments from ZoomInfo.
 </details>
 
 ## Documentation & Resources
