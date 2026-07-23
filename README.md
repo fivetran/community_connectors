@@ -72,6 +72,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[redshift/simple_redshift_connector](https://github.com/fivetran/community_connectors/tree/main/redshift/simple_redshift_connector)** - Sync records from Redshift
 - **[redshift/large_data_volume](https://github.com/fivetran/community_connectors/tree/main/redshift/large_data_volume)** - Sync large data volumes from Redshift
 - **[redshift/using_unload](https://github.com/fivetran/community_connectors/tree/main/redshift/using_unload)** - Sync data from Redshift using UNLOAD to S3
+- **[delta_sharing](https://github.com/fivetran/community_connectors/tree/main/delta_sharing)** - Connect and sync data from Delta Sharing: An Open Protocol for Secure Data Sharing
 
 ### Message Queues & Streaming
 

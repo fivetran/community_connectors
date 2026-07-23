@@ -1,0 +1,2 @@
+delta-sharing
+pyarrow
