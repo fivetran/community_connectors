@@ -1,27 +1,31 @@
 """
 Delta Sharing connector for Fivetran.
-
 Single connection, all tables in one destination schema.
-
 Destination layout:
   Catalog tables  : shares, schemas, tables
   Data tables     : {schema}__{table}  (e.g. customers__account)
-
 Uses the delta_sharing Python library to handle DeletionVectors and other
 advanced Delta table features unsupported by the raw parquet query API.
-
 See: https://github.com/delta-io/delta-sharing/blob/main/PROTOCOL.md
+
+See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
+# Import standard libraries
 import json
 import os
 import tempfile
 
+# Import libraries for Delta Sharing and HTTP requests
 import delta_sharing
 import requests
 
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
 CHECKPOINT_INTERVAL = 1000
@@ -122,15 +126,20 @@ def _sync_catalog(client):
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
         # The second argument is a dictionary containing the record to be upserted.
-
         op.upsert(table="shares", data={"name": share.name})
 
         for schema_obj in client.list_schemas(share):
             if schema_obj.name not in seen_schemas:
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert("schemas", {"name": schema_obj.name})
                 seen_schemas.add(schema_obj.name)
 
                 for tbl in client.list_tables(schema_obj):
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
                     op.upsert(
                         "tables",
                         {
@@ -270,9 +279,23 @@ def update(configuration: dict, state: dict):
     log.info("Sync complete")
 
 
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
+
+    # Test the connector locally
     connector.debug(configuration=configuration)
