@@ -51,8 +51,7 @@ fivetran init --template sharepoint_multi_site_connector
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/community_connectors/tree/main/examples) in the open-source [Community Connectors repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values.
-When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/community_connectors/tree/main/examples) in the open-source [Community Connectors repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -62,7 +61,7 @@ The connector uses the openpyxl package to parse Excel files (.xlsx, .xlsm).
 openpyxl==3.1.5
 ```
 
-> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`. 
 
 ## Authentication
 This connector authenticates with the Microsoft Graph API using the OAuth 2.0 client credentials flow. The tenant ID, client ID, and client secret from configuration.json are exchanged for a bearer access token from the Microsoft identity platform. The token is passed in the Authorization header of all Graph API requests.
