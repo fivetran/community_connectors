@@ -22,6 +22,7 @@ _token_expiry = 0.0
 # Auth
 # ---------------------------------------------------------------------------
 
+
 def get_access_token(configuration: dict) -> str:
     global _access_token, _token_expiry
 
@@ -51,6 +52,7 @@ def get_access_token(configuration: dict) -> str:
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
+
 
 def graph_get(configuration: dict, url: str, params: dict = None) -> dict:
     global _token_expiry
@@ -132,13 +134,17 @@ def paginate(configuration: dict, url: str, params: dict = None) -> Iterator[dic
 # Config + site helpers
 # ---------------------------------------------------------------------------
 
+
 def validate_configuration(configuration: dict) -> None:
     required = ["tenant_id", "client_id", "client_secret"]
     missing = [k for k in required if not configuration.get(k, "").strip()]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
-    if not configuration.get("site_ids", "").strip() and not configuration.get("site_urls", "").strip():
+    if (
+        not configuration.get("site_ids", "").strip()
+        and not configuration.get("site_urls", "").strip()
+    ):
         raise ValueError("Provide at least one of: site_ids or site_urls")
 
 
@@ -150,7 +156,9 @@ def resolve_sites(configuration: dict) -> List[Tuple[str, str]]:
         sites = []
         for site_id in [x.strip() for x in site_ids_raw.split(",") if x.strip()]:
             payload = graph_get(configuration, f"{GRAPH_BASE}/sites/{site_id}")
-            sites.append((payload["id"], payload.get("displayName") or payload.get("name") or site_id))
+            sites.append(
+                (payload["id"], payload.get("displayName") or payload.get("name") or site_id)
+            )
         return sites
 
     sites = []
@@ -223,7 +231,10 @@ def list_files_in_folder(
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
-def parse_csv_rows(content_bytes: bytes, delimiter: Optional[str]) -> Iterator[Tuple[Optional[str], int, Dict]]:
+
+def parse_csv_rows(
+    content_bytes: bytes, delimiter: Optional[str]
+) -> Iterator[Tuple[Optional[str], int, Dict]]:
     text = content_bytes.decode("utf-8-sig")
     stream = io.StringIO(text)
 
@@ -250,7 +261,9 @@ def parse_csv_rows(content_bytes: bytes, delimiter: Optional[str]) -> Iterator[T
         yield None, row_number, cleaned
 
 
-def parse_excel_rows(content_bytes: bytes, skip_rows: int) -> Iterator[Tuple[Optional[str], int, Dict]]:
+def parse_excel_rows(
+    content_bytes: bytes, skip_rows: int
+) -> Iterator[Tuple[Optional[str], int, Dict]]:
     workbook = openpyxl.load_workbook(
         io.BytesIO(content_bytes),
         read_only=True,
@@ -304,6 +317,7 @@ def parse_file_rows(
 # ---------------------------------------------------------------------------
 # Row sync helpers
 # ---------------------------------------------------------------------------
+
 
 def build_row_id(file_id: str, sheet_name: Optional[str], source_row_number: int) -> str:
     if sheet_name:
@@ -429,6 +443,7 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
 # Schema
 # ---------------------------------------------------------------------------
 
+
 def schema(configuration: dict):
     return [
         {
@@ -472,6 +487,7 @@ def schema(configuration: dict):
 # ---------------------------------------------------------------------------
 # Main update
 # ---------------------------------------------------------------------------
+
 
 def update(configuration: dict, state: dict):
     validate_configuration(configuration)
