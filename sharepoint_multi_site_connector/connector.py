@@ -215,10 +215,10 @@ def validate_configuration(configuration: dict) -> None:
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
-    if (
-        not configuration.get("site_ids", "").strip()
-        and not configuration.get("site_urls", "").strip()
-    ):
+    not_site_ids = not configuration.get("site_ids", "").strip()
+    not_site_urls = not configuration.get("site_urls", "").strip()
+
+    if not_site_ids and not_site_urls:
         raise ValueError("Provide at least one of: site_ids or site_urls")
 
 
