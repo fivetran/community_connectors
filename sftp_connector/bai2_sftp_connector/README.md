@@ -2,7 +2,6 @@
 
 Fivetran custom connector that fetches BAI2-format cash management files from an SFTP server and loads all transactions into a single `bai2_transactions` table in your destination.
 
----
 
 ## Connector overview
 
@@ -17,7 +16,6 @@ This connector:
 - Checkpoints after each file so a mid-run failure does not reprocess completed files
 - Tracks any file-level failures in state for operational visibility
 
----
 
 ## Requirements
 
@@ -27,7 +25,6 @@ This connector:
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
   - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 
----
 
 ## Getting started
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
@@ -42,7 +39,6 @@ fivetran init --template sftp_connector/bai2_sftp_connector
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
----
 
 ## Features
 
@@ -55,7 +51,6 @@ fivetran init --template sftp_connector/bai2_sftp_connector
 - Exponential backoff with jitter on SFTP connection retries (up to 5 attempts, delays 5 s → ~10 s → ~20 s → ~40 s)
 - Optional test mode to limit each sync to 3 files for initial validation
 
----
 
 ## BAI2 file structure
 
@@ -75,7 +70,6 @@ A BAI2 file is comma-delimited with a hierarchical record structure. Each record
 
 Records 49, 98, and 99 (trailers) contain control totals only and are not loaded into the destination.
 
----
 
 ## Configuration file
 
@@ -104,7 +98,6 @@ Example `configuration.json`:
 
 > Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
----
 
 ## Requirements file
 
@@ -116,13 +109,10 @@ paramiko==3.5.1
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
----
 
 ## Authentication
 
 This connector uses password authentication over SFTP. Provide `sftp_host`, `sftp_username`, and `sftp_password` in `configuration.json`. For production deployments, store credentials in Fivetran's encrypted secrets store rather than in `configuration.json`.
-
----
 
 ## Connection reliability
 
@@ -132,7 +122,6 @@ The connector is built for production SFTP environments with several reliability
 - SFTP operation timeout – after the SFTP session is opened, all file operations (directory listing, file reads) are subject to a 60-second channel timeout.
 - Exponential backoff with jitter – connection failures are retried up to 5 times. Delays increase exponentially (5 s → ~10 s → ~20 s → ~40 s) with proportional jitter (±30%) capped at 60 seconds, preventing thundering-herd behaviour when multiple instances retry simultaneously.
 
----
 
 ## Data handling
 
@@ -142,14 +131,12 @@ The connector is built for production SFTP environments with several reliability
 - Checkpoint per file – state is saved after each file is fully processed. If a sync is interrupted, already-completed files are not reprocessed on the next run.
 - Row-level error handling – if an individual record fails to parse, a warning is logged and that row is skipped. The rest of the file continues processing. A summary log line at the end of each file reports how many transactions were parsed and how many records were skipped.
 
----
 
 ## Error handling
 
 - File-level errors – if an entire file fails (SFTP read error, unrecoverable parse failure), the failure is recorded in `state["failed_files"]` with the error type and message, a checkpoint is saved, and the connector moves on to the next file. The failed file is not added to `processed_files` and will be retried on the next sync.
 - Connection errors – SFTP connection failures are retried up to 5 times with exponential backoff before raising a `RuntimeError`. See [Connection reliability](#connection-reliability) for details.
 
----
 
 ## Tables created
 
@@ -226,7 +213,6 @@ Balance columns are named `balance_{type_code}` and appear dynamically based on 
 
 Any additional type codes reported by the bank appear as new columns automatically on first sync. Amounts are in currency units (e.g. `209212.42`). A value of `0.0` means the bank reported a zero balance; `NULL` means the type code was not reported for that account.
 
----
 
 ## State management
 
@@ -240,7 +226,6 @@ The connector persists the following values in Fivetran state between syncs:
 
 To reprocess a failed file after resolving the underlying issue, navigate to your connector in the Fivetran dashboard, then go to **Settings** → **Reset State**. Alternatively, remove the filename from `failed_files` in state — it was never added to `processed_files`, so it will be picked up automatically on the next sync.
 
----
 
 ## Test mode
 
@@ -266,7 +251,6 @@ Example `configuration.json` for test mode:
 }
 ```
 
----
 
 ## Common BAI2 type codes
 
@@ -287,7 +271,6 @@ Example `configuration.json` for test mode:
 | 575 | ZBA Debit Transfer | D |
 | 698 | Account Analysis / Service Charge | D |
 
----
 
 ## Troubleshooting
 
@@ -308,21 +291,6 @@ Example `configuration.json` for test mode:
 | `test_mode must be 'true' or 'false'` | `test_mode` value is not a recognised string | Set `test_mode` to `"true"` or `"false"` |
 | Only 3 files processed despite more being available | `test_mode` is `"true"` | Set `test_mode` to `"false"` or remove the key once validation is complete |
 
----
-
-## Deployment
-
-To deploy the connector to Fivetran after local testing:
-
-```bash
-fivetran connector deploy \
-  --connector-id <your-connector-id> \
-  --destination <your-destination-group-name>
-```
-
-Note: The API key must be base64-encoded as `key:secret`. Use the Fivetran group name (not the group ID) for `--destination`.
-
----
 
 ## Additional considerations
 

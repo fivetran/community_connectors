@@ -57,7 +57,6 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-# ── Constants ──────────────────────────────────────────────────────────────────
 
 __SFTP_MAX_RETRIES = 5
 __SFTP_RETRY_DELAY_SEC = 5
@@ -97,9 +96,6 @@ __ACH_PATTERNS = {
 }
 
 
-# ── Configuration validation ───────────────────────────────────────────────────
-
-
 def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
@@ -132,9 +128,6 @@ def validate_configuration(configuration: dict):
             re.compile(file_pattern)
         except re.error as exc:
             raise ValueError(f"Invalid sftp_file_pattern regex: {exc}")
-
-
-# ── Parsing helpers ────────────────────────────────────────────────────────────
 
 
 def parse_bai2_date(yymmdd: str):
@@ -238,9 +231,6 @@ def split_record_line(line: str):
     if content.endswith("/"):
         content = content[:-1].rstrip()
     return code, content
-
-
-# ── Record parsers ─────────────────────────────────────────────────────────────
 
 
 def parse_record_01(content: str):
@@ -393,9 +383,6 @@ def parse_record_16(
     return row
 
 
-# ── File processor ─────────────────────────────────────────────────────────────
-
-
 def process_bai2_file(content: str, filename: str, next_btid: int):
     """
     Parse a complete BAI2 file content string into transaction rows.
@@ -473,9 +460,6 @@ def process_bai2_file(content: str, filename: str, next_btid: int):
     return rows, next_btid
 
 
-# ── SFTP connection ────────────────────────────────────────────────────────────
-
-
 def connect_sftp(configuration: dict):
     """
     Open an SFTP connection using password authentication.
@@ -524,9 +508,6 @@ def connect_sftp(configuration: dict):
         f"Failed to connect to SFTP at {host}:{port} "
         f"after {__SFTP_MAX_RETRIES} attempts: {last_exc}"
     )
-
-
-# ── SDK entry points ───────────────────────────────────────────────────────────
 
 
 def schema(configuration: dict):
