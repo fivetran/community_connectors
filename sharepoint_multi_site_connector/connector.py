@@ -1,18 +1,30 @@
+# This is an example for how to work with the fivetran_connector_sdk module.
+# It defines a connector that syncs CSV and Excel file data from multiple SharePoint Online sites
+# using the Microsoft Graph API with incremental processing and deletion handling.
+# See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
+# and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
+
 import csv
 import io
 import json
 import time
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 
+# Used to parse Excel files (.xlsx, .xlsm)
 import openpyxl
 import requests
+
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 from fivetran_connector_sdk import Logging as log
 from fivetran_connector_sdk import Operations as op
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xlsm"}
+
+# Maximum file size to download (50 MB); larger files are skipped with a warning.
+MAX_FILE_BYTES = 50 * 1024 * 1024
 
 _access_token = ""
 _token_expiry = 0.0
@@ -88,6 +100,10 @@ def graph_get(configuration: dict, url: str, params: dict = None) -> dict:
 
 
 def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
+    """
+    Stream-download a file from SharePoint via Microsoft Graph.
+    Enforces a MAX_FILE_BYTES size limit to avoid unbounded memory usage.
+    """
     global _token_expiry
     url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
 
@@ -98,6 +114,7 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
             headers={"Authorization": f"Bearer {token}"},
             timeout=120,
             allow_redirects=True,
+            stream=True,
         )
 
         if response.status_code == 401:
@@ -116,7 +133,18 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
             continue
 
         response.raise_for_status()
-        return response.content
+
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=65536):
+            total += len(chunk)
+            if total > MAX_FILE_BYTES:
+                raise RuntimeError(
+                    f"File size exceeds {MAX_FILE_BYTES // (1024 * 1024)} MB limit; "
+                    f"drive_id={drive_id}, item_id={item_id}"
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     raise RuntimeError(f"Failed after retries: download drive_id={drive_id}, item_id={item_id}")
 
@@ -136,6 +164,13 @@ def paginate(configuration: dict, url: str, params: dict = None) -> Iterator[dic
 
 
 def validate_configuration(configuration: dict) -> None:
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Raises:
+        ValueError: if any required configuration parameter is missing or site targeting is absent.
+    """
     required = ["tenant_id", "client_id", "client_secret"]
     missing = [k for k in required if not configuration.get(k, "").strip()]
     if missing:
@@ -325,6 +360,11 @@ def build_row_id(file_id: str, sheet_name: Optional[str], source_row_number: int
     return f"{file_id}::{source_row_number}"
 
 
+def _sheet_key(sheet_name: Optional[str]) -> str:
+    """Return a JSON-safe dict key for a sheet name (None for CSV files)."""
+    return "__csv__" if sheet_name is None else sheet_name
+
+
 def flatten_file_record(item: dict, drive_id: str, site_id: str, site_name: str) -> dict:
     parent_ref = item.get("parentReference", {})
     return {
@@ -344,11 +384,6 @@ def flatten_file_record(item: dict, drive_id: str, site_id: str, site_name: str)
     }
 
 
-def emit_delete_rows(previous_row_ids: Iterable[str]):
-    for row_id in previous_row_ids:
-        yield op.delete("file_rows", {"row_id": row_id})
-
-
 def sync_one_file(
     configuration: dict,
     state: dict,
@@ -357,32 +392,44 @@ def sync_one_file(
     drive_id: str,
     item: dict,
 ):
+    """
+    Sync a single file: upsert metadata and row data, then delete orphaned rows.
+    State tracks the maximum row number per sheet rather than the full row-ID list
+    to keep state size bounded regardless of file size.
+    """
     file_states = state.setdefault("file_states", {})
     state_key = f"{site_id}:{item['id']}"
     previous = file_states.get(state_key, {})
 
     last_modified = item.get("lastModifiedDateTime", "")
     if previous.get("last_modified") == last_modified:
-        log.fine(f"Skipping unchanged file: {item.get('name')}")
+        log.info(f"Skipping unchanged file: {item.get('name')}")
         return
 
-    yield op.upsert("files", flatten_file_record(item, drive_id, site_id, site_name))
+    # The 'upsert' operation is used to insert or update file metadata in the destination table.
+    # The first argument is the name of the destination table.
+    # The second argument is a dictionary containing the record to be upserted.
+    op.upsert("files", flatten_file_record(item, drive_id, site_id, site_name))
 
     content_bytes = graph_download(configuration, drive_id, item["id"])
     delimiter = configuration.get("delimiter", "").strip() or None
     skip_rows = int(configuration.get("skip_rows", "0") or "0")
 
-    new_row_ids: List[str] = []
+    new_sheet_row_counts: Dict[str, int] = {}
     row_count = 0
 
     for sheet_name, source_row_number, row_data in parse_file_rows(
         item["name"], content_bytes, delimiter, skip_rows
     ):
-        row_id = build_row_id(item["id"], sheet_name, source_row_number)
-        new_row_ids.append(row_id)
+        sk = _sheet_key(sheet_name)
+        new_sheet_row_counts[sk] = source_row_number
         row_count += 1
 
-        yield op.upsert(
+        row_id = build_row_id(item["id"], sheet_name, source_row_number)
+
+        # The 'upsert' operation is used to insert or update row-level data in the destination table.
+        # Each row of a parsed file becomes an individual record keyed by row_id.
+        op.upsert(
             "file_rows",
             {
                 "row_id": row_id,
@@ -398,15 +445,19 @@ def sync_one_file(
             },
         )
 
-    previous_row_ids = set(previous.get("row_ids", []))
-    current_row_ids = set(new_row_ids)
-
-    for row_id in previous_row_ids - current_row_ids:
-        yield op.delete("file_rows", {"row_id": row_id})
+    # Delete rows beyond the new maximum for sheets that shrank, and all rows for removed sheets.
+    prev_sheet_row_counts = previous.get("sheet_row_counts", {})
+    for sk, prev_max in prev_sheet_row_counts.items():
+        sheet_name = None if sk == "__csv__" else sk
+        new_max = new_sheet_row_counts.get(sk, 0)
+        for row_num in range(new_max + 1, prev_max + 1):
+            row_id = build_row_id(item["id"], sheet_name, row_num)
+            # The 'delete' operation removes a row that no longer exists in the source file.
+            op.delete("file_rows", {"row_id": row_id})
 
     file_states[state_key] = {
         "last_modified": last_modified,
-        "row_ids": new_row_ids,
+        "sheet_row_counts": new_sheet_row_counts,
         "file_id": item["id"],
         "drive_id": drive_id,
     }
@@ -415,6 +466,10 @@ def sync_one_file(
 
 
 def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: dict):
+    """
+    For any file previously tracked in state that is no longer present in the site,
+    delete its rows and metadata record from the destination.
+    """
     file_states = state.setdefault("file_states", {})
     delete_keys = []
 
@@ -428,9 +483,16 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
 
     for state_key in delete_keys:
         file_state = file_states.pop(state_key)
-        yield from emit_delete_rows(file_state.get("row_ids", []))
 
-        yield op.delete(
+        for sk, max_row in file_state.get("sheet_row_counts", {}).items():
+            sheet_name = None if sk == "__csv__" else sk
+            for row_num in range(1, max_row + 1):
+                row_id = build_row_id(file_state["file_id"], sheet_name, row_num)
+                # The 'delete' operation removes a row belonging to a file deleted from SharePoint.
+                op.delete("file_rows", {"row_id": row_id})
+
+        # The 'delete' operation removes the file metadata record for the deleted file.
+        op.delete(
             "files",
             {
                 "file_id": file_state["file_id"],
@@ -445,6 +507,13 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
 
 
 def schema(configuration: dict):
+    """
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    """
     return [
         {
             "table": "files",
@@ -490,6 +559,17 @@ def schema(configuration: dict):
 
 
 def update(configuration: dict, state: dict):
+    """
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function:
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: dictionary containing any secrets or payloads you configure when deploying the connector.
+        state: a dictionary containing the state checkpointed during the prior sync.
+               The state dictionary is empty for the first sync or for any full re-sync.
+    """
+    log.warning("Example: Source Example - SharePoint Multi-Site Connector")
+
     validate_configuration(configuration)
 
     sites = resolve_sites(configuration)
@@ -519,7 +599,7 @@ def update(configuration: dict, state: dict):
 
         for item in files:
             current_file_ids.add(item["id"])
-            yield from sync_one_file(
+            sync_one_file(
                 configuration=configuration,
                 state=state,
                 site_id=site_id,
@@ -528,16 +608,28 @@ def update(configuration: dict, state: dict):
                 item=item,
             )
 
-        yield from handle_deleted_files_for_site(site_id, current_file_ids, state)
+        handle_deleted_files_for_site(site_id, current_file_ids, state)
 
-        yield op.checkpoint(state=state)
+        # Save the progress by checkpointing the state after each site. This is important for ensuring
+        # that the sync process can resume from the correct position in case of interruptions.
+        op.checkpoint(state=state)
         log.info(f"Completed site {index}/{len(sites)}: {site_name}")
 
     log.info("Sync complete")
 
 
+# This creates the connector object that will use the update function defined in this connector.py file.
 connector = Connector(update=update, schema=schema)
 
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development.
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
     with open("configuration.json", "r") as config_file:
         configuration = json.load(config_file)

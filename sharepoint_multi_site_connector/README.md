@@ -44,10 +44,10 @@ fivetran init --template sharepoint_multi_site_connector
     "site_urls": "<YOUR_SITE_URLS_COMMA_SEPARATED>",
     "site_ids": "<YOUR_SITE_IDS_OPTIONAL_COMMA_SEPARATED>",
     "folder_path": "<OPTIONAL_FOLDER_PATH_E.G._Documents/Reports>",
-    "sync_subfolders": "<OPTIONAL_BOOLEAN_TRUE_OR_FALSE>",
+    "sync_subfolders": "<OPTIONAL_SYNC_SUBFOLDERS_TRUE_OR_FALSE>",
     "file_pattern": "<OPTIONAL_FILENAME_SUBSTRING_FILTER>",
     "delimiter": "<OPTIONAL_CSV_DELIMITER_E.G._COMMA_OR_SEMICOLON>",
-    "skip_rows": "<OPTIONAL_NUMBER_OF_ROWS_TO_SKIP_AT_START_OF_FILE>"
+    "skip_rows": "<OPTIONAL_NUMBER_OF_HEADER_ROWS_TO_SKIP>"
 }
 ```
 
@@ -59,7 +59,7 @@ When adding the connector to your production repository, ensure that the `config
 The connector uses the openpyxl package to parse Excel files (.xlsx, .xlsm).
 
 ```
-openpyxl
+openpyxl==3.1.5
 ```
 
 > Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
@@ -86,18 +86,47 @@ The connector iterates over each SharePoint site URL in the configuration and us
 
 For each file, the connector compares the lastModifiedDateTime returned by the API against the timestamp stored in state to determine whether the file needs to be processed.
 
-Files that are new or modified since the last sync are downloaded and parsed. CSV files are read row by row and Excel files (.xlsx, .xlsm) are parsed using openpyxl. Each data row is written as a record to the file_rows table, and file metadata is written to the files table. File types that are not supported, such as PDF or images, are skipped during discovery.
+Files that are new or modified since the last sync are downloaded as a stream and parsed. CSV files are read row by row and Excel files (.xlsx, .xlsm) are parsed using openpyxl. Each data row is written as a record to the file_rows table, and file metadata is written to the files table. File types that are not supported, such as PDF or images, are skipped during discovery.
 
 ## Error handling
-HTTP errors from the Microsoft Graph API, including authentication failures and permission errors, are raised immediately to prevent silent data loss. Transient network errors and rate-limit responses (HTTP 429) are retried using exponential backoff. Files that cannot be parsed due to unsupported content structure or corruption are logged and skipped without interrupting the overall sync.
+HTTP errors from the Microsoft Graph API, including authentication failures and permission errors, are raised immediately to prevent silent data loss. Rate-limit responses (HTTP 429) are retried after the delay specified in the `Retry-After` response header. Service unavailability errors (HTTP 503/504) are retried after a fixed 30-second delay. Up to 4 retry attempts are made before raising a RuntimeError. Files that exceed the 50 MB size limit are skipped with a warning.
 
 ## Tables created
 
 ### files
-Metadata about each file.
+Metadata about each file discovered in SharePoint.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| file_id | STRING | Unique identifier for the file (primary key) |
+| drive_id | STRING | Drive identifier (primary key) |
+| site_id | STRING | SharePoint site identifier |
+| site_name | STRING | Display name of the SharePoint site |
+| file_name | STRING | Name of the file including extension |
+| web_url | STRING | URL to access the file in SharePoint |
+| size_bytes | LONG | File size in bytes |
+| mime_type | STRING | MIME type of the file |
+| parent_id | STRING | Identifier of the parent folder |
+| parent_path | STRING | Path of the parent folder |
+| created_date_time | UTC_DATETIME | File creation timestamp |
+| last_modified_date_time | UTC_DATETIME | Last modification timestamp |
+| etag | STRING | ETag for change detection |
 
 ### file_rows
-Row-level data extracted from files.
+Row-level data extracted from each CSV or Excel file.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| row_id | STRING | Unique row identifier (primary key) |
+| file_id | STRING | Identifier of the source file |
+| drive_id | STRING | Drive identifier |
+| site_id | STRING | SharePoint site identifier |
+| site_name | STRING | Display name of the SharePoint site |
+| file_name | STRING | Name of the source file |
+| sheet_name | STRING | Sheet name for Excel files; null for CSV files |
+| source_row_number | LONG | 1-based row number within the file or sheet |
+| data | JSON | Key-value pairs of the parsed row |
+| last_modified_date_time | UTC_DATETIME | Last modification timestamp of the source file |
 
 ## Additional considerations
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
