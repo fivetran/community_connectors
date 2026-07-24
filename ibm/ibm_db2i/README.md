@@ -122,11 +122,9 @@ Schema definition from connector:
 ## Additional files
 
 The connector uses the `drivers/installation.sh` bash script that installs the IBM i Access ODBC Driver (`ibm-iaccess`) and unixODBC on Debian/Ubuntu systems. Run this script on any host where the connector will execute before running `fivetran debug` or deploying.
-<<<<<<< HEAD
-=======
 
 The `ibm-iaccess_1.1.0.29-1.0_amd64.deb` package is bundled in the connector directory and is referenced by the installation script. It is included because the target environment cannot reach IBM's download servers directly.
->>>>>>> e6d0dfc (docs(ibm_db2i): address PR review comments on README and root README)
+
 
 ## Additional considerations
 
