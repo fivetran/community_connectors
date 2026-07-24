@@ -31,6 +31,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[apache_hive/using_pyhive](https://github.com/fivetran/community_connectors/tree/main/apache_hive/using_pyhive)** - Sync data from Apache Hive using PyHive
 - **[apache_hive/using_sqlalchemy](https://github.com/fivetran/community_connectors/tree/main/apache_hive/using_sqlalchemy)** - Sync data from Apache Hive using SQLAlchemy with PyHive
 - **[arango_db](https://github.com/fivetran/community_connectors/tree/main/arango_db)** - Sync document and edge collections from ArangoDB multi-model database
+- **[aveva_pi](https://github.com/fivetran/community_connectors/tree/main/aveva_pi)** - Sync asset hierarchy and time-series data from AVEVA PI (formerly OSIsoft PI) via PI Web API
 - **[cassandra](https://github.com/fivetran/community_connectors/tree/main/cassandra)** - Connect and sync data from Cassandra database
 - **[clickhouse](https://github.com/fivetran/community_connectors/tree/main/clickhouse)** - Sync data from ClickHouse database
 - **[couchbase_capella](https://github.com/fivetran/community_connectors/tree/main/couchbase_capella)** - Sync data from Couchbase Capella
