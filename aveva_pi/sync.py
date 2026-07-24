@@ -140,6 +140,9 @@ def sync_elements(session: requests.Session, base: str, db_web_id: str, state: d
         f"{base}/assetdatabases/{db_web_id}/elements",
         params={"searchFullHierarchy": "true", "maxCount": __MAX_COUNT},
     ):
+        if not item.get("WebId"):
+            log.warning("  Skipping element with missing WebId")
+            continue
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
         # The second argument is a dictionary containing the record to be upserted.
@@ -330,6 +333,9 @@ def sync_event_frames(
                 "maxCount": __MAX_COUNT,
             },
         ):
+            if not item.get("WebId"):
+                log.warning("  Skipping event frame with missing WebId")
+                continue
             # The 'upsert' operation is used to insert or update data in the destination table.
             # The first argument is the name of the destination table.
             # The second argument is a dictionary containing the record to be upserted.
