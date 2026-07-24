@@ -167,6 +167,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[veeva_vault/basic_auth](https://github.com/fivetran/community_connectors/tree/main/veeva_vault/basic_auth)** - Authenticate to Veeva Vault with basic auth
 - **[veeva_vault/session_id_auth](https://github.com/fivetran/community_connectors/tree/main/veeva_vault/session_id_auth)** - Authenticate to Veeva Vault with session ID
 - **[vercel](https://github.com/fivetran/community_connectors/tree/main/vercel)** - Sync deployment data from Vercel REST API
+- **[wms_oracle](https://github.com/fivetran/community_connectors/tree/main/wms_oracle)** - Sync warehouse management data from Oracle WMS REST API with incremental sync, historical backfill, and pre-cursor drift detection across 26 entities.
 - **[weights_and_biases](https://github.com/fivetran/community_connectors/tree/main/weights_and_biases)** - This example shows how to sync machine learning experiment tracking data from Weights & Biases (W&B), including projects, runs (experiments), and artifacts (models and datasets), using the Fivetran Connector SDK The connector uses the W&B Python SDK to retrieve data and implements robust error handling. You need to provide your W&B API key and entity name for this example to work.
 - **[zigpoll](https://github.com/fivetran/community_connectors/tree/main/zigpoll)** - Sync polling data from Zigpoll
 

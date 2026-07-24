@@ -1,0 +1,9 @@
+{
+  "base_url": "<YOUR_ORACLE_WMS_BASE_URL>",
+  "username": "<YOUR_ORACLE_WMS_USERNAME>",
+  "password": "<YOUR_ORACLE_WMS_PASSWORD>",
+  "page_size": "<RECORDS_PER_PAGE_DEFAULT_1000>",
+  "max_pages": "<MAX_PAGES_PER_ENTITY_PER_SYNC_DEFAULT_100>",
+  "lookback_check_hours": "<LOOKBACK_CHECK_HOURS_DEFAULT_24>",
+  "test_entities": "<COMMA_SEPARATED_ENTITY_LIST_OR_EMPTY>"
+}
