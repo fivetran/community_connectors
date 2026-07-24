@@ -1,0 +1,1 @@
+requests # For making HTTP requests to the PI Web API REST interface
