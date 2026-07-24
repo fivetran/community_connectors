@@ -106,58 +106,30 @@ def schema(configuration: dict):
         configuration: a dictionary that holds the configuration settings for the connector.
     """
     # Four tables mapping directly to PI AF object types exposed by PI Web API.
+    # Only non-inferable types are declared explicitly; STRING columns are omitted
+    # so the SDK core can infer them automatically from the upserted data.
     return [
         {
             "table": "elements",
             "primary_key": ["web_id"],
-            "columns": {
-                "web_id": "STRING",
-                "name": "STRING",
-                "description": "STRING",
-                "path": "STRING",
-                "template_name": "STRING",
-                "category_names": "STRING",
-            },
         },
         {
             "table": "attributes",
             "primary_key": ["web_id"],
-            "columns": {
-                "web_id": "STRING",
-                "element_web_id": "STRING",
-                "name": "STRING",
-                "description": "STRING",
-                "path": "STRING",
-                "type": "STRING",
-                "type_qualifier": "STRING",
-                "data_reference": "STRING",
-                "data_reference_path": "STRING",
-                "category_names": "STRING",
-            },
         },
         {
             "table": "event_frames",
             "primary_key": ["web_id"],
             "columns": {
-                "web_id": "STRING",
-                "name": "STRING",
-                "description": "STRING",
                 "start_time": "UTC_DATETIME",
                 "end_time": "UTC_DATETIME",
-                "template_name": "STRING",
-                "category_names": "STRING",
-                "database_web_id": "STRING",
             },
         },
         {
             "table": "recorded_values",
             "primary_key": ["_fivetran_id"],
             "columns": {
-                "_fivetran_id": "STRING",
-                "attribute_web_id": "STRING",
                 "timestamp": "UTC_DATETIME",
-                "value": "STRING",
-                "quality": "STRING",
                 "good": "BOOLEAN",
             },
         },
