@@ -154,6 +154,8 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[sendcloud](https://github.com/fivetran/community_connectors/tree/main/sendcloud)** - Sync shipment data from Sendcloud API
 - **[sensor_tower](https://github.com/fivetran/community_connectors/tree/main/sensor_tower)** - Sync mobile app market intelligence from Sensor Tower
 - **[sensource](https://github.com/fivetran/community_connectors/tree/main/sensource)** - Sync traffic and occupancy metrics from SenSource
+- **[sftp_connector/bai2_sftp_connector](https://github.com/fivetran/community_connectors/tree/main/sftp_connector/bai2_sftp_connector)** - Fetch BAI2-format cash management files from an SFTP server and load all transactions into a single destination table with incremental sync and structured ACH field parsing
+- **[sftp_connector/fixed_width_sftp_connector](https://github.com/fivetran/community_connectors/tree/main/sftp_connector/fixed_width_sftp_connector)** - Read 12 fixed-width files from 3 SFTP subdirectories (ELAN, CUP, LPL/DFM) into 12 destination tables with soft-delete purge logic and implied-decimal parsing
 - **[similarweb](https://github.com/fivetran/community_connectors/tree/main/similarweb)** - Sync website performance metrics from SimilarWeb
 - **[smartsheets](https://github.com/fivetran/community_connectors/tree/main/smartsheets)** - Sync sheets and reports from Smartsheets
 - **[snipeitapp](https://github.com/fivetran/community_connectors/tree/main/snipeitapp)** - Sync IT asset management data from Snipe-IT
