@@ -174,7 +174,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
-    log.warning("Example: AVEVA_PI : AVEVA_PI_WEB_API")
+    log.warning("Example: Connectors Example : Aveva PI")
 
     # Validate the configuration to ensure it contains all required values.
     validate_configuration(configuration=configuration)
@@ -206,10 +206,10 @@ def update(configuration: dict, state: dict):
     if do_recorded:
         sync_recorded_values(session, base, pi_point_web_ids, state, start_date)
     else:
-        log.info(
+        log.warning(
             "Skipping recorded_values sync. "
             'Set sync_recorded_values = "true" in configuration to enable. '
-            "Warning: this can generate very large data volumes on large PI deployments."
+            "This can generate very large data volumes on large PI deployments."
         )
 
 
