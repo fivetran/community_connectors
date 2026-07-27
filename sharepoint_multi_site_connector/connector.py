@@ -400,9 +400,11 @@ def parse_excel_rows(
     Parse Excel content from bytes, yielding each row as a dictionary with cleaned keys.
     Args:
         content_bytes: The Excel content in bytes to be parsed.
-        skip_rows: An integer specifying the number of initial rows to skip before reading the header row.
+        skip_rows: The number of initial rows to skip before reading the header row.
     Returns:
-        An iterator yielding tuples of (sheet_name, row_number, row_data), where sheet_name is the name of the active worksheet,
+        An iterator yielding tuples of (sheet_name, row_number, row_data), where sheet_name is the worksheet name,
+        row_number is the 1-based row number within the sheet (excluding skipped rows and header),
+        and row_data is a dictionary mapping header values to cell values for that row.
     """
     workbook = openpyxl.load_workbook(
         io.BytesIO(content_bytes),
