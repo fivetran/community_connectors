@@ -64,7 +64,7 @@ The connector requires the following configuration parameters in the `configurat
 - `logging_level` (optional) - Set to `standard` for summary logging or `debug` for verbose, detailed logging. Defaults to `debug`.
 - `cwe_ids` (optional) - A comma-separated string of CWE IDs to filter the vulnerabilities. Defaults to a predefined list of OWASP-related CWEs.
 
-> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

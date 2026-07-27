@@ -52,7 +52,7 @@ Configuration parameters:
 - `api_token` (required): Your Iterate API access token.
 - `start_date` (optional): UTC datetime in ISO 8601 format with 'Z' suffix (e.g., "2023-01-01T00:00:00Z"). If not provided, sync starts from EPOCH time (1970-01-01T00:00:00Z) to capture all historical data.
 
-> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

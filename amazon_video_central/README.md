@@ -63,7 +63,7 @@ Configuration parameters:
 - `initial_sync_start` (required) – Start date for the initial sync in ISO 8601 format (e.g., `2020-01-01T00:00:00.000Z`).
 - `fernet_key` (required) – Base64-encoded Fernet key used to encrypt the refresh token in state.
 
-> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

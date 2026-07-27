@@ -54,7 +54,7 @@ The connector requires API key authentication for the Customer Thermometer API. 
 - `api_key`: (Required) Your Customer Thermometer API key
 - `from_date`: (Optional) Start date for initial data retrieval in YYYY-MM-DD format. If not provided, incremental sync will start from EPOCH (1970-01-01) for the initial sync, then use state-based incremental sync for subsequent runs.
 
-> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

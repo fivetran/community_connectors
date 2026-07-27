@@ -59,7 +59,7 @@ Configuration parameters:
 - `dgraph_url` (required) - The base URL of your Dgraph instance (e.g., `http://localhost:8080` or `https://your-instance.dgraph.io`). Must start with `http://` or `https://`.
 - `api_key` (required) - Authentication token for accessing the Dgraph API.
 
-> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
