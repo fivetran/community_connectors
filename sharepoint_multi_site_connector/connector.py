@@ -687,9 +687,9 @@ def update(configuration: dict, state: dict):
     validate_configuration(configuration)
 
     sites = resolve_sites(configuration)
-    folder_path = configuration.get("folder_path", "").strip()
-    recurse = configuration.get("sync_subfolders", "false").lower() == "true"
-    file_pattern = configuration.get("file_pattern", "").strip() or None
+    folder_path = str(configuration.get("folder_path", "")).strip()
+    recurse = str(configuration.get("sync_subfolders", "false")).strip().lower() == "true"
+    file_pattern = str(configuration.get("file_pattern", "")).strip() or None
 
     log.info(f"Starting sync for {len(sites)} site(s)")
 
