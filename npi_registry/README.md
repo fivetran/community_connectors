@@ -51,7 +51,7 @@ The `configuration.json` file requires a single parameter: the complete API URL 
 
 - `api_url` (required): Complete API URL generated from the NPPES API demo page. The URL should include your search criteria and the `limit` parameter. The API supports a maximum limit of 200 results per request.
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ### How to generate your API URL
 

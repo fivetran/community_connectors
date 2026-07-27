@@ -53,7 +53,7 @@ The connector requires the following configuration parameters:
 - `base_url` (required): The base URL of your n8n instance (e.g., `https://your-n8n-instance.com` for cloud or `http://localhost:5678` for self-hosted)
 - `api_key` (required): Your n8n API key with read permissions for workflows and executions
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

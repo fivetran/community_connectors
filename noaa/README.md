@@ -64,7 +64,7 @@ Full Configuration (with all optional parameters):
 - `alert_area` (optional): Two-letter US state code for filtering weather alerts (e.g., "IL", "CA"). Default behavior if omitted: fetches all active weather alerts across the United States.
 - `start_date` (optional): Date in YYYY-MM-DD format to start syncing observations from (e.g., "2025-01-01"). Default behavior if omitted: starts syncing from the current time (no historical backfill).
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 This connector uses only the pre-installed packages in the Fivetran environment and does not require any additional dependencies.

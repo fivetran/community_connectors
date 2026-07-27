@@ -49,7 +49,7 @@ The `configuration.json` file contains the parameters needed to connect to the O
 - `personal_access_token` (required): Your Oura Personal Access Token generated from the Oura developer portal
 - `lookback_days` (optional): Number of days to look back on the initial sync, defaults to 90
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
 
