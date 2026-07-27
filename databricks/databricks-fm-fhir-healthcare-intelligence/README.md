@@ -86,7 +86,7 @@ The `configuration.json` file contains the following parameters:
 | `condition_filter` | ICD-10 code prefix to filter patients, such as `E11` | No | None |
 | `databricks_timeout` | Databricks API timeout in seconds | No | `120` |
 
-> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
+> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
 When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication

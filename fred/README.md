@@ -53,7 +53,7 @@ fivetran init --template fred
 - `series_ids`: Comma-separated list of series IDs to sync (e.g., "GNPCA,UNRATE,CPIAUCSL")
 - `sync_start_date`: Optional start date for syncing observations in YYYY-MM-DD format (defaults to 2020-01-01)
 
-> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

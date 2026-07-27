@@ -52,7 +52,7 @@ The connector requires the following configuration parameters:
 - `api_token` (required): Your Snipe-IT Bearer token for API authentication with read permissions for all resources you want to sync
 - `base_url` (required): The base URL of your Snipe-IT instance (e.g., `https://your-snipeit-instance.com` for cloud or `http://localhost:8000` for self-hosted)
 
-> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

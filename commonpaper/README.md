@@ -53,7 +53,7 @@ Configuration parameters:
 - `api_key`: Your Common Paper API key
 - `initial_sync_timestamp`: ISO format timestamp for the initial sync (optional, defaults to current time)
 
-> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 

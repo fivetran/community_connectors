@@ -55,7 +55,7 @@ The connector requires the following configuration parameters:
 | `account_id` | string | Yes | Your Prefect Cloud account identifier. This can be found in your Prefect Cloud URL or account settings. |
 | `workspace_id` | string | Yes | Your Prefect Cloud workspace identifier. This specifies which workspace's data will be synced to your data warehouse. |
 
-> Note: When submitting connector code as a Community Connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
