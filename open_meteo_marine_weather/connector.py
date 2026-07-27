@@ -18,6 +18,9 @@ import time
 # For date manipulation and incremental sync cursor
 from datetime import datetime, timedelta, timezone
 
+# For DST-aware per-timestamp UTC conversion (IANA timezone database)
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 # For making HTTP requests to external APIs
 import requests
 
@@ -256,40 +259,47 @@ def fetch_data_with_retry(session, url, params=None):
     raise RuntimeError("Unexpected: exhausted retries without returning or raising")
 
 
-def _normalize_timestamp(ts, utc_offset_seconds=0):
-    """Normalize Open-Meteo timestamp to full ISO 8601 format with UTC timezone.
+def _normalize_timestamp(ts, tz_name="UTC"):
+    """Normalize an Open-Meteo timestamp to full ISO 8601 format in true UTC.
 
-    Open-Meteo returns timestamps like '2026-05-24T00:00' (no seconds, no tz offset).
-    The Fivetran SDK UTC_DATETIME type requires '%Y-%m-%dT%H:%M:%S%z' format.
-    If utc_offset_seconds is nonzero (e.g., for a non-UTC timezone config),
-    subtract it from the naive local timestamp to convert to true UTC.
+    Open-Meteo returns naive local timestamps like '2026-05-24T00:00' (no seconds,
+    no offset) expressed in the requested `timezone`. The Fivetran SDK UTC_DATETIME
+    type requires '%Y-%m-%dT%H:%M:%S%z'. Each timestamp is localized with
+    ZoneInfo(tz_name) and converted to UTC so the stored instant is correct.
+
+    ZoneInfo derives the offset per-timestamp, so a date range that crosses a DST
+    transition is handled correctly. A single API-returned utc_offset_seconds would
+    be wrong for every timestamp on the far side of the boundary (silent data
+    corruption in the destination).
 
     Args:
-        ts: The timestamp string from Open-Meteo API.
-        utc_offset_seconds: The UTC offset of the API response timezone in seconds
-                            (e.g., -25200 for America/Los_Angeles). Default 0 (UTC).
+        ts: The timestamp string from the Open-Meteo API.
+        tz_name: IANA timezone name from the API response metadata
+                 (e.g. 'America/Los_Angeles'). Default 'UTC'.
 
     Returns:
-        A normalized timestamp string with seconds and +00:00 timezone.
+        A normalized timestamp string with seconds and a +00:00 (UTC) offset.
     """
     if not ts:
         return ts
     # Add seconds if missing (format: 2026-05-24T00:00 -> 2026-05-24T00:00:00)
     if len(ts) == 16:  # YYYY-MM-DDTHH:MM
         ts = ts + ":00"
-    if utc_offset_seconds != 0 and len(ts) == 19:
-        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
-        dt = dt - timedelta(seconds=utc_offset_seconds)
-        ts = dt.strftime("%Y-%m-%dT%H:%M:%S")
-    # Add UTC timezone offset if missing
-    if "+" not in ts and "Z" not in ts and len(ts) == 19:
-        ts = ts + "+00:00"
+    # Already carries an explicit offset — leave it untouched.
+    if "+" in ts or "Z" in ts:
+        return ts
+    if len(ts) == 19:
+        try:
+            tz = ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            # Unknown zone name — fall back to treating the value as UTC.
+            tz = timezone.utc
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "+00:00"
     return ts
 
 
-def build_hourly_record(
-    location_id, timestamp, hourly_data, index, elevation, timezone, utc_offset_seconds=0
-):
+def build_hourly_record(location_id, timestamp, hourly_data, index, elevation, tz_name):
     """Build a single hourly marine weather record from API response arrays.
 
     Args:
@@ -298,15 +308,15 @@ def build_hourly_record(
         hourly_data: The hourly data dict from API response.
         index: The array index for this time step.
         elevation: The elevation in meters from the API response metadata.
-        timezone: The timezone string from the API response metadata.
-        utc_offset_seconds: UTC offset in seconds for the API response timezone.
+        tz_name: The IANA timezone name from the API response metadata; used to
+                 convert the naive local timestamp to true UTC (DST-aware).
 
     Returns:
         A dictionary representing one hourly record.
     """
     return {
         "location_id": location_id,
-        "timestamp": _normalize_timestamp(timestamp, utc_offset_seconds),
+        "timestamp": _normalize_timestamp(timestamp, tz_name),
         "wave_height": _safe_index(hourly_data, "wave_height", index),
         "wave_direction": _safe_index(hourly_data, "wave_direction", index),
         "wave_period": _safe_index(hourly_data, "wave_period", index),
@@ -319,7 +329,7 @@ def build_hourly_record(
         "ocean_current_velocity": _safe_index(hourly_data, "ocean_current_velocity", index),
         "ocean_current_direction": _safe_index(hourly_data, "ocean_current_direction", index),
         "elevation": elevation,
-        "timezone": timezone,
+        "timezone": tz_name,
     }
 
 
@@ -464,7 +474,6 @@ def update(configuration: dict, state: dict):
         # Extract location metadata returned at the top level of each API response
         elevation = data.get("elevation")
         resp_timezone = data.get("timezone", "UTC")
-        utc_offset_seconds = data.get("utc_offset_seconds", 0)
 
         # Process hourly data
         hourly_data = data.get("hourly", {})
@@ -480,7 +489,6 @@ def update(configuration: dict, state: dict):
                 index,
                 elevation,
                 resp_timezone,
-                utc_offset_seconds,
             )
             if not record.get("location_id") or not record.get("timestamp"):
                 log.info("Skipping hourly record without primary key fields")
