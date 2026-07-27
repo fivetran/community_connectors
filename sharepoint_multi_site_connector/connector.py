@@ -211,12 +211,12 @@ def validate_configuration(configuration: dict) -> None:
         ValueError: if any required configuration parameter is missing or site targeting is absent.
     """
     required = ["tenant_id", "client_id", "client_secret"]
-    missing = [k for k in required if not configuration.get(k, "").strip()]
+    missing = [k for k in required if not str(configuration.get(k, "")).strip()]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
-    not_site_ids = not configuration.get("site_ids", "").strip()
-    not_site_urls = not configuration.get("site_urls", "").strip()
+    not_site_ids = not str(configuration.get("site_ids", "")).strip()
+    not_site_urls = not str(configuration.get("site_urls", "")).strip()
 
     if not_site_ids and not_site_urls:
         raise ValueError("Provide at least one of: site_ids or site_urls")
