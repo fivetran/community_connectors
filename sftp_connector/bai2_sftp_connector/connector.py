@@ -57,7 +57,6 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-
 __SFTP_MAX_RETRIES = 5
 __SFTP_RETRY_DELAY_SEC = 5
 

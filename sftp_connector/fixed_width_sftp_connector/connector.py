@@ -322,6 +322,7 @@ def connect_sftp(configuration: dict):
 
     last_exc = None
     for attempt in range(1, __SFTP_MAX_RETRIES + 1):
+        ssh = None
         sftp = None
         try:
             ssh = paramiko.SSHClient()
