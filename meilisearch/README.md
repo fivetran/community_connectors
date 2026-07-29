@@ -46,7 +46,7 @@ fivetran init --template meilisearch
 - `api_url` (required): The base URL of your MeiliSearch instance (e.g., `https://ms-xxx.meilisearch.io` for MeiliSearch Cloud or `http://localhost:7700` for self-hosted)
 - `api_key` (required): Your MeiliSearch API key for authentication (master key or search API key with read permissions)
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main) in the open-source [Connector SDK repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 The connector uses the `requests` library for HTTP communication, which is pre-installed in the Fivetran environment.

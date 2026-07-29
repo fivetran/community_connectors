@@ -31,6 +31,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[apache_hive/using_pyhive](https://github.com/fivetran/community_connectors/tree/main/apache_hive/using_pyhive)** - Sync data from Apache Hive using PyHive
 - **[apache_hive/using_sqlalchemy](https://github.com/fivetran/community_connectors/tree/main/apache_hive/using_sqlalchemy)** - Sync data from Apache Hive using SQLAlchemy with PyHive
 - **[arango_db](https://github.com/fivetran/community_connectors/tree/main/arango_db)** - Sync document and edge collections from ArangoDB multi-model database
+- **[aveva_pi](https://github.com/fivetran/community_connectors/tree/main/aveva_pi)** - Sync asset hierarchy and time-series data from AVEVA PI (formerly OSIsoft PI) via PI Web API
 - **[cassandra](https://github.com/fivetran/community_connectors/tree/main/cassandra)** - Connect and sync data from Cassandra database
 - **[clickhouse](https://github.com/fivetran/community_connectors/tree/main/clickhouse)** - Sync data from ClickHouse database
 - **[couchbase_capella](https://github.com/fivetran/community_connectors/tree/main/couchbase_capella)** - Sync data from Couchbase Capella
@@ -45,6 +46,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[greenplum_db](https://github.com/fivetran/community_connectors/tree/main/greenplum_db)** - Sync data from Greenplum database
 - **[ibm_db2](https://github.com/fivetran/community_connectors/tree/main/ibm/ibm_db2)** - This example shows how to connect and sync data from IBM Db2 using Connector SDK. It uses the `ibm_db` library to connect to the database and fetch data.
 - **[ibm_db2_log_based_replication](https://github.com/fivetran/community_connectors/tree/main/ibm/ibm_db2_log_based_replication)** - This example demonstrates log-based Change Data Capture (CDC) for IBM Db2 using the ASN SQL Replication framework. The `asncap` daemon reads the Db2 transaction log and writes every INSERT, UPDATE, and DELETE to a Change Data table; the connector reads exclusively from that table after the initial load, making this genuine log-based replication without polling the source.
+- **[ibm_db2i](https://github.com/fivetran/community_connectors/tree/main/ibm/ibm_db2i)** - This example shows how to connect and sync data from IBM Db2 for i (IBM i / AS400) using Connector SDK. It uses the `pyodbc` library with the IBM i Access ODBC Driver to connect to the database and fetch data.
 - **[ibm_informix_using_ibm_db](https://github.com/fivetran/community_connectors/tree/main/ibm/ibm_informix_using_ibm_db)** - This example shows how to connect and sync data from IBM Informix using Connector SDK. This example uses the `ibm_db` library to connect to the Informix database and fetch data.
 - **[ibm_informix_using_jaydebeapi](https://github.com/fivetran/community_connectors/tree/main/ibm/ibm_informix_using_jaydebeapi)** - This example shows how to connect and sync data from IBM Informix using Connector SDK. This example uses the `jaydebeapi` library with external JDBC Informix driver, using `installation.sh` file in the `drivers` folder, to connect to the Informix database and fetch data.
 - **[janus_graph](https://github.com/fivetran/community_connectors/tree/main/janus_graph)** - This example shows how to sync data from the Janus Graph database using the Connector SDK. You need to provide your Janus Graph credentials for this example to work.
@@ -72,6 +74,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[redshift/simple_redshift_connector](https://github.com/fivetran/community_connectors/tree/main/redshift/simple_redshift_connector)** - Sync records from Redshift
 - **[redshift/large_data_volume](https://github.com/fivetran/community_connectors/tree/main/redshift/large_data_volume)** - Sync large data volumes from Redshift
 - **[redshift/using_unload](https://github.com/fivetran/community_connectors/tree/main/redshift/using_unload)** - Sync data from Redshift using UNLOAD to S3
+- **[delta_sharing](https://github.com/fivetran/community_connectors/tree/main/delta_sharing)** - Connect and sync data from Databricks Delta Sharing (now OpenSharing): An Open Protocol for Secure Data Sharing       
 
 ### Message Queues & Streaming
 
@@ -154,6 +157,8 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[sensor_tower](https://github.com/fivetran/community_connectors/tree/main/sensor_tower)** - Sync mobile app market intelligence from Sensor Tower
 - **[sensource](https://github.com/fivetran/community_connectors/tree/main/sensource)** - Sync traffic and occupancy metrics from SenSource
 - **[sharepoint_multi_site_connector](https://github.com/fivetran/community_connectors/tree/main/sharepoint_multi_site_connector)** - Syncs CSV and Excel file data from multiple SharePoint Online sites using the Microsoft Graph API. Supports multi-sheet Excel workbooks, recursive folder traversal, incremental sync, and deletion handling.
+- **[sftp_connector/bai2_sftp_connector](https://github.com/fivetran/community_connectors/tree/main/sftp_connector/bai2_sftp_connector)** - Fetch BAI2-format cash management files from an SFTP server and load all transactions into a single destination table with incremental sync and structured ACH field parsing
+- **[sftp_connector/fixed_width_sftp_connector](https://github.com/fivetran/community_connectors/tree/main/sftp_connector/fixed_width_sftp_connector)** - Read 12 fixed-width files from 3 SFTP subdirectories (ELAN, CUP, LPL/DFM) into 12 destination tables with soft-delete purge logic and implied-decimal parsing
 - **[similarweb](https://github.com/fivetran/community_connectors/tree/main/similarweb)** - Sync website performance metrics from SimilarWeb
 - **[smartsheets](https://github.com/fivetran/community_connectors/tree/main/smartsheets)** - Sync sheets and reports from Smartsheets
 - **[snipeitapp](https://github.com/fivetran/community_connectors/tree/main/snipeitapp)** - Sync IT asset management data from Snipe-IT
@@ -167,6 +172,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[veeva_vault/basic_auth](https://github.com/fivetran/community_connectors/tree/main/veeva_vault/basic_auth)** - Authenticate to Veeva Vault with basic auth
 - **[veeva_vault/session_id_auth](https://github.com/fivetran/community_connectors/tree/main/veeva_vault/session_id_auth)** - Authenticate to Veeva Vault with session ID
 - **[vercel](https://github.com/fivetran/community_connectors/tree/main/vercel)** - Sync deployment data from Vercel REST API
+- **[wms_oracle](https://github.com/fivetran/community_connectors/tree/main/wms_oracle)** - Sync warehouse management data from Oracle WMS REST API with incremental sync, historical backfill, and pre-cursor drift detection across 26 entities.
 - **[weights_and_biases](https://github.com/fivetran/community_connectors/tree/main/weights_and_biases)** - This example shows how to sync machine learning experiment tracking data from Weights & Biases (W&B), including projects, runs (experiments), and artifacts (models and datasets), using the Fivetran Connector SDK The connector uses the W&B Python SDK to retrieve data and implements robust error handling. You need to provide your W&B API key and entity name for this example to work.
 - **[zigpoll](https://github.com/fivetran/community_connectors/tree/main/zigpoll)** - Sync polling data from Zigpoll
 
@@ -175,6 +181,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 ## Documentation & Resources
 
 - **[_template_connector](https://github.com/fivetran/community_connectors/tree/main/_template_connector)** - Reference template for building new connectors
+- **[empty-project](https://github.com/fivetran/community_connectors/tree/main/empty-project)** - Blank skeleton connector to start from scratch
 - **[CONTRIBUTING.md](https://github.com/fivetran/community_connectors/blob/main/CONTRIBUTING.md)** - Guide for contributing to this repository
 - **[PYTHON_CODING_STANDARDS.md](https://github.com/fivetran/community_connectors/blob/main/PYTHON_CODING_STANDARDS.md)** - Python coding standards and best practices
 - **[FIVETRAN_CODING_PRINCIPLES.md](https://github.com/fivetran/community_connectors/blob/main/FIVETRAN_CODING_PRINCIPLES.md)** - Code review principles and PR guidelines

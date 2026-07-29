@@ -1,0 +1,4 @@
+{
+  "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
+  "bearer_token": "<YOUR_DELTA_SHARING_TOKEN>"
+}

@@ -1,0 +1,7 @@
+{
+  "hostname": "<YOUR_IBM_I_HOSTNAME>",
+  "port": "<YOUR_IBM_I_PORT>",
+  "database": "<YOUR_IBM_I_DATABASE>",
+  "user_id": "<YOUR_IBM_I_USER_ID>",
+  "password": "<YOUR_IBM_I_PASSWORD>"
+}
