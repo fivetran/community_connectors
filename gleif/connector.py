@@ -254,31 +254,35 @@ def flatten_record(record: dict):
     Returns:
         A dictionary whose keys match the lei_record table columns.
     """
-    attributes = record.get("attributes", {})
-    entity = attributes.get("entity", {})
-    registration = attributes.get("registration", {})
-    legal_address = entity.get("legalAddress", {})
-    headquarters_address = entity.get("headquartersAddress", {})
+    # `or {}` rather than a `{}` default at every level. dict.get's default
+    # applies only when the key is ABSENT; a key present with an explicit null
+    # returns None, and the next `.get()` then raises AttributeError and stops
+    # the whole sync. GLEIF sends null for optional nested objects.
+    attributes = record.get("attributes") or {}
+    entity = attributes.get("entity") or {}
+    registration = attributes.get("registration") or {}
+    legal_address = entity.get("legalAddress") or {}
+    headquarters_address = entity.get("headquartersAddress") or {}
 
     return {
         "lei": attributes.get("lei"),
-        "legal_name": entity.get("legalName", {}).get("name"),
-        "legal_name_language": entity.get("legalName", {}).get("language"),
+        "legal_name": (entity.get("legalName") or {}).get("name"),
+        "legal_name_language": (entity.get("legalName") or {}).get("language"),
         "entity_status": entity.get("status"),
         "entity_category": entity.get("category"),
         "entity_sub_category": entity.get("subCategory"),
         "legal_jurisdiction": entity.get("jurisdiction"),
-        "legal_form_id": entity.get("legalForm", {}).get("id"),
-        "legal_form_other": entity.get("legalForm", {}).get("other"),
+        "legal_form_id": (entity.get("legalForm") or {}).get("id"),
+        "legal_form_other": (entity.get("legalForm") or {}).get("other"),
         "registered_as": entity.get("registeredAs"),
-        "registered_at_id": entity.get("registeredAt", {}).get("id"),
+        "registered_at_id": (entity.get("registeredAt") or {}).get("id"),
         "entity_creation_date": entity.get("creationDate"),
-        "entity_expiration_date": entity.get("expiration", {}).get("date"),
-        "entity_expiration_reason": entity.get("expiration", {}).get("reason"),
-        "successor_lei": entity.get("successorEntity", {}).get("lei"),
-        "successor_name": entity.get("successorEntity", {}).get("name"),
-        "associated_entity_lei": entity.get("associatedEntity", {}).get("lei"),
-        "associated_entity_name": entity.get("associatedEntity", {}).get("name"),
+        "entity_expiration_date": (entity.get("expiration") or {}).get("date"),
+        "entity_expiration_reason": (entity.get("expiration") or {}).get("reason"),
+        "successor_lei": (entity.get("successorEntity") or {}).get("lei"),
+        "successor_name": (entity.get("successorEntity") or {}).get("name"),
+        "associated_entity_lei": (entity.get("associatedEntity") or {}).get("lei"),
+        "associated_entity_name": (entity.get("associatedEntity") or {}).get("name"),
         "legal_address_lines": join_address_lines(legal_address),
         "legal_address_city": legal_address.get("city"),
         "legal_address_region": legal_address.get("region"),
@@ -295,7 +299,7 @@ def flatten_record(record: dict):
         "next_renewal_date": registration.get("nextRenewalDate"),
         "managing_lou": registration.get("managingLou"),
         "corroboration_level": registration.get("corroborationLevel"),
-        "validated_at_id": registration.get("validatedAt", {}).get("id"),
+        "validated_at_id": (registration.get("validatedAt") or {}).get("id"),
         "validated_as": registration.get("validatedAs"),
         "bic_codes": join_codes(attributes.get("bic")),
         "mic_codes": join_codes(attributes.get("mic")),
@@ -415,7 +419,7 @@ def update(configuration: dict, state: dict):
         # Follow the JSON:API cursor. The final page of a window arrives with a
         # next link still present and an empty data array, so the loop must
         # terminate on the ABSENCE of the link rather than on a non-empty page.
-        url = response.get("links", {}).get("next")
+        url = (response.get("links") or {}).get("next")
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
