@@ -1,4 +1,4 @@
-# beehiiv Connector Example
+# Beehiiv Connector Example
 
 ## Connector overview
 This connector integrates with the [beehiiv API](https://developers.beehiiv.com/) to synchronize newsletter data into your destination. It fetches publications, subscriptions, posts, email blasts, automations, engagement metrics, and other newsletter management data from a single beehiiv publication.
@@ -55,16 +55,16 @@ Configuration parameters:
 When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
-The `requirements.txt` file specifies `requests` as the only external dependency.
+This connector uses only the `requests` library, which is pre-installed in the Fivetran environment, so no `requirements.txt` file is needed.
 
 > Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
-This connector uses API key authentication with bearer tokens. The API key is passed in the `Authorization` header as `Bearer <api_key>`.
+This connector authenticates with the beehiiv API using a bearer token. Every request includes an `Authorization` header whose value is the word `Bearer`, a space, and your beehiiv API key (for example, `Authorization: Bearer YOUR_API_KEY`).
 
 To obtain your beehiiv API key:
 1. Log in to your [beehiiv Dashboard](https://app.beehiiv.com/).
-2. Navigate to **Settings** > **Integrations** > **API**.
+2. Navigate to **Settings**, then **Integrations**, then **API**.
 3. Generate a new API key with the required scopes: `publications:read`, `posts:read`, `automations:read`, `condition_sets:read`.
 4. Copy the key and add it to your `configuration.json` file.
 
