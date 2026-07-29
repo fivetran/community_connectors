@@ -116,6 +116,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[elastic_email](https://github.com/fivetran/community_connectors/tree/main/elastic_email)** - Sync email marketing data from Elastic Email
 - **[fleetio](https://github.com/fivetran/community_connectors/tree/main/fleetio)** - Sync fleet management data from Fleetio
 - **[fred](https://github.com/fivetran/community_connectors/tree/main/fred)** - Sync economic data from Federal Reserve Economic Data (FRED)
+- **[gbif](https://github.com/fivetran/community_connectors/tree/main/gbif)** - Sync species occurrence records from the GBIF (Global Biodiversity Information Facility) API
 - **[github](https://github.com/fivetran/community_connectors/tree/main/github)** - Sync repository data, commits, and pull requests from GitHub
 - **[github_traffic](https://github.com/fivetran/community_connectors/tree/main/github_traffic)** - Sync GitHub repository traffic data
 - **[gnews](https://github.com/fivetran/community_connectors/tree/main/gnews)** - Sync news articles from GNews API

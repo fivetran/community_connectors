@@ -1,0 +1,6 @@
+{
+  "page_size": "<YOUR_PAGE_SIZE>",
+  "max_records_per_sync": "<YOUR_MAX_RECORDS_PER_SYNC>",
+  "taxon_key": "<YOUR_TAXON_KEY>",
+  "country": "<YOUR_COUNTRY_CODE>"
+}
