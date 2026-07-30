@@ -35,9 +35,14 @@ See the Connector SDK Technical Reference
 Best Practices (https://fivetran.com/docs/connectors/connector-sdk/best-practices).
 """
 
-# Import required classes from fivetran_connector_sdk for connector initialization,
-# logging, and data operations (upsert, update, delete, checkpoint).
-from fivetran_connector_sdk import Connector, Logging as log, Operations as op
+# Import required classes from fivetran_connector_sdk
+from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
+from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
+from fivetran_connector_sdk import Operations as op
 
 # For reading the local configuration.json in the __main__ debug block.
 import json
@@ -393,55 +398,97 @@ def update(configuration: dict, state: dict):
     )
     if contacts_latest:
         cumulative_state[STATE_CONTACTS_LAST_UPDATED] = contacts_latest
-    # Checkpoint after Contacts so its incremental cursor is persisted; the next
-    # sync resumes from here even if a later table fails.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── Companies (Search + optional downstream enrichments) ──
     companies_latest, company_ids = sync_companies(configuration, state, search_filter)
     if companies_latest:
         cumulative_state[STATE_COMPANIES_LAST_UPDATED] = companies_latest
-    # Checkpoint after Companies so its cursor is persisted before the
-    # downstream enrichments (which depend on company_ids) run.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── Scoops (Search) ──
     scoops_latest = sync_scoops(configuration, state, search_filter, cumulative_state)
     if scoops_latest:
         cumulative_state[STATE_SCOOPS_LAST_UPDATED] = scoops_latest
-    # Checkpoint after Scoops so its incremental cursor is persisted.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── Intent (Search — requires topics config) ──
     intent_latest = sync_intent(configuration, state, cumulative_state)
     if intent_latest:
         cumulative_state[STATE_INTENT_LAST_UPDATED] = intent_latest
-    # Checkpoint after Intent so its incremental cursor is persisted.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── News (Search — opt-in) ──
     news_latest = sync_news(configuration, state, cumulative_state)
     if news_latest:
         cumulative_state[STATE_NEWS_LAST_UPDATED] = news_latest
-    # Checkpoint after News so its incremental cursor is persisted.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     # ── Company-based Enrichments (all use company_ids from Search) ──
     sync_companies_enriched(configuration, company_ids)
-    # These enrich tables have no cursor of their own; checkpoint after each so
-    # Fivetran durably flushes the rows synced so far before the next enrichment.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     sync_scoops_enriched(configuration, company_ids, cumulative_state)
-    # Checkpoint to durably flush the Scoops-enrich rows synced so far.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     sync_technologies(configuration, company_ids, cumulative_state)
-    # Checkpoint to durably flush the Technologies rows synced so far.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     sync_corporate_hierarchy(configuration, company_ids)
-    # Checkpoint to durably flush the Corporate-hierarchy rows synced so far.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state=cumulative_state)
 
     log.info("ZoomInfo Fivetran Connector — sync complete")
