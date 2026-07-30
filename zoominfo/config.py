@@ -6,6 +6,7 @@ and bounded options, and builds the per-endpoint Search filter including the
 incremental "since" predicate. Pure logic — no network calls.
 """
 
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
 from constants import (

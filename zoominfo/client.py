@@ -19,6 +19,7 @@ import time
 # For the lock guarding the shared token cache.
 import threading
 
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
 from constants import (

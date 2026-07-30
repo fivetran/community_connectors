@@ -23,7 +23,11 @@ import json
 # For catching requests.exceptions.RequestException in the intent-topics lookup.
 import requests
 
-from fivetran_connector_sdk import Logging as log, Operations as op
+# For enabling Logs in your connector code
+from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
+from fivetran_connector_sdk import Operations as op
 
 from constants import (
     ENDPOINT_CONTACTS,
@@ -235,14 +239,12 @@ def sync_contacts(
             if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
                 if latest_date:
                     cumulative_state[STATE_CONTACTS_LAST_UPDATED] = latest_date
-                # Save the progress by checkpointing the state. This is important for
-                # ensuring that the sync process can resume from the correct position
-                # in case of next sync or interruptions. You should checkpoint even if
-                # you are not using incremental sync, as it tells Fivetran it is safe
-                # to write to the destination. For large datasets, checkpoint regularly
-                # (e.g., every N records) not only at the end. Learn more in our best
-                # practices documentation:
-                # https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets  # noqa: B950
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(state=cumulative_state)
 
     log.info(f"Contacts sync complete — {count} records upserted")
@@ -324,8 +326,9 @@ def sync_companies(configuration: dict, state: dict, search_filter: dict):
     # _fivetran_deleted=FALSE, so deletions on the ZoomInfo side propagate.
     op.truncate(table="companies")
     for row in buffered_rows:
-        # Upsert one company row into the destination. 'upsert' inserts or
-        # updates the record keyed by its primary key ('id').
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table="companies", data=row)
 
     log.info(f"Companies sync complete — {len(buffered_rows)} records upserted")
@@ -368,8 +371,9 @@ def sync_scoops(
             topics = a.get("topics")
             types = a.get("types")
 
-            # Upsert one scoop row into the destination. 'upsert' inserts or
-            # updates the record keyed by its primary key ('id').
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 table="scoops",
                 data={
@@ -392,8 +396,12 @@ def sync_scoops(
             if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
                 if latest_date:
                     cumulative_state[STATE_SCOOPS_LAST_UPDATED] = latest_date
-                # Checkpoint mid-table so progress is flushed and the next sync
-                # can resume from the latest scoops cursor.
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                 op.checkpoint(state=cumulative_state)
 
     log.info(f"Scoops sync complete — {count} records upserted")
@@ -488,8 +496,9 @@ def sync_intent(configuration: dict, state: dict, cumulative_state: dict = None)
                 company_id = company.get("id")
                 company_nm = company.get("name")
 
-                # Upsert one intent-signal row into the destination. 'upsert'
-                # inserts or updates the record keyed by its primary key ('id').
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     table="intent",
                     data={
@@ -512,8 +521,12 @@ def sync_intent(configuration: dict, state: dict, cumulative_state: dict = None)
                 if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
                     if latest_date:
                         cumulative_state[STATE_INTENT_LAST_UPDATED] = latest_date
-                    # Checkpoint mid-table so progress is flushed and the next
-                    # sync can resume from the latest intent cursor.
+                    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                    # from the correct position in case of next sync or interruptions.
+                    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                    # Learn more about how and where to checkpoint by reading our best practices documentation
+                    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                     op.checkpoint(state=cumulative_state)
 
     except RuntimeError as e:
@@ -572,8 +585,9 @@ def sync_news(configuration: dict, state: dict, cumulative_state: dict = None):
                 company_id = primary_company.get("id")
                 company_nm = primary_company.get("name")
 
-                # Upsert one news row into the destination. 'upsert' inserts or
-                # updates the record keyed by its primary key ('id').
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     table="news",
                     data={
@@ -605,8 +619,12 @@ def sync_news(configuration: dict, state: dict, cumulative_state: dict = None):
                 if cumulative_state is not None and count % CHECKPOINT_EVERY_N_ROWS == 0:
                     if latest_date:
                         cumulative_state[STATE_NEWS_LAST_UPDATED] = latest_date
-                    # Checkpoint mid-table so progress is flushed and the next
-                    # sync can resume from the latest news cursor.
+                    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                    # from the correct position in case of next sync or interruptions.
+                    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                    # Learn more about how and where to checkpoint by reading our best practices documentation
+                    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                     op.checkpoint(state=cumulative_state)
 
     except RuntimeError as e:
@@ -668,8 +686,9 @@ def _run_contact_enrichment(configuration: dict, person_ids: list, enrich_config
 
                 # companyName is nested under company.name, not a top-level field
                 company = a.get("company") or {}
-                # Upsert one enriched-contact row into the destination. 'upsert'
-                # inserts or updates the record keyed by its primary key ('id').
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     table="contacts_enriched",
                     data={
@@ -768,8 +787,9 @@ def sync_companies_enriched(configuration: dict, company_ids: list):
                     log.debug(f"NO_MATCH for companyId={record_id} — skipping")
                     continue
 
-                # Upsert one enriched-company row into the destination. 'upsert'
-                # inserts or updates the record keyed by its primary key ('id').
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     table="companies_enriched",
                     data={
@@ -933,14 +953,20 @@ def _stream_per_company_enrich(
                 # queue so workers finish cleanly.
                 if license_missing:
                     continue
-                # Upsert one enriched row into the destination. op.upsert runs
-                # only on the main thread (SDK constraint); workers enqueue rows.
+                # op.upsert runs only on the main thread (SDK constraint); the
+                # worker threads only enqueue rows for this loop to write.
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table=table_name, data=item)
                 total_rows += 1
                 if total_rows % CHECKPOINT_EVERY_N_ROWS == 0:
-                    # Checkpoint periodically so Fivetran flushes buffered rows
-                    # to the destination incrementally instead of holding the
-                    # whole table in memory.
+                    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                    # from the correct position in case of next sync or interruptions.
+                    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                    # Learn more about how and where to checkpoint by reading our best practices documentation
+                    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
                     op.checkpoint(state=checkpoint_state)
                 continue
             tag = item[0]
@@ -1157,8 +1183,9 @@ def sync_corporate_hierarchy(configuration: dict, company_ids: list):
                 # company_id (from attributes) is the stable ZoomInfo company ID.
                 company_id = a.get("companyId") or record_id
 
-                # Upsert one corporate-hierarchy row into the destination.
-                # 'upsert' inserts or updates the record keyed by 'company_id'.
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     table="corporate_hierarchy",
                     data={
@@ -1252,8 +1279,9 @@ def sync_usage(configuration: dict):
             limit_type = row.get("limitType")
             if not limit_type:
                 continue
-            # Upsert one usage row into the destination. 'upsert' inserts or
-            # updates the record keyed by its primary key ('id' = limitType).
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 table="usage",
                 data={
