@@ -51,13 +51,12 @@ Configuration parameters:
 - `api_key` (required) - your beehiiv API key (Bearer token). Required scopes: `publications:read`, `posts:read`, `automations:read`, `condition_sets:read`.
 - `publication_id` (required) - the prefixed publication ID (e.g., `pub_xxx`). All endpoints except publications are scoped to this publication. Create a separate Fivetran connection for each publication.
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_connector_sdk/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/fivetran_connector_sdk/tree/main/examples) in the open-source [Connector SDK repository](https://github.com/fivetran/fivetran_connector_sdk/tree/main), ensure the `configuration.json` file has placeholder values.
-When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 This connector uses only the `requests` library, which is pre-installed in the Fivetran environment, so no `requirements.txt` file is needed.
 
-> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 This connector authenticates with the beehiiv API using a bearer token. Every request includes an `Authorization` header whose value is the word `Bearer`, a space, and your beehiiv API key (for example, `Authorization: Bearer YOUR_API_KEY`).
