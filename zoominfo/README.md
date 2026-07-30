@@ -2,11 +2,7 @@
 
 ## Connector overview
 
-This connector syncs ZoomInfo Go-To-Market data — contacts, companies, scoops, intent signals, news, and optional enrichments (contacts, companies, scoops, technologies, corporate hierarchy) — from the ZoomInfo Search and Enrich APIs into a Fivetran destination.
-
-Free Search endpoints consume only your ZoomInfo records/requests quota. Enrich endpoints debit one ZoomInfo credit per record (or per company, depending on the endpoint) and are opt-in via configuration flags.
-
-The connector uses OAuth Client Credentials Flow to authenticate, paginates via JSON:API `page[size]` / `page[number]`, and syncs incrementally where the API exposes a date filter. The `companies` table has no incremental cursor on the ZoomInfo side, so it is full-replaced each run: pagination buffers the universe in memory first, and only after pagination succeeds does the connector `op.truncate` + `op.upsert` as a two-phase swap. If pagination fails partway through, the destination table is left untouched.
+This connector syncs ZoomInfo Go-To-Market data — contacts, companies, scoops, intent signals, and news — from the ZoomInfo Search and Enrich APIs, with optional enrichment data for technologies and corporate hierarchy.
 
 ## Accreditation
 
@@ -37,6 +33,7 @@ fivetran init --template zoominfo
 ## Features
 
 - 11 tables across Search (free) and Enrich (credit-bearing) endpoints, gated by configuration flags
+- Free Search endpoints consume only your ZoomInfo records/requests quota; Enrich endpoints debit one ZoomInfo credit per record (or per company, depending on the endpoint) and are opt-in via configuration flags
 - Incremental sync on `contacts`, `scoops`, `intent`, and `news` via per-endpoint server-side date filters confirmed against `/lookup/search`
 - Full-replace sync on `companies` via buffer-then-`op.truncate` + `op.upsert` (the ZoomInfo Search API does not expose a `lastUpdated`-style filter for the company entity). Pagination buffers the full universe before any destructive op — if the Search call fails partway through, the destination table is preserved.
 - OAuth Client Credentials token caching with mid-sync 401 refresh
