@@ -1,12 +1,9 @@
-"""
-This is an example for how to work with the fivetran_connector_sdk module.
-It defines a connector that syncs CSV and Excel file data from multiple SharePoint Online sites
-using the Microsoft Graph API with incremental processing and deletion handling.
-See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
-and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
-"""
+# This is an example for how to work with the fivetran_connector_sdk module.
+# It defines a connector that syncs CSV and Excel file data from multiple SharePoint Online sites
+# using the Microsoft Graph API with incremental processing and deletion handling.
+# See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
+# and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 
-# Import standard libraries
 import csv
 import io
 import json
@@ -16,25 +13,23 @@ from urllib.parse import urlparse
 
 # Used to parse Excel files (.xlsx, .xlsm)
 import openpyxl
+
+# Used to make HTTP requests to the Microsoft Graph API
 import requests
 
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
-
-# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
-
-# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-__GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-__SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xlsm"}
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xlsm"}
 
 # Maximum file size to download (50 MB); larger files are skipped with a warning.
-__MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_FILE_BYTES = 50 * 1024 * 1024
 
-__ACCESS_TOKEN = ""
-__TOKEN_EXPIRY = 0.0
+_access_token = ""
+_token_expiry = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -43,18 +38,10 @@ __TOKEN_EXPIRY = 0.0
 
 
 def get_access_token(configuration: dict) -> str:
-    """
-    Get an access token for Microsoft Graph API using client credentials flow.
-    Caches the token in memory until it expires to avoid unnecessary requests.
-    Args:
-        configuration: a dictionary containing the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-    Returns:
-        A string representing the access token for Microsoft Graph API.
-    """
-    global __ACCESS_TOKEN, __TOKEN_EXPIRY
+    global _access_token, _token_expiry
 
-    if __ACCESS_TOKEN and time.time() < __TOKEN_EXPIRY - 60:
-        return __ACCESS_TOKEN
+    if _access_token and time.time() < _token_expiry - 60:
+        return _access_token
 
     response = requests.post(
         f"https://login.microsoftonline.com/{configuration['tenant_id']}/oauth2/v2.0/token",
@@ -69,11 +56,11 @@ def get_access_token(configuration: dict) -> str:
     response.raise_for_status()
 
     payload = response.json()
-    __ACCESS_TOKEN = payload["access_token"]
-    __TOKEN_EXPIRY = time.time() + payload.get("expires_in", 3600)
+    _access_token = payload["access_token"]
+    _token_expiry = time.time() + payload.get("expires_in", 3600)
 
     log.info("Access token obtained/refreshed")
-    return __ACCESS_TOKEN
+    return _access_token
 
 
 # ---------------------------------------------------------------------------
@@ -82,16 +69,7 @@ def get_access_token(configuration: dict) -> str:
 
 
 def graph_get(configuration: dict, url: str, params: dict = None) -> dict:
-    """
-    Perform a GET request to the Microsoft Graph API with retries for token expiration, rate limiting, and service unavailability.
-    Args:
-        configuration: a dictionary containing the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-        url: the URL to send the GET request to.
-        params: optional dictionary of query parameters to include in the request.
-    Returns:
-        A dictionary containing the JSON response from the Microsoft Graph API.
-    """
-    global __TOKEN_EXPIRY
+    global _token_expiry
 
     for _ in range(4):
         token = get_access_token(configuration)
@@ -103,7 +81,7 @@ def graph_get(configuration: dict, url: str, params: dict = None) -> dict:
         )
 
         if response.status_code == 401:
-            __TOKEN_EXPIRY = 0
+            _token_expiry = 0
             continue
 
         if response.status_code == 429:
@@ -126,16 +104,16 @@ def graph_get(configuration: dict, url: str, params: dict = None) -> dict:
 def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
     """
     Stream-download a file from SharePoint via Microsoft Graph.
-    Enforces a __MAX_FILE_BYTES size limit to avoid unbounded memory usage.
+    Enforces a MAX_FILE_BYTES size limit to avoid unbounded memory usage.
     Args:
-        configuration: a dictionary containing the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-        drive_id: the ID of the SharePoint drive containing the file.
-        item_id: the ID of the file item to download.
+        configuration: a dictionary that holds the configuration settings for the connector.
+        drive_id: the Microsoft Graph drive identifier.
+        item_id: the Microsoft Graph item identifier for the file.
     Returns:
-        A bytes object containing the downloaded file content.
+        The file content as bytes.
     """
-    global __TOKEN_EXPIRY
-    url = f"{__GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+    global _token_expiry
+    url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
 
     for _ in range(4):
         token = get_access_token(configuration)
@@ -148,7 +126,7 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
         )
 
         if response.status_code == 401:
-            __TOKEN_EXPIRY = 0
+            _token_expiry = 0
             continue
 
         if response.status_code == 429:
@@ -168,9 +146,9 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
         total = 0
         for chunk in response.iter_content(chunk_size=65536):
             total += len(chunk)
-            if total > __MAX_FILE_BYTES:
+            if total > MAX_FILE_BYTES:
                 raise RuntimeError(
-                    f"File size exceeds {__MAX_FILE_BYTES // (1024 * 1024)} MB limit; "
+                    f"File size exceeds {MAX_FILE_BYTES // (1024 * 1024)} MB limit; "
                     f"drive_id={drive_id}, item_id={item_id}"
                 )
             chunks.append(chunk)
@@ -180,15 +158,6 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
 
 
 def paginate(configuration: dict, url: str, params: dict = None) -> Iterator[dict]:
-    """
-    Generator to paginate through Microsoft Graph API results using @odata.nextLink.
-    Args:
-        configuration: a dictionary containing the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-        url: the initial URL to fetch results from.
-        params: optional dictionary of query parameters to include in the request.
-    Returns:
-        An iterator yielding each item from the paginated results.
-    """
     while url:
         payload = graph_get(configuration, url, params)
         params = None
@@ -204,39 +173,53 @@ def paginate(configuration: dict, url: str, params: dict = None) -> Iterator[dic
 
 def validate_configuration(configuration: dict) -> None:
     """
-    Validate the configuration dictionary to ensure it contains all required parameters.
+    Validate the configuration dictionary to ensure it contains all required parameters
+    and that optional parameters are well-formed.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing or site targeting is absent.
+        ValueError: if any required configuration parameter is missing or a value is invalid.
     """
     required = ["tenant_id", "client_id", "client_secret"]
-    missing = [k for k in required if not str(configuration.get(k, "")).strip()]
+    missing = [k for k in required if not str(configuration.get(k, "") or "").strip()]
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
-    not_site_ids = not str(configuration.get("site_ids", "")).strip()
-    not_site_urls = not str(configuration.get("site_urls", "")).strip()
-
-    if not_site_ids and not_site_urls:
+    if (
+        not str(configuration.get("site_ids", "") or "").strip()
+        and not str(configuration.get("site_urls", "") or "").strip()
+    ):
         raise ValueError("Provide at least one of: site_ids or site_urls")
+
+    skip_rows_raw = configuration.get("skip_rows", "0")
+    try:
+        if int(str(skip_rows_raw)) < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError(f"'skip_rows' must be a non-negative integer; got: {skip_rows_raw!r}")
+
+    delimiter_raw = configuration.get("delimiter")
+    if delimiter_raw is not None:
+        delimiter_str = str(delimiter_raw).strip()
+        if delimiter_str and len(delimiter_str) != 1:
+            raise ValueError(f"'delimiter' must be a single character; got: {delimiter_raw!r}")
+
+    sync_subfolders_raw = str(configuration.get("sync_subfolders", "false") or "false").lower()
+    if sync_subfolders_raw not in ("true", "false"):
+        raise ValueError(
+            f"'sync_subfolders' must be 'true' or 'false'; "
+            f"got: {configuration.get('sync_subfolders')!r}"
+        )
 
 
 def resolve_sites(configuration: dict) -> List[Tuple[str, str]]:
-    """
-    Resolve the list of SharePoint sites to sync based on site IDs or site URLs provided in the configuration.
-    Args:
-        configuration: a dictionary that holds the configuration settings for the connector, including site_ids and site_urls.
-    Returns:
-        A list of tuples, each containing the site ID and site name for each resolved SharePoint site.
-    """
-    site_ids_raw = configuration.get("site_ids", "").strip()
-    site_urls_raw = configuration.get("site_urls", "").strip()
+    site_ids_raw = str(configuration.get("site_ids", "") or "").strip()
+    site_urls_raw = str(configuration.get("site_urls", "") or "").strip()
 
     if site_ids_raw:
         sites = []
         for site_id in [x.strip() for x in site_ids_raw.split(",") if x.strip()]:
-            payload = graph_get(configuration, f"{__GRAPH_BASE}/sites/{site_id}")
+            payload = graph_get(configuration, f"{GRAPH_BASE}/sites/{site_id}")
             sites.append(
                 (payload["id"], payload.get("displayName") or payload.get("name") or site_id)
             )
@@ -247,62 +230,31 @@ def resolve_sites(configuration: dict) -> List[Tuple[str, str]]:
         parsed = urlparse(raw_url)
         hostname = parsed.netloc
         path = parsed.path.rstrip("/")
-        payload = graph_get(configuration, f"{__GRAPH_BASE}/sites/{hostname}:{path}")
+        payload = graph_get(configuration, f"{GRAPH_BASE}/sites/{hostname}:{path}")
         sites.append((payload["id"], payload.get("displayName") or payload.get("name") or raw_url))
     return sites
 
 
 def get_default_drive(configuration: dict, site_id: str) -> dict:
-    """
-    Get the default document library (drive) for a given SharePoint site.
-    Args:
-        configuration: a dictionary that holds the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-        site_id: the ID of the SharePoint site to retrieve the default drive for.
-    Returns:
-        A dictionary containing the default drive information for the specified SharePoint site.
-    """
-    return graph_get(configuration, f"{__GRAPH_BASE}/sites/{site_id}/drive")
+    return graph_get(configuration, f"{GRAPH_BASE}/sites/{site_id}/drive")
 
 
 def get_children_url(drive_id: str, folder_path: str) -> str:
-    """
-    Construct the Microsoft Graph API URL to list children of a folder in a SharePoint drive.
-    Args:
-        drive_id: The ID of the SharePoint drive containing the folder.
-        folder_path: The path of the folder within the drive (relative to the root).
-    Returns:
-        A string representing the URL to list the children of the specified folder in the SharePoint drive.
-    """
     clean_path = folder_path.strip("/")
     if clean_path:
-        return f"{__GRAPH_BASE}/drives/{drive_id}/root:/{clean_path}:/children"
-    return f"{__GRAPH_BASE}/drives/{drive_id}/root/children"
+        return f"{GRAPH_BASE}/drives/{drive_id}/root:/{clean_path}:/children"
+    return f"{GRAPH_BASE}/drives/{drive_id}/root/children"
 
 
 def get_extension(file_name: str) -> str:
-    """
-    Get the file extension from a file name, if it is one of the supported extensions.
-    Args:
-        file_name: The name of the file to check for a supported extension.
-    Returns:
-        A string representing the file extension (including the dot) if it is supported, or an empty string if not.
-    """
     file_name = (file_name or "").lower()
-    for ext in __SUPPORTED_EXTENSIONS:
+    for ext in SUPPORTED_EXTENSIONS:
         if file_name.endswith(ext):
             return ext
     return ""
 
 
 def file_matches(item: dict, file_pattern: Optional[str]) -> bool:
-    """
-    Match a file item against the specified file pattern, if provided. Only files with supported extensions are considered.
-    Args:
-        item: A dictionary representing a file item from the Microsoft Graph API, which may include keys like "name", "file", and "folder".
-        file_pattern: An optional string pattern to match against the file name. If None, all files with supported extensions are considered matches.
-    Returns:
-        True if the file item matches the specified pattern and has a supported extension, False otherwise.
-    """
     if "folder" in item:
         return False
     if not item.get("file"):
@@ -322,32 +274,30 @@ def list_files_in_folder(
     folder_path: str,
     recurse: bool,
     file_pattern: Optional[str],
-) -> List[dict]:
+) -> Iterator[dict]:
     """
-    List files in a SharePoint folder, optionally filtering by file pattern and recursing into subfolders.
+    Yield matching files from a SharePoint document library folder.
+    Files are yielded in discovery order to avoid accumulating the full list in memory,
+    which allows the caller to checkpoint after each file on large drives.
     Args:
-        configuration: a dictionary that holds the configuration settings for the connector, including tenant_id, client_id, and client_secret.
-        drive_id: The ID of the SharePoint drive containing the folder to list files from.
-        folder_path: The path of the folder within the drive (relative to the root) to list files from.
-        recurse: A boolean indicating whether to recursively list files in subfolders.
-        file_pattern: An optional string pattern to filter files by name. If None, all files with supported extensions are listed.
-    Returns:
-        A list of dictionaries, each representing a file item that matches the specified criteria.
+        configuration: a dictionary that holds the configuration settings for the connector.
+        drive_id: the Microsoft Graph drive identifier.
+        folder_path: the root folder path within the drive to start discovery from.
+        recurse: if True, recursively traverse subfolders.
+        file_pattern: optional substring filter applied to file names.
     """
     start_url = get_children_url(drive_id, folder_path)
-    files: List[dict] = []
 
-    def walk(url: str) -> None:
+    def walk(url: str) -> Iterator[dict]:
         for item in paginate(configuration, url):
             if "folder" in item:
                 if recurse:
-                    child_url = f"{__GRAPH_BASE}/drives/{drive_id}/items/{item['id']}/children"
-                    walk(child_url)
+                    child_url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item['id']}/children"
+                    yield from walk(child_url)
             elif file_matches(item, file_pattern):
-                files.append(item)
+                yield item
 
-    walk(start_url)
-    return files
+    yield from walk(start_url)
 
 
 # ---------------------------------------------------------------------------
@@ -358,15 +308,6 @@ def list_files_in_folder(
 def parse_csv_rows(
     content_bytes: bytes, delimiter: Optional[str]
 ) -> Iterator[Tuple[Optional[str], int, Dict]]:
-    """
-    Parse CSV content from bytes, yielding each row as a dictionary with cleaned keys.
-    Args:
-        content_bytes: The CSV content in bytes to be parsed.
-        delimiter: An optional string specifying the delimiter to use for parsing the CSV. If None, the delimiter will be auto-detected.
-    Returns:
-        An iterator yielding tuples of (sheet_name, row_number, row_data), where sheet_name is None for CSV files, row_number is the line number in the CSV,
-        and row_data is a dictionary of cleaned key-value pairs for each row.
-    """
     text = content_bytes.decode("utf-8-sig")
     stream = io.StringIO(text)
 
@@ -397,14 +338,16 @@ def parse_excel_rows(
     content_bytes: bytes, skip_rows: int
 ) -> Iterator[Tuple[Optional[str], int, Dict]]:
     """
-    Parse Excel content from bytes, yielding each row as a dictionary with cleaned keys.
+    Parse all worksheets in an Excel workbook and yield row data.
+    Each row is yielded with its sheet name, 1-based row number within the sheet, and
+    a dict of column values keyed by header. Blank or missing header cells are named
+    col_N. Rows are read in read-only mode to minimise memory usage.
     Args:
-        content_bytes: The Excel content in bytes to be parsed.
-        skip_rows: The number of initial rows to skip before reading the header row.
+        content_bytes: raw bytes of the Excel file (.xlsx or .xlsm).
+        skip_rows: number of rows to skip at the top of each sheet before the header.
     Returns:
-        An iterator yielding tuples of (sheet_name, row_number, row_data), where sheet_name is the worksheet name,
-        row_number is the 1-based row number within the sheet (excluding skipped rows and header),
-        and row_data is a dictionary mapping header values to cell values for that row.
+        Iterator of (sheet_name, row_number, row_data) tuples, one per data row
+        across all worksheets in the workbook.
     """
     workbook = openpyxl.load_workbook(
         io.BytesIO(content_bytes),
@@ -413,28 +356,28 @@ def parse_excel_rows(
     )
 
     try:
-        worksheet = workbook.active
-        row_iter = worksheet.iter_rows(values_only=True)
+        for worksheet in workbook.worksheets:
+            row_iter = worksheet.iter_rows(values_only=True)
 
-        for _ in range(skip_rows):
-            next(row_iter, None)
+            for _ in range(skip_rows):
+                next(row_iter, None)
 
-        header_row = next(row_iter, None)
-        if not header_row:
-            return
+            header_row = next(row_iter, None)
+            if not header_row:
+                continue
 
-        headers: List[str] = []
-        for index, value in enumerate(header_row, start=1):
-            if value is None or str(value).strip() == "":
-                headers.append(f"col_{index}")
-            else:
-                headers.append(str(value).strip())
+            headers: List[str] = []
+            for index, value in enumerate(header_row, start=1):
+                if value is None or str(value).strip() == "":
+                    headers.append(f"col_{index}")
+                else:
+                    headers.append(str(value).strip())
 
-        for row_number, raw_row in enumerate(row_iter, start=1):
-            record = {}
-            for header, value in zip(headers, raw_row):
-                record[header] = None if value is None else str(value)
-            yield worksheet.title, row_number, record
+            for row_number, raw_row in enumerate(row_iter, start=1):
+                record = {}
+                for header, value in zip(headers, raw_row):
+                    record[header] = None if value is None else str(value)
+                yield worksheet.title, row_number, record
     finally:
         workbook.close()
 
@@ -445,17 +388,6 @@ def parse_file_rows(
     delimiter: Optional[str],
     skip_rows: int,
 ) -> Iterator[Tuple[Optional[str], int, Dict]]:
-    """
-    Parse file content based on its extension, yielding each row as a dictionary with cleaned keys.
-    Args:
-        file_name: The name of the file to be parsed, used to determine the file type based on its extension.
-        content_bytes: The content of the file in bytes to be parsed.
-        delimiter: An optional string specifying the delimiter to use for parsing CSV files. If None, the delimiter will be auto-detected.
-        skip_rows: An integer specifying the number of initial rows to skip before reading the header row for Excel files.
-    Returns:
-        An iterator yielding tuples of (sheet_name, row_number, row_data), where sheet_name is the name of the active worksheet for Excel files or None for CSV files,
-        row_number is the line number in the file, and row_data is a dictionary of cleaned key-value pairs for each row.
-    """
     ext = get_extension(file_name)
 
     if ext == ".csv":
@@ -472,26 +404,25 @@ def parse_file_rows(
 # ---------------------------------------------------------------------------
 
 
-def build_row_id(file_id: str, sheet_name: Optional[str], source_row_number: int) -> str:
+def build_row_id(
+    drive_id: str, file_id: str, sheet_name: Optional[str], source_row_number: int
+) -> str:
     """
-    Build a unique row ID for a file row based on the file ID, sheet name (if applicable), and source row number.
+    Build a globally unique row identifier by combining drive_id, file_id, sheet name,
+    and row number. Drive item IDs are unique within a drive but not across drives,
+    so drive_id is included to prevent collisions when syncing multiple sites.
     """
     if sheet_name:
-        return f"{file_id}::{sheet_name}::{source_row_number}"
-    return f"{file_id}::{source_row_number}"
+        return f"{drive_id}::{file_id}::{sheet_name}::{source_row_number}"
+    return f"{drive_id}::{file_id}::{source_row_number}"
 
 
 def _sheet_key(sheet_name: Optional[str]) -> str:
-    """
-    Return a JSON-safe dict key for a sheet name (None for CSV files).
-    """
+    """Return a JSON-safe dict key for a sheet name (None for CSV files)."""
     return "__csv__" if sheet_name is None else sheet_name
 
 
 def flatten_file_record(item: dict, drive_id: str, site_id: str, site_name: str) -> dict:
-    """
-    Flatten a file item from Microsoft Graph into a dictionary suitable for upsert into the destination table.
-    """
     parent_ref = item.get("parentReference", {})
     return {
         "file_id": item.get("id"),
@@ -522,6 +453,13 @@ def sync_one_file(
     Sync a single file: upsert metadata and row data, then delete orphaned rows.
     State tracks the maximum row number per sheet rather than the full row-ID list
     to keep state size bounded regardless of file size.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: the current sync state dictionary, updated in place.
+        site_id: the SharePoint site identifier.
+        site_name: the display name of the SharePoint site.
+        drive_id: the Microsoft Graph drive identifier.
+        item: the Microsoft Graph drive item dictionary for the file.
     """
     file_states = state.setdefault("file_states", {})
     state_key = f"{site_id}:{item['id']}"
@@ -538,8 +476,8 @@ def sync_one_file(
     op.upsert("files", flatten_file_record(item, drive_id, site_id, site_name))
 
     content_bytes = graph_download(configuration, drive_id, item["id"])
-    delimiter = configuration.get("delimiter", "").strip() or None
-    skip_rows = int(configuration.get("skip_rows", "0") or "0")
+    delimiter = str(configuration.get("delimiter", "") or "").strip() or None
+    skip_rows = int(str(configuration.get("skip_rows", "0") or "0"))
 
     new_sheet_row_counts: Dict[str, int] = {}
     row_count = 0
@@ -551,10 +489,11 @@ def sync_one_file(
         new_sheet_row_counts[sk] = source_row_number
         row_count += 1
 
-        row_id = build_row_id(item["id"], sheet_name, source_row_number)
+        row_id = build_row_id(drive_id, item["id"], sheet_name, source_row_number)
 
         # The 'upsert' operation is used to insert or update row-level data in the destination table.
-        # Each row of a parsed file becomes an individual record keyed by row_id.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(
             "file_rows",
             {
@@ -577,7 +516,7 @@ def sync_one_file(
         sheet_name = None if sk == "__csv__" else sk
         new_max = new_sheet_row_counts.get(sk, 0)
         for row_num in range(new_max + 1, prev_max + 1):
-            row_id = build_row_id(item["id"], sheet_name, row_num)
+            row_id = build_row_id(drive_id, item["id"], sheet_name, row_num)
             # The 'delete' operation removes a row that no longer exists in the source file.
             op.delete("file_rows", {"row_id": row_id})
 
@@ -595,6 +534,10 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
     """
     For any file previously tracked in state that is no longer present in the site,
     delete its rows and metadata record from the destination.
+    Args:
+        site_id: the SharePoint site identifier used to scope state keys.
+        current_file_ids: set of file IDs discovered in the current sync run.
+        state: the current sync state dictionary, updated in place.
     """
     file_states = state.setdefault("file_states", {})
     delete_keys = []
@@ -613,7 +556,9 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
         for sk, max_row in file_state.get("sheet_row_counts", {}).items():
             sheet_name = None if sk == "__csv__" else sk
             for row_num in range(1, max_row + 1):
-                row_id = build_row_id(file_state["file_id"], sheet_name, row_num)
+                row_id = build_row_id(
+                    file_state["drive_id"], file_state["file_id"], sheet_name, row_num
+                )
                 # The 'delete' operation removes a row belonging to a file deleted from SharePoint.
                 op.delete("file_rows", {"row_id": row_id})
 
@@ -625,6 +570,11 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
                 "drive_id": file_state["drive_id"],
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
 
 
 def schema(configuration: dict):
@@ -674,6 +624,11 @@ def schema(configuration: dict):
     ]
 
 
+# ---------------------------------------------------------------------------
+# Main update
+# ---------------------------------------------------------------------------
+
+
 def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
@@ -689,9 +644,9 @@ def update(configuration: dict, state: dict):
     validate_configuration(configuration)
 
     sites = resolve_sites(configuration)
-    folder_path = str(configuration.get("folder_path", "")).strip()
-    recurse = str(configuration.get("sync_subfolders", "false")).strip().lower() == "true"
-    file_pattern = str(configuration.get("file_pattern", "")).strip() or None
+    folder_path = str(configuration.get("folder_path", "") or "").strip()
+    recurse = str(configuration.get("sync_subfolders", "false") or "false").lower() == "true"
+    file_pattern = str(configuration.get("file_pattern", "") or "").strip() or None
 
     log.info(f"Starting sync for {len(sites)} site(s)")
 
@@ -701,19 +656,15 @@ def update(configuration: dict, state: dict):
         drive = get_default_drive(configuration, site_id)
         drive_id = drive["id"]
 
-        files = list_files_in_folder(
+        current_file_ids = set()
+
+        for item in list_files_in_folder(
             configuration=configuration,
             drive_id=drive_id,
             folder_path=folder_path,
             recurse=recurse,
             file_pattern=file_pattern,
-        )
-
-        files.sort(key=lambda item: item.get("lastModifiedDateTime", ""))
-
-        current_file_ids = set()
-
-        for item in files:
+        ):
             current_file_ids.add(item["id"])
             sync_one_file(
                 configuration=configuration,
@@ -724,10 +675,14 @@ def update(configuration: dict, state: dict):
                 item=item,
             )
 
+            # Save the progress by checkpointing the state after each file. This is important for
+            # ensuring that the sync process can resume from the correct position in case of
+            # interruptions on large drives with many files.
+            op.checkpoint(state=state)
+
         handle_deleted_files_for_site(site_id, current_file_ids, state)
 
-        # Save the progress by checkpointing the state after each site. This is important for ensuring
-        # that the sync process can resume from the correct position in case of interruptions.
+        # Save the progress by checkpointing the state after processing deletions for the site.
         op.checkpoint(state=state)
         log.info(f"Completed site {index}/{len(sites)}: {site_name}")
 
@@ -743,7 +698,8 @@ connector = Connector(update=update, schema=schema)
 # IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
 #   fivetran debug
 #
-# This local testing block is provided as a convenience for quick debugging during development.
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
 # Note: This method is not called by Fivetran when executing your connector in production.
 # Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":

@@ -28,10 +28,10 @@ fivetran init --template sharepoint_multi_site_connector
 
 ## Features
 - Multi-site ingestion which connects to multiple SharePoint sites in a single sync run
-- CSV and Excel support parses .csv, .xlsx, and .xlsm file formats
+- CSV and Excel support parses `.csv`, `.xlsx`, and `.xlsm` file formats
 - Row-level extraction emits each row of a parsed file as an individual record
-- Incremental sync uses lastModifiedDateTime to process only new or changed files
-- Deletion handling detects files removed from SharePoint and marks them accordingly
+- Incremental sync uses `lastModifiedDateTime` to process only new or changed files
+- Deletion handling detects files removed from SharePoint and deletes them from the destination
 - Recursive folder traversal discovers files in nested folder structures within document libraries
 
 ## Configuration file
@@ -51,20 +51,21 @@ fivetran init --template sharepoint_multi_site_connector
 }
 ```
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/community_connectors/tree/main/examples) in the open-source [Community Connectors repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/community_connectors/tree/main/connectors) or enhancing an [example](https://github.com/fivetran/community_connectors/tree/main/examples) in the open-source [Community Connectors repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values.
+> When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
-The connector uses the openpyxl package to parse Excel files (.xlsx, .xlsm).
+The connector uses the `openpyxl` package to parse Excel files (`.xlsx`, `.xlsm`).
 
 ```
 openpyxl==3.1.5
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`. 
+> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
-This connector authenticates with the Microsoft Graph API using the OAuth 2.0 client credentials flow. The tenant ID, client ID, and client secret from configuration.json are exchanged for a bearer access token from the Microsoft identity platform. The token is passed in the Authorization header of all Graph API requests.
+This connector authenticates with the Microsoft Graph API using the OAuth 2.0 client credentials flow. The tenant ID, client ID, and client secret from `configuration.json` are exchanged for a bearer access token from the Microsoft identity platform. The token is passed in the Authorization header of all Graph API requests.
 
 To set up authentication:
 1. Sign in to the Azure Portal.
@@ -78,21 +79,21 @@ To set up authentication:
 
 ## Pagination
 
-The Microsoft Graph API returns results in pages when listing drive items. The connector follows the @odata.nextLink URL included in each API response to retrieve subsequent pages until all items have been fetched. This applies to both file discovery and recursive traversal of subfolders.
+The Microsoft Graph API returns results in pages when listing drive items. The connector follows the `@odata.nextLink` URL included in each API response to retrieve subsequent pages until all items have been fetched. This applies to both file discovery and recursive traversal of subfolders.
 
 ## Data handling
 The connector iterates over each SharePoint site URL in the configuration and uses the Microsoft Graph API to list files in the site's document library, including files in nested folders.
 
-For each file, the connector compares the lastModifiedDateTime returned by the API against the timestamp stored in state to determine whether the file needs to be processed.
+For each file, the connector compares the `lastModifiedDateTime` returned by the API against the timestamp stored in state to determine whether the file needs to be processed.
 
-Files that are new or modified since the last sync are downloaded as a stream and parsed. CSV files are read row by row and Excel files (.xlsx, .xlsm) are parsed using openpyxl. Each data row is written as a record to the file_rows table, and file metadata is written to the files table. File types that are not supported, such as PDF or images, are skipped during discovery.
+Files that are new or modified since the last sync are downloaded as a stream and parsed. `.csv` files are read row by row and Excel files (`.xlsx`, `.xlsm`) are parsed using `openpyxl`. Each data row is written as a record to the `file_rows` table, and file metadata is written to the `files` table. File types that are not supported, such as PDF or images, are skipped during discovery.
 
 ## Error handling
-HTTP errors from the Microsoft Graph API, including authentication failures and permission errors, are raised immediately to prevent silent data loss. Rate-limit responses (HTTP 429) are retried after the delay specified in the `Retry-After` response header. Service unavailability errors (HTTP 503/504) are retried after a fixed 30-second delay. Up to 4 retry attempts are made before raising a RuntimeError. Files that exceed the 50 MB size limit are skipped with a warning.
+HTTP errors from the Microsoft Graph API, including authentication failures and permission errors, are raised immediately to prevent silent data loss. Rate-limit responses (HTTP 429) are retried after the delay specified in the `Retry-After` response header. Service unavailability errors (HTTP 503/504) are retried after a fixed 30-second delay. Up to 4 retry attempts are made before raising a `RuntimeError`. Files that exceed the 50 MB size limit are skipped with a warning.
 
 ## Tables created
 
-### files
+### `files`
 Metadata about each file discovered in SharePoint.
 
 | Column | Type | Description |
@@ -111,7 +112,7 @@ Metadata about each file discovered in SharePoint.
 | last_modified_date_time | UTC_DATETIME | Last modification timestamp |
 | etag | STRING | ETag for change detection |
 
-### file_rows
+### `file_rows`
 Row-level data extracted from each CSV or Excel file.
 
 | Column | Type | Description |
