@@ -38,13 +38,15 @@ fivetran init --template federal_register
 
 The connector requires no authentication, so every configuration value is optional and has a documented default. Supply only the values you want to override.
 
-```
+```json
 {
   "initial_sync_start_date": "<YOUR_INITIAL_SYNC_START_DATE>",
   "page_size": "<YOUR_PAGE_SIZE>",
   "max_records_per_sync": "<YOUR_MAX_RECORDS_PER_SYNC>"
 }
 ```
+
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ### Configuration parameters
 
@@ -89,7 +91,7 @@ Refer to `def get_api_response(url: str)`.
 
 The connector creates one table.
 
-`DOCUMENT`
+`document`
 
 Primary key: `document_number`
 
