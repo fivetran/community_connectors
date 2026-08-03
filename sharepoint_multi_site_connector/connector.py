@@ -126,17 +126,20 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
         )
 
         if response.status_code == 401:
+            response.close()
             _token_expiry = 0
             continue
 
         if response.status_code == 429:
             retry_after = int(response.headers.get("Retry-After", 30))
             log.warning(f"Rate limited during file download; retrying in {retry_after}s")
+            response.close()
             time.sleep(retry_after)
             continue
 
         if response.status_code in (503, 504):
             log.warning(f"File download unavailable ({response.status_code}); retrying in 30s")
+            response.close()
             time.sleep(30)
             continue
 
@@ -147,6 +150,7 @@ def graph_download(configuration: dict, drive_id: str, item_id: str) -> bytes:
         for chunk in response.iter_content(chunk_size=65536):
             total += len(chunk)
             if total > MAX_FILE_BYTES:
+                response.close()
                 raise RuntimeError(
                     f"File size exceeds {MAX_FILE_BYTES // (1024 * 1024)} MB limit; "
                     f"drive_id={drive_id}, item_id={item_id}"
@@ -473,7 +477,7 @@ def sync_one_file(
     # The 'upsert' operation is used to insert or update file metadata in the destination table.
     # The first argument is the name of the destination table.
     # The second argument is a dictionary containing the record to be upserted.
-    op.upsert("files", flatten_file_record(item, drive_id, site_id, site_name))
+    op.upsert(table="files", data=flatten_file_record(item, drive_id, site_id, site_name))
 
     content_bytes = graph_download(configuration, drive_id, item["id"])
     delimiter = str(configuration.get("delimiter", "") or "").strip() or None
@@ -495,8 +499,8 @@ def sync_one_file(
         # The first argument is the name of the destination table.
         # The second argument is a dictionary containing the record to be upserted.
         op.upsert(
-            "file_rows",
-            {
+            table="file_rows",
+            data={
                 "row_id": row_id,
                 "file_id": item["id"],
                 "drive_id": drive_id,
@@ -518,7 +522,7 @@ def sync_one_file(
         for row_num in range(new_max + 1, prev_max + 1):
             row_id = build_row_id(drive_id, item["id"], sheet_name, row_num)
             # The 'delete' operation removes a row that no longer exists in the source file.
-            op.delete("file_rows", {"row_id": row_id})
+            op.delete(table="file_rows", keys={"row_id": row_id})
 
     file_states[state_key] = {
         "last_modified": last_modified,
@@ -560,12 +564,12 @@ def handle_deleted_files_for_site(site_id: str, current_file_ids: set, state: di
                     file_state["drive_id"], file_state["file_id"], sheet_name, row_num
                 )
                 # The 'delete' operation removes a row belonging to a file deleted from SharePoint.
-                op.delete("file_rows", {"row_id": row_id})
+                op.delete(table="file_rows", keys={"row_id": row_id})
 
         # The 'delete' operation removes the file metadata record for the deleted file.
         op.delete(
-            "files",
-            {
+            table="files",
+            keys={
                 "file_id": file_state["file_id"],
                 "drive_id": file_state["drive_id"],
             },
