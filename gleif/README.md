@@ -38,13 +38,15 @@ fivetran init --template gleif
 
 The connector requires no authentication, so every configuration value is optional and has a documented default. Supply only the values you want to override.
 
-```
+```json
 {
   "initial_sync_start_date": "<YOUR_INITIAL_SYNC_START_DATE>",
   "page_size": "<YOUR_PAGE_SIZE>",
   "max_records_per_sync": "<YOUR_MAX_RECORDS_PER_SYNC>"
 }
 ```
+
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ### Configuration parameters
 
@@ -91,7 +93,7 @@ Refer to `def get_api_response(url: str)`.
 
 The connector creates one table.
 
-`LEI_RECORD`
+`lei_record`
 
 Primary key: `lei`
 
@@ -139,7 +141,7 @@ Primary key: `lei`
 
 ## Additional considerations
 
-The examples provided are intended as starting points for your own connector development. While we review them for quality and functionality, we cannot guarantee their suitability for your specific use case. Please test thoroughly before deploying to production.
+The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
 
 The register holds over 3.3 million entities. A first sync with no `initial_sync_start_date` and no record limit therefore transfers a substantial volume, so set `initial_sync_start_date` to a recent date, or set `max_records_per_sync`, when testing.
 
