@@ -1,0 +1,8 @@
+{
+  "api_token": "<YOUR_BRIGHT_DATA_API_TOKEN>",
+  "search_query": "<YOUR_SEARCH_QUERY>",
+  "country": "<YOUR_COUNTRY_CODE_DEFAULT_US>",
+  "search_engine": "<YOUR_SEARCH_ENGINE_DEFAULT_GOOGLE>",
+  "search_zone": "<YOUR_BRIGHT_DATA_SERP_ZONE_DEFAULT_SERP_API1>",
+  "format": "<YOUR_RESPONSE_FORMAT_DEFAULT_JSON>"
+}
