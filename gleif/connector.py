@@ -48,8 +48,9 @@ __MAX_PAGE_SIZE = 200
 # Number of records processed between checkpoints
 __CHECKPOINT_INTERVAL = 1000
 
-# Earliest LEI registration data available, used when no state exists and no
-# start date is configured.
+# Default start date for the first sync, used when no state exists and no start
+# date is configured. This is a chosen default, NOT the earliest timestamp the
+# GLEIF dataset contains.
 __DEFAULT_SYNC_START_DATE = "2026-01-01T00:00:00Z"
 
 # Timestamp format used by the GLEIF API for both filters and record fields
@@ -317,7 +318,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
-    log.warning("Example: Source Examples - GLEIF LEI Records")
+    log.warning("Example: Source Examples : GLEIF LEI Records")
 
     validate_configuration(configuration=configuration)
 
