@@ -105,6 +105,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[awardco](https://github.com/fivetran/community_connectors/tree/main/awardco)** - Sync data from Awardco rewards platform
 - **[beehiiv](https://github.com/fivetran/community_connectors/tree/main/beehiiv)** - Sync newsletter data from the beehiiv API including publications, subscriptions, posts, email blasts, automations, and engagement metrics
 - **[betterstack](https://github.com/fivetran/community_connectors/tree/main/betterstack)** - Sync uptime monitoring data from Better Stack
+- **[bright_data_unlocker](https://github.com/fivetran/community_connectors/tree/main/bright_data_unlocker)** - Sync unlocked web page content for one or more URLs from the Bright Data Web Unlocker API
 - **[callminer](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/callminer)** - Sync CallMiner Bulk Export data using OAuth2 authentication, export job polling, archive extraction, and per-data-type incremental state tracking
 - **[checkly](https://github.com/fivetran/community_connectors/tree/main/checkly)** - Sync monitoring check data and analytics from Checkly
 - **[clerk](https://github.com/fivetran/community_connectors/tree/main/clerk)** - Sync user data from Clerk authentication
