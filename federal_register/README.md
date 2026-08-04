@@ -111,7 +111,7 @@ Primary key: `document_number`
 
 ## Additional considerations
 
-The examples provided are intended as starting points for your own connector development. While we review them for quality and functionality, we cannot guarantee their suitability for your specific use case. Please test thoroughly before deploying to production.
+The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
 
 The Federal Register holds documents back to 1994. A first sync with an early `initial_sync_start_date` and no record limit therefore transfers a substantial volume, so set a recent `initial_sync_start_date`, or set `max_records_per_sync`, when testing.
 
