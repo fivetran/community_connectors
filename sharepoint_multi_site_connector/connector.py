@@ -189,10 +189,9 @@ def validate_configuration(configuration: dict) -> None:
     if missing:
         raise ValueError(f"Missing required configuration key(s): {', '.join(missing)}")
 
-    if (
-        not str(configuration.get("site_ids", "") or "").strip()
-        and not str(configuration.get("site_urls", "") or "").strip()
-    ):
+    site_ids_present = bool(str(configuration.get("site_ids", "") or "").strip())
+    site_urls_present = bool(str(configuration.get("site_urls", "") or "").strip())
+    if not site_ids_present and not site_urls_present:
         raise ValueError("Provide at least one of: site_ids or site_urls")
 
     skip_rows_raw = configuration.get("skip_rows", "0")
