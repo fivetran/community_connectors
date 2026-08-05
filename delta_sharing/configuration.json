@@ -1,4 +1,8 @@
-{
-  "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
-  "bearer_token": "<YOUR_DELTA_SHARING_TOKEN>"
+{   "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
+  "auth_type": "bearer_token",
+  "bearer_token": "<YOUR_DELTA_SHARING_TOKEN>",
+  "token_endpoint": "<YOUR_OAUTH_TOKEN_ENDPOINT>",
+  "client_id": "<YOUR_OAUTH_CLIENT_ID>",
+  "client_secret": "<YOUR_OAUTH_CLIENT_SECRET>",
+  "scope": "<YOUR_OAUTH_SCOPE>"
 }
