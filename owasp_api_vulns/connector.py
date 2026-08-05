@@ -768,5 +768,5 @@ if __name__ == "__main__":
     # Open the configuration.json file and load its contents into a dictionary.
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
-    # Test the connector locally
+    # Adding this code to your `connector.py` allows you to test your connector by running your file directly from your IDE.
     connector.debug(configuration=configuration)
