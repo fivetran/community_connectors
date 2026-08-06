@@ -119,6 +119,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[fred](https://github.com/fivetran/community_connectors/tree/main/fred)** - Sync economic data from Federal Reserve Economic Data (FRED)
 - **[github](https://github.com/fivetran/community_connectors/tree/main/github)** - Sync repository data, commits, and pull requests from GitHub
 - **[github_traffic](https://github.com/fivetran/community_connectors/tree/main/github_traffic)** - Sync GitHub repository traffic data
+- **[gleif](https://github.com/fivetran/community_connectors/tree/main/gleif)** - Sync Legal Entity Identifier (LEI) reference data from the GLEIF API
 - **[gnews](https://github.com/fivetran/community_connectors/tree/main/gnews)** - Sync news articles from GNews API
 - **[google_trends](https://github.com/fivetran/community_connectors/tree/main/google_trends)** - Sync search interest data from Google Trends
 - **[goshippo](https://github.com/fivetran/community_connectors/tree/main/goshippo)** - Sync shipment data from Goshippo API
