@@ -32,19 +32,40 @@ fivetran init --template delta_sharing
 
 ## Configuration
 
-The connector reads credentials from `configuration.json`:
+The connector reads credentials from `configuration.json`. It supports two authentication methods, selected with the `auth_type` field.
+
+### Bearer token (default)
 
 ```json
 {
   "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
+  "auth_type": "bearer_token",
   "bearer_token": "<YOUR_DELTA_SHARING_TOKEN>"
+}
+```
+
+### OAuth 2.0 client credentials
+
+```json
+{
+  "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
+  "auth_type": "oauth_client_credentials",
+  "token_endpoint": "<YOUR_OAUTH_TOKEN_ENDPOINT>",
+  "client_id": "<YOUR_OAUTH_CLIENT_ID>",
+  "client_secret": "<YOUR_OAUTH_CLIENT_SECRET>",
+  "scope": "<YOUR_OAUTH_SCOPE>"
 }
 ```
 
 | Field | Required | Description |
 |---|---|---|
 | `endpoint` | Yes | Base URL of the Delta Sharing server (e.g. `https://sharing.example.com/delta-sharing`) |
-| `bearer_token` | Yes | Bearer token used to authenticate all requests to the sharing server |
+| `auth_type` | No | Authentication method: `bearer_token` (default) or `oauth_client_credentials` |
+| `bearer_token` | Conditional | Bearer token used to authenticate requests. Required when `auth_type` is `bearer_token` |
+| `token_endpoint` | Conditional | OAuth token endpoint URL. Required when `auth_type` is `oauth_client_credentials` |
+| `client_id` | Conditional | OAuth client ID. Required when `auth_type` is `oauth_client_credentials` |
+| `client_secret` | Conditional | OAuth client secret. Required when `auth_type` is `oauth_client_credentials` |
+| `scope` | No | OAuth scope requested during the client credentials flow |
 
 
 ## Requirements File
@@ -64,9 +85,13 @@ pyarrow         # Columnar data processing for Parquet file reads
 
 ## Authentication
 
-Delta Sharing uses **bearer token authentication**. Both the endpoint URL and the bearer token are distributed to recipients via an **activation link** provided by the data provider.
+Delta Sharing supports two authentication methods. Select one with the `auth_type` field in `configuration.json`.
 
-### How to obtain credentials
+### Bearer token
+
+Both the endpoint URL and the bearer token are distributed to recipients via an **activation link** provided by the data provider.
+
+#### How to obtain credentials
 
 1. The data provider shares a dataset with you as a **recipient** in their Delta Sharing platform (e.g. Databricks Unity Catalog).
 2. They send you an **activation link** — a one-time URL that, when opened, downloads a **profile file** (`.share` or `.json`).
@@ -84,6 +109,10 @@ Delta Sharing uses **bearer token authentication**. Both the endpoint URL and th
 4. Copy the `bearerToken` and `endpoint` values from the profile file into `configuration.json`.
 
 > Note: The bearer token has an expiration time. When it expires, request a new activation link from the data provider and update `configuration.json` and redeploy.
+
+### OAuth 2.0 client credentials
+
+For Delta Sharing servers that support OAuth (for example, Databricks Unity Catalog OIDC-based sharing), set `auth_type` to `oauth_client_credentials` and provide the `token_endpoint`, `client_id`, `client_secret`, and optional `scope`. The connector runs the OAuth 2.0 client credentials flow to obtain a short-lived access token, caches it, and refreshes it automatically before it expires, so no manual token rotation is required.
 
 ## Pagination
 This connector does not use API pagination for table rows. It discovers the table list first, then processes each table one by one, and performs record-level checkpointing every CHECKPOINT_INTERVAL rows plus a checkpoint after each table. This keeps progress durable and allows safe resume behavior across large sync runs.

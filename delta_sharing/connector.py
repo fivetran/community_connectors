@@ -16,6 +16,7 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 import json
 import os
 import tempfile
+import time
 
 # Import libraries for Delta Sharing and HTTP requests
 import delta_sharing
@@ -32,6 +33,14 @@ from fivetran_connector_sdk import Operations as op
 
 CHECKPOINT_INTERVAL = 1000
 
+# Supported authentication methods.
+AUTH_BEARER_TOKEN = "bearer_token"
+AUTH_OAUTH_CLIENT_CREDENTIALS = "oauth_client_credentials"
+VALID_AUTH_TYPES = (AUTH_BEARER_TOKEN, AUTH_OAUTH_CLIENT_CREDENTIALS)
+
+# Refresh OAuth access tokens this many seconds before they expire.
+OAUTH_REFRESH_MARGIN_SECONDS = 60
+
 
 def validate_configuration(configuration: dict):
     """
@@ -43,7 +52,6 @@ def validate_configuration(configuration: dict):
         ValueError: if any required configuration parameter is missing or invalid.
     """
     endpoint = configuration.get("endpoint")
-    bearer_token = configuration.get("bearer_token")
 
     if not endpoint:
         raise ValueError("Missing required configuration value: endpoint")
@@ -51,8 +59,23 @@ def validate_configuration(configuration: dict):
         raise ValueError(
             "Invalid configuration value for endpoint: must be a URL starting with http:// or https://"
         )
-    if not bearer_token:
-        raise ValueError("Missing required configuration value: bearer_token")
+
+    auth_type = configuration.get("auth_type", AUTH_BEARER_TOKEN)
+    if auth_type not in VALID_AUTH_TYPES:
+        raise ValueError(
+            f"Invalid configuration value for auth_type: must be one of {', '.join(VALID_AUTH_TYPES)}"
+        )
+
+    if auth_type == AUTH_BEARER_TOKEN:
+        if not configuration.get("bearer_token"):
+            raise ValueError("Missing required configuration value: bearer_token")
+    else:
+        required = ("token_endpoint", "client_id", "client_secret")
+        missing = [key for key in required if not configuration.get(key)]
+        if missing:
+            raise ValueError(
+                f"Missing required OAuth configuration value(s): {', '.join(missing)}"
+            )
 
 
 def schema(configuration: dict):
@@ -91,25 +114,83 @@ def schema(configuration: dict):
 # ---------------------------------------------------------------------------
 
 
-def _write_profile(endpoint, bearer_token):
-    """Write a Delta Sharing profile JSON to a temp file; return its path."""
-    profile = {
-        "shareCredentialsVersion": 1,
-        "bearerToken": bearer_token,
-        "endpoint": endpoint,
-    }
+def _write_profile(configuration, endpoint):
+    """Write a Delta Sharing recipient profile JSON to a temp file; return its path.
+
+    Bearer-token auth uses a v1 profile. OAuth client credentials uses a v2
+    profile so the delta_sharing library refreshes tokens on its own for the
+    data reads (load_as_pandas / load_table_changes_as_pandas).
+    """
+    auth_type = configuration.get("auth_type", AUTH_BEARER_TOKEN)
+    if auth_type == AUTH_OAUTH_CLIENT_CREDENTIALS:
+        profile = {
+            "shareCredentialsVersion": 2,
+            "type": "oauth_client_credentials",
+            "endpoint": endpoint,
+            "tokenEndpoint": configuration["token_endpoint"],
+            "clientId": configuration["client_id"],
+            "clientSecret": configuration["client_secret"],
+        }
+        scope = configuration.get("scope")
+        if scope:
+            profile["scope"] = scope
+    else:
+        profile = {
+            "shareCredentialsVersion": 1,
+            "bearerToken": configuration["bearer_token"],
+            "endpoint": endpoint,
+        }
     f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
     json.dump(profile, f)
     f.close()
     return f.name
 
 
-def _get_table_version(endpoint, bearer_token, share, schema_name, table_name):
+def _fetch_oauth_token(configuration):
+    """Run the OAuth 2.0 client credentials flow; return (access_token, expires_in)."""
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": configuration["client_id"],
+        "client_secret": configuration["client_secret"],
+    }
+    scope = configuration.get("scope")
+    if scope:
+        data["scope"] = scope
+    resp = requests.post(configuration["token_endpoint"], data=data, timeout=30)
+    resp.raise_for_status()
+    body = resp.json()
+    return body["access_token"], int(body.get("expires_in", 3600))
+
+
+def _make_token_getter(configuration):
+    """Return a callable that yields a valid bearer token for raw HTTP requests.
+
+    For bearer-token auth the static token is returned. For OAuth the token is
+    fetched via client credentials and cached until shortly before it expires.
+    """
+    auth_type = configuration.get("auth_type", AUTH_BEARER_TOKEN)
+    if auth_type != AUTH_OAUTH_CLIENT_CREDENTIALS:
+        bearer_token = configuration["bearer_token"]
+        return lambda: bearer_token
+
+    cache = {"token": None, "expires_at": 0.0}
+
+    def get_token():
+        if cache["token"] is None or time.monotonic() >= cache["expires_at"]:
+            token, expires_in = _fetch_oauth_token(configuration)
+            cache["token"] = token
+            cache["expires_at"] = time.monotonic() + expires_in - OAUTH_REFRESH_MARGIN_SECONDS
+        return cache["token"]
+
+    return get_token
+
+
+def _get_table_version(endpoint, token_getter, share, schema_name, table_name):
     """GET .../version  →  current Delta-Table-Version as int."""
     url = f"{endpoint}/shares/{share}/schemas/{schema_name}" f"/tables/{table_name}/version"
     resp = requests.get(
         url,
-        headers={"Authorization": f"Bearer {bearer_token}"},
+        headers={"Authorization": f"Bearer {token_getter()}"},
         timeout=30,
     )
     resp.raise_for_status()
@@ -157,7 +238,7 @@ def _sync_catalog(client):
 # ---------------------------------------------------------------------------
 
 
-def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_name, state):
+def _sync_table(profile_path, endpoint, token_getter, share, schema_name, table_name, state):
     """
     Sync one Delta Sharing table into destination table {schema}__{table}.
 
@@ -173,7 +254,7 @@ def _sync_table(profile_path, endpoint, bearer_token, share, schema_name, table_
 
     try:
         current_version = _get_table_version(
-            endpoint, bearer_token, share, schema_name, table_name
+            endpoint, token_getter, share, schema_name, table_name
         )
     except Exception as e:
         log.warning(f"Cannot get version for {dest}, skipping: {e}")
@@ -245,9 +326,9 @@ def update(configuration: dict, state: dict):
 
     validate_configuration(configuration)
     endpoint = configuration["endpoint"].rstrip("/")
-    bearer_token = configuration["bearer_token"]
+    token_getter = _make_token_getter(configuration)
 
-    profile_path = _write_profile(endpoint, bearer_token)
+    profile_path = _write_profile(configuration, endpoint)
     try:
         client = delta_sharing.SharingClient(profile_path)
 
@@ -264,7 +345,7 @@ def update(configuration: dict, state: dict):
 
         for share_name, schema_name, table_name in all_tables:
             state = _sync_table(
-                profile_path, endpoint, bearer_token, share_name, schema_name, table_name, state
+                profile_path, endpoint, token_getter, share_name, schema_name, table_name, state
             )
 
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
