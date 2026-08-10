@@ -301,7 +301,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
-    log.warning("Example: Source Examples - GBIF Occurrences")
+    log.warning("Example: Source Examples : GBIF Occurrences")
 
     validate_configuration(configuration=configuration)
 
