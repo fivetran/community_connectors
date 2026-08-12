@@ -254,11 +254,17 @@ def test_max_records_is_a_true_ceiling_not_a_floor():
 def test_repeated_syncs_drain_all_records_without_duplication():
     """Repeated bounded syncs cover every document exactly once and the cursor
     never regresses -- the compound-cursor equivalent of a drain test."""
-    all_docs = (
-        [_document("2024-01-02", f"2023-{n:05d}") for n in range(1, 4)]
-        + [_document("2024-01-03", f"2023-{n:05d}") for n in range(4, 7)]
-        + [_document("2024-01-04", f"2023-{n:05d}") for n in range(7, 10)]
-    )
+    # Built as one comprehension over (date, span) pairs rather than three lists
+    # joined with `+`. Black splits a multi-line binary expression with the operator
+    # at the START of each line, and repo CI selects W (W503: line break before
+    # binary operator) -- so the two tools fight over that shape and CI loses.
+    # No operator split, nothing to disagree about.
+    spans = [
+        ("2024-01-02", range(1, 4)),
+        ("2024-01-03", range(4, 7)),
+        ("2024-01-04", range(7, 10)),
+    ]
+    all_docs = [_document(date, f"2023-{n:05d}") for date, span in spans for n in span]
 
     def key(doc):
         return (doc["publication_date"], doc["document_number"])
