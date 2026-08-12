@@ -315,6 +315,15 @@ def update(configuration: dict, state: dict):
                 log.warning("Skipping a record with no document_number")
                 continue
 
+            # Same treatment for publication_date, and for a sharper reason: it is
+            # half of the compound cursor below, and `None <= "2024-01-02"` raises
+            # TypeError -- so a single null would abort the entire sync rather than
+            # skipping one record. It is also checkpointed into state, where a null
+            # would poison the cursor for every later run.
+            if not publication_date:
+                log.warning(f"Skipping record {document_number} with no publication_date")
+                continue
+
             # The lower bound is inclusive, so a resume re-requests the last
             # synced day. Skip any document at or before the compound cursor,
             # which is exactly the set already delivered by the previous run.
