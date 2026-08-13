@@ -30,7 +30,7 @@ fivetran init --template delta_sharing
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 
-## Configuration
+## Configuration file
 
 The connector reads credentials from `configuration.json`. It supports two authentication methods, selected with the `auth_type` field.
 
@@ -89,12 +89,12 @@ Delta Sharing supports two authentication methods. Select one with the `auth_typ
 
 ### Bearer token
 
-Both the endpoint URL and the bearer token are distributed to recipients via an **activation link** provided by the data provider.
+Both the endpoint URL and the bearer token are distributed to recipients via an activation link provided by the data provider.
 
 #### How to obtain credentials
 
-1. The data provider shares a dataset with you as a **recipient** in their Delta Sharing platform (e.g. Databricks Unity Catalog).
-2. They send you an **activation link** — a one-time URL that, when opened, downloads a **profile file** (`.share` or `.json`).
+1. The data provider shares a dataset with you as a recipient in their Delta Sharing platform (e.g. Databricks Unity Catalog).
+2. They send you an activation link — a one-time URL that, when opened, downloads a profile file (`.share` or `.json`).
 3. The profile file contains:
     
     ```json

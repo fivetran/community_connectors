@@ -179,7 +179,8 @@ def _make_token_getter(configuration):
         if cache["token"] is None or time.monotonic() >= cache["expires_at"]:
             token, expires_in = _fetch_oauth_token(configuration)
             cache["token"] = token
-            cache["expires_at"] = time.monotonic() + expires_in - OAUTH_REFRESH_MARGIN_SECONDS
+            refresh_window = min(OAUTH_REFRESH_MARGIN_SECONDS, expires_in / 2)
+            cache["expires_at"] = time.monotonic() + expires_in - refresh_window
         return cache["token"]
 
     return get_token

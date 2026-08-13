@@ -1,5 +1,6 @@
-{   "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
-  "auth_type": "bearer_token",
+{
+  "endpoint": "<YOUR_DELTA_SHARING_ENDPOINT>",
+  "auth_type": "bearer_token_OR_oauth_client_credentials",
   "bearer_token": "<YOUR_DELTA_SHARING_TOKEN>",
   "token_endpoint": "<YOUR_OAUTH_TOKEN_ENDPOINT>",
   "client_id": "<YOUR_OAUTH_CLIENT_ID>",
