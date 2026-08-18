@@ -204,14 +204,14 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange):
 
     while more_data:
         try:
-            param_string = "&".join(f"{key}={value}" for key, value in timerange.items())
+            params = {**timerange, **pagination}
             response_page, next_token = get_api_response(
-                base_url + endpoint + "?" + param_string, headers, params=pagination
+                base_url + endpoint, headers, params=params
             )
             log.debug(
-                f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
+                f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
             )
-            for o in response_page:
+            for o in response_page or []:
                 if fields_to_extract.get(table_name):
                     o = extract_fields(fields_to_extract[table_name], o)
                 o = stringify_lists(o)
@@ -268,10 +268,10 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params=None):
     try:
         response_page, next_token = get_api_response(base_url + endpoint, headers, params=params)
         log.debug(
-            f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
+            f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
         )
 
-        for o in response_page:
+        for o in response_page or []:
             if endpoint == "/labor/v1/timeEntries" and o.get("breaks"):
                 process_child(o["breaks"], "break", "time_entry_id", o["guid"])
             elif endpoint == "/labor/v1/employees":
@@ -342,8 +342,7 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?businessDate=" + d, headers
             )
-            # log.debug(f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}")
-            for o in response_page:
+            for o in response_page or []:
                 o = flatten_fields(fields_to_flatten[table_name], o)
                 o["restaurant_id"] = rst_id
                 o = replace_guid_with_id(o)
@@ -560,12 +559,35 @@ def process_child(parent, table_name, id_field_name, id_field):
                 if len(p.get(child_key, [])) > 0:  # Use .get() to handle missing keys gracefully
                     process_child(p[child_key], child_table_name, table_name + "_id", p["guid"])
                 p.pop(child_key, None)
+        # Toast modifiers are recursive: a modifier can itself carry its own "modifiers" list
+        # (e.g. a pour-size modifier nesting a liquor-brand upgrade modifier). The generic
+        # `relationships` map above can't express this directly -- a self-referential entry
+        # there would rename the FK at each nesting level (table_name + "_id"), but nested
+        # modifiers need to keep the SAME top-level orders_check_selection_id as their
+        # ancestors. Recurse into the same table at any depth, propagating the same
+        # id_field_name/id_field this call received, and record each nested modifier's
+        # immediate parent separately via parent_modifier_id (absent/None for the non-nested
+        # case). Without this, a nested modifier's entire "modifiers" list got stringified into
+        # a MODIFIERS text blob by stringify_lists() below instead of getting its own row.
+        if table_name == "orders_check_selection_modifier":
+            nested_modifiers = p.pop("modifiers", None)
+            if nested_modifiers:
+                for nested in nested_modifiers:
+                    nested["parent_modifier_id"] = p["guid"]
+                process_child(
+                    nested_modifiers, "orders_check_selection_modifier", id_field_name, id_field
+                )
         if table_name in fields_to_flatten:
             # log.debug(f"flattening fields in {table_name}")
             p = flatten_fields(fields_to_flatten[table_name], p)
-        # check for null guids in appliedTaxes[]
-        if table_name == "orders_check_selection_applied_tax" and p.get("guid") is None:
-            p["guid"] = "gen-" + str(uuid.uuid4())
+        # Toast sometimes omits a guid for appliedTaxes[] entries. flatten_fields() above has
+        # already renamed any real guid to "id", so check "id" (not "guid", which no longer
+        # exists at this point) and generate a deterministic id from stable fields -- not a
+        # random uuid4 -- so the same tax line gets the same id on every sync instead of a new
+        # duplicate row each time.
+        if table_name == "orders_check_selection_applied_tax" and p.get("id") is None:
+            basis = f"{id_field}-{p.get('taxRate_id', '')}"
+            p["id"] = "gen-" + str(uuid.uuid5(uuid.NAMESPACE_OID, basis))
         if table_name == "orders_check":
             p.pop("payments", None)
         p = stringify_lists(p)
@@ -612,11 +634,9 @@ def make_headers(conf, base_url, state, key):
     current_time = time.time()
 
     # Check if a valid token exists and is not expiring in the next hour
-    if (
-        "encrypted_token" in state
-        and "token_ttl" in state
-        and state["token_ttl"] > current_time + 3600
-    ):
+    has_cached_token = "encrypted_token" in state and "token_ttl" in state
+    token_not_expiring_soon = has_cached_token and state["token_ttl"] > current_time + 3600
+    if token_not_expiring_soon:
         try:
             auth_token = fernet.decrypt(state["encrypted_token"].encode()).decode()
             log.info("encrypted_token found with at least an hour left, reusing")
@@ -1102,7 +1122,7 @@ connector = Connector(update=update, schema=schema)
 # This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
 # This is useful for debugging while you write your code. Note this method is not called by Fivetran when executing your connector in production.
 # Please test using the Fivetran debug command prior to finalizing and deploying your connector.
-if __name__ == "main":
+if __name__ == "__main__":
     # Open the configuration.json file and load its contents into a dictionary.
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
