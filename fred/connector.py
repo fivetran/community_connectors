@@ -93,6 +93,7 @@ def update(configuration: dict, state: dict):
 
     # Validate the configuration to ensure it contains all required values
     validate_configuration(configuration=configuration)
+    print("temp changes")
 
     api_key = configuration.get("api_key")
     series_ids_str = configuration.get("series_ids", "")
