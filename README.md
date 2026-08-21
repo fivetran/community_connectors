@@ -107,6 +107,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[betterstack](https://github.com/fivetran/community_connectors/tree/main/betterstack)** - Sync uptime monitoring data from Better Stack
 - **[bright_data_unlocker](https://github.com/fivetran/community_connectors/tree/main/bright_data_unlocker)** - Sync unlocked web page content for one or more URLs from the Bright Data Web Unlocker API
 - **[callminer](https://github.com/fivetran/fivetran_csdk_connectors/tree/main/callminer)** - Sync CallMiner Bulk Export data using OAuth2 authentication, export job polling, archive extraction, and per-data-type incremental state tracking
+- **[carta](https://github.com/fivetran/community_connectors/tree/main/carta)** - Sync issuer equity data from the Carta Issuer API including option grants, RSUs, RSAs, certificates, vesting events, stakeholders, share classes, 409A fair market values, convertible notes, and stakeholder cap table holdings, with multi-issuer support and incremental securities sync
 - **[checkly](https://github.com/fivetran/community_connectors/tree/main/checkly)** - Sync monitoring check data and analytics from Checkly
 - **[clerk](https://github.com/fivetran/community_connectors/tree/main/clerk)** - Sync user data from Clerk authentication
 - **[commonpaper](https://github.com/fivetran/community_connectors/tree/main/commonpaper)** - Sync agreement data from Common Paper
