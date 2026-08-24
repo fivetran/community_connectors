@@ -159,6 +159,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **[s3_csv_validation](https://github.com/fivetran/community_connectors/tree/main/s3_csv_validation)** - Read and validate CSV files from Amazon S3
 - **[sam_gov](https://github.com/fivetran/community_connectors/tree/main/sam_gov)** - Sync government contracting opportunities from SAM.gov
 - **[sap_ariba](https://github.com/fivetran/community_connectors/tree/main/sap_ariba)** - Sync procurement data from SAP Ariba
+- **[semantic_scholar](https://github.com/fivetran/community_connectors/tree/main/semantic_scholar)** - Sync academic paper records from the Semantic Scholar Academic Graph API, with optional Snowflake Cortex research impact, domain, and accessibility enrichment
 - **[sendcloud](https://github.com/fivetran/community_connectors/tree/main/sendcloud)** - Sync shipment data from Sendcloud API
 - **[sensor_tower](https://github.com/fivetran/community_connectors/tree/main/sensor_tower)** - Sync mobile app market intelligence from Sensor Tower
 - **[sensource](https://github.com/fivetran/community_connectors/tree/main/sensource)** - Sync traffic and occupancy metrics from SenSource
