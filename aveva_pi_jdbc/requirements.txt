@@ -1,0 +1,9 @@
+# JayDeBeApi bridges Python to the AVEVA-supplied PI SQL Client JDBC driver via
+# a JPype-embedded JVM. JPype1 is JayDeBeApi's runtime dependency for starting
+# and calling into that JVM.
+#
+# Note: The following packages are pre-installed in the base environment
+# and should not be included in this file:
+#   fivetran_connector_sdk:latest, requests:2.33.0, grpcio:1.78.0, grpcio-tools:1.78.0
+JayDeBeApi==1.2.3
+JPype1==1.5.0
