@@ -208,10 +208,20 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange):
             response_page, next_token = get_api_response(
                 base_url + endpoint, headers, params=params
             )
+            if response_page is None:
+                # get_api_response() returns None specifically to signal a failed request (a
+                # 400, or exhausted 401 retries) -- distinct from a genuine empty [] response.
+                # Raise rather than treat this as "nothing to upsert": the caller checkpoints
+                # after this loop, so silently continuing would let a failed request's time
+                # range get checkpointed as done, permanently skipping that data instead of
+                # retrying it next sync.
+                raise RuntimeError(
+                    f"Failed to fetch {endpoint} for restaurant {rst_id} -- see prior log for details"
+                )
             log.debug(
-                f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
+                f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
             )
-            for o in response_page or []:
+            for o in response_page:
                 if fields_to_extract.get(table_name):
                     o = extract_fields(fields_to_extract[table_name], o)
                 o = stringify_lists(o)
@@ -267,11 +277,18 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params=None):
 
     try:
         response_page, next_token = get_api_response(base_url + endpoint, headers, params=params)
+        if response_page is None:
+            # See the identical check in process_config() -- None signals a failed request,
+            # distinct from a genuine empty [] response. Raise instead of silently continuing,
+            # since the caller checkpoints after this loop regardless.
+            raise RuntimeError(
+                f"Failed to fetch {endpoint} for restaurant {rst_id} -- see prior log for details"
+            )
         log.debug(
-            f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
+            f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
         )
 
-        for o in response_page or []:
+        for o in response_page:
             if endpoint == "/labor/v1/timeEntries" and o.get("breaks"):
                 process_child(o["breaks"], "break", "time_entry_id", o["guid"])
             elif endpoint == "/labor/v1/employees":
@@ -342,7 +359,15 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params):
             response_page, next_token = get_api_response(
                 base_url + endpoint + "?businessDate=" + d, headers
             )
-            for o in response_page or []:
+            if response_page is None:
+                # See the identical check in process_config() -- None signals a failed request
+                # for this business date, distinct from a genuine empty [] response. Raise
+                # instead of silently skipping the date, since the caller checkpoints past the
+                # whole range regardless.
+                raise RuntimeError(
+                    f"Failed to fetch {endpoint} for restaurant {rst_id} on {d} -- see prior log for details"
+                )
+            for o in response_page:
                 o = flatten_fields(fields_to_flatten[table_name], o)
                 o["restaurant_id"] = rst_id
                 o = replace_guid_with_id(o)
