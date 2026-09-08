@@ -38,8 +38,8 @@ def schema(configuration: dict):
     return [
         {
             "table": "sample_table",  # Name of the table in the destination.
-            "primary_key": ["id"],  # Primary key column(s) for the table.
-            # No columns are defined, meaning the types will be inferred.
+            "primary_key": ["tabid"],  # Primary key column(s) for the table.
+            "columns": {"tabid": "INT"},
         }
     ]
 
@@ -126,13 +126,13 @@ def update(configuration: dict, state: dict):
     conn = connect_to_db(configuration)
     table_name = configuration.get("table_name")
 
-    # The date format of the created_at column in the database is "YYYY-MM-DD HH:MM:SS"
+    # The date format of the created column in the database is "YYYY-MM-DD HH:MM:SS"
     # Please ensure that while handling the datetime, you are using the correct format for the columns.
     last_created = state.get("last_created", "1990-01-01 00:00:00")
 
     # The SQL query to select all records from the table specified in configuration
     # You can modify this query to suit your needs.
-    sql = f"SELECT * FROM {table_name} WHERE created_at > '{last_created}'"
+    sql = f"SELECT * FROM {table_name} WHERE created > '{last_created}'"
     # Execute the SQL query
     stmt = ibm_db.exec_immediate(conn, sql)
     # Fetch the first record from the result set
@@ -146,10 +146,12 @@ def update(configuration: dict, state: dict):
         # - The second argument is a dictionary containing the data to be upserted,
         op.upsert(table="sample_table", data=data)
 
-        # Update the last_created variable with the created_at value of the current record
-        last_created_from_data = get_datetime_str(data["created_at"])
-        if last_created_from_data > last_created:
-            last_created = last_created_from_data
+        # Update the last_created variable with the created value of the current record
+        created_value = data.get("created")
+        if created_value is not None:
+            last_created_from_data = get_datetime_str(created_value)
+            if last_created_from_data > last_created:
+                last_created = last_created_from_data
         data = ibm_db.fetch_assoc(stmt)
 
     log.info("upserted all records from the products table")

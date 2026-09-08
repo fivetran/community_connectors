@@ -49,6 +49,8 @@ The connector requires the following configuration parameters:
 }
 ```
 
+> Important: If you see `SQL30081N`, review the DRDA listener guidance in the [Troubleshooting](#troubleshooting) section.
+
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
@@ -119,3 +121,16 @@ You must explicitly provide the path to the `clidriver\\bin` directory before th
     ```
 
 This ensures the connector works for local debugging on Windows and the logic is safely ignored when deployed in Fivetran's production environment.
+
+**Error: `SQL30081N` during connect (`connect` timeout or `recv` socket close)**
+
+Issue: Informix has two listener types:
+- `onsoctcp` = normal/native listener
+- `drsoctcp` = DRDA listener
+
+Some `ibm_db` connection paths require DRDA. If you point the connector to only the normal listener, `SQL30081N` can occur.
+
+Resolution:
+
+- If DRDA is already configured in Informix, set `port` in `configuration.json` to the DRDA port.
+- If DRDA is not configured, add a DRDA listener/alias in Informix first, then use that DRDA port in `configuration.json`.
