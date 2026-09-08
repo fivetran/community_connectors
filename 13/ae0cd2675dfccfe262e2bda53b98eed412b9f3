@@ -1,0 +1,23 @@
+README.md
+  d30b67230033d16a 47-51,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "13ae0cd2675dfccfe262e2bda53b98eed412b9f3",
+  "prompts": {
+    "d30b67230033d16a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "928f0873-0243-426f-81b3-69430345ac86",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fivetran-ivangrbusic <ivan.grbusic@fivetran.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 6,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
