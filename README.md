@@ -127,7 +127,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **GNews** ([gnews](https://github.com/fivetran/community_connectors/tree/main/gnews)) - Sync news articles from GNews API
 - **Google Trends** ([google_trends](https://github.com/fivetran/community_connectors/tree/main/google_trends)) - Sync search interest data from Google Trends
 - **Goshippo** ([goshippo](https://github.com/fivetran/community_connectors/tree/main/goshippo)) - Sync shipment data from Goshippo API
-- **greytHR** ([grey_hr](https://github.com/fivetran/community_connectors/tree/main/grey_hr)) - Sync HR data from greytHR API
+- **Grey HR** ([grey_hr](https://github.com/fivetran/community_connectors/tree/main/grey_hr)) - Sync HR data from greytHR API
 - **Gumroad** ([gumroad](https://github.com/fivetran/community_connectors/tree/main/gumroad)) - Sync sales, products, and subscribers from Gumroad
 - **Harness.io** ([harness_io](https://github.com/fivetran/community_connectors/tree/main/harness_io)) - Connect and sync data from Harness.io
 - **Healthchecks.io** ([healthchecks](https://github.com/fivetran/community_connectors/tree/main/healthchecks)) - Sync health check monitoring from Healthchecks.io
