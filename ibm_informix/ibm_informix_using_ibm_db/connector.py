@@ -201,7 +201,7 @@ def update(configuration: dict, state: dict):
     # The SQL query to select all records from the table specified in configuration
     # You can modify this query to suit your needs.
     # Use a parameter placeholder for the incremental cursor to avoid manual quote escaping in SQL text.
-    sql = f"SELECT * FROM {table_name} WHERE created > ?"
+    sql = f"SELECT * FROM {table_name} WHERE created >= ?"
     # Prepare the SQL template once, then bind data values separately.
     stmt = ibm_db.prepare(conn, sql)
     # Bind the current cursor value as a parameter so the driver handles quoting and typing safely.

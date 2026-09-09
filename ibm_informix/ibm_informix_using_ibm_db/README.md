@@ -93,6 +93,14 @@ The connector implements error handling for:
 - Datetime conversion issues with graceful fallback to string representation
 - Missing configuration parameters with clear error messages
 
+## Tables created
+
+The connector creates the following destination table (refer to the `schema()` function in `connector.py`):
+
+| Table          | Primary key | Columns |
+|----------------|---|---|
+| `sample_table` | `tabid` | `tabid` (`INT`) |
+
 ## Additional considerations
 
 > Note: This example was tested using the IBM Informix developer edition local server. If you face any difficulties while writing your connector, please connect with [our professional services](https://support.fivetran.com/hc/en-us/requests/new?isSdkIssue=true).
