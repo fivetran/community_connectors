@@ -53,7 +53,14 @@ def validate_configuration(configuration: dict):
     Raises:
         ValueError: if any required configuration parameter is missing.
     """
-    required_keys = ["hostname", "port", "database", "username", "password", "table_name"]
+    required_keys = [
+        "hostname",
+        "port",
+        "database",
+        "username",
+        "password",
+        "table_name",
+    ]
     for key in required_keys:
         value = configuration.get(key)
         if value is None or str(value).strip() == "":
@@ -62,7 +69,9 @@ def validate_configuration(configuration: dict):
     try:
         port = int(str(configuration.get("port")).strip())
     except ValueError as value_error:
-        raise ValueError("Invalid port: must be an integer between 1 and 65535") from value_error
+        raise ValueError(
+            "Invalid port: must be an integer between 1 and 65535"
+        ) from value_error
     if port < 1 or port > 65535:
         raise ValueError("Invalid port: must be between 1 and 65535")
     configuration["port"] = port
