@@ -69,9 +69,7 @@ def validate_configuration(configuration: dict):
     try:
         port = int(str(configuration.get("port")).strip())
     except ValueError as value_error:
-        raise ValueError(
-            "Invalid port: must be an integer between 1 and 65535"
-        ) from value_error
+        raise ValueError("Invalid port: must be an integer between 1 and 65535") from value_error
     if port < 1 or port > 65535:
         raise ValueError("Invalid port: must be between 1 and 65535")
     configuration["port"] = port
@@ -81,9 +79,7 @@ def validate_configuration(configuration: dict):
     if len(table_name_parts) > 2 or not all(
         _is_safe_identifier(identifier_part) for identifier_part in table_name_parts
     ):
-        raise ValueError(
-            "Invalid table_name: use an unquoted identifier or schema.table format"
-        )
+        raise ValueError("Invalid table_name: use an unquoted identifier or schema.table format")
     configuration["table_name"] = table_name
 
 
