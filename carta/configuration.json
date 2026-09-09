@@ -1,0 +1,9 @@
+{
+  "client_id": "<YOUR_CARTA_OAUTH_CLIENT_ID>",
+  "client_secret": "<YOUR_CARTA_OAUTH_CLIENT_SECRET>",
+  "issuer_ids": "<COMMA_SEPARATED_CARTA_ISSUER_IDS>",
+  "token_url": "<YOUR_CARTA_TOKEN_URL_DEFAULT_https://login.app.carta.com/o/access_token/>",
+  "api_base_url": "<YOUR_CARTA_API_BASE_URL_DEFAULT_https://api.carta.com>",
+  "api_version": "<YOUR_CARTA_API_VERSION_DEFAULT_v1alpha1>",
+  "scopes": "<SPACE_SEPARATED_OAUTH_SCOPES_OPTIONAL>"
+}
