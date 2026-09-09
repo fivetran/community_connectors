@@ -98,7 +98,7 @@ The examples provided are intended to help you effectively use Fivetran's Connec
 
 ## Troubleshooting
 
-**Error: `ImportError: DLL load failed while importing ibm_db` on Windows**
+### ImportError: DLL load failed while importing ibm_db on Windows
 
 Issue: This error occurs on Windows because the Python interpreter cannot find the required library files (`clidriver` DLLs) needed by the `ibm_db` package.
 
@@ -122,7 +122,7 @@ You must explicitly provide the path to the `clidriver\\bin` directory before th
 
 This ensures the connector works for local debugging on Windows and the logic is safely ignored when deployed in Fivetran's production environment.
 
-**Error: `SQL30081N` during connect (`connect` timeout or `recv` socket close)**
+### SQL30081N during connect (connect timeout or recv socket close)
 
 Issue: Informix has two listener types:
 - `onsoctcp` = normal/native listener
