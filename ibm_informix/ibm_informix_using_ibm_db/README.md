@@ -72,14 +72,14 @@ The connector uses username and password authentication to connect to your IBM I
 The connector:
 - Executes SQL queries against your specified table
 - Properly formats datetime values for consistent representation
-- Tracks the latest created_at timestamp to enable incremental syncs
+- Tracks the latest `created` timestamp to enable incremental syncs
 
 The schema used in the example is as follows:
 
 ```json
 {
   "table": "sample_table",
-  "primary_key": ["id"]
+  "primary_key": ["tabid"]
 }
 ```
 

@@ -23,6 +23,27 @@ import json
 from datetime import datetime
 
 
+def _is_safe_identifier(identifier: str) -> bool:
+    """
+    Check whether a SQL identifier is safe for interpolation.
+    Args:
+        identifier: The identifier to validate.
+    Returns:
+        True if the identifier is a valid unquoted SQL identifier.
+    """
+    if not identifier:
+        return False
+
+    if not (identifier[0].isalpha() or identifier[0] == "_"):
+        return False
+
+    for character in identifier:
+        if not (character.isalnum() or character in {"_", "$"}):
+            return False
+
+    return True
+
+
 def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
@@ -37,6 +58,24 @@ def validate_configuration(configuration: dict):
         value = configuration.get(key)
         if value is None or str(value).strip() == "":
             raise ValueError(f"Missing required configuration key: {key}")
+
+    try:
+        port = int(str(configuration.get("port")).strip())
+    except ValueError as value_error:
+        raise ValueError("Invalid port: must be an integer between 1 and 65535") from value_error
+    if port < 1 or port > 65535:
+        raise ValueError("Invalid port: must be between 1 and 65535")
+    configuration["port"] = port
+
+    table_name = str(configuration.get("table_name")).strip()
+    table_name_parts = table_name.split(".")
+    if len(table_name_parts) > 2 or not all(
+        _is_safe_identifier(identifier_part) for identifier_part in table_name_parts
+    ):
+        raise ValueError(
+            "Invalid table_name: use an unquoted identifier or schema.table format"
+        )
+    configuration["table_name"] = table_name
 
 
 # Define the schema function which lets you configure the schema your connector delivers.
@@ -161,9 +200,14 @@ def update(configuration: dict, state: dict):
 
     # The SQL query to select all records from the table specified in configuration
     # You can modify this query to suit your needs.
-    sql = f"SELECT * FROM {table_name} WHERE created > '{last_created}'"
-    # Execute the SQL query
-    stmt = ibm_db.exec_immediate(conn, sql)
+    # Use a parameter placeholder for the incremental cursor to avoid manual quote escaping in SQL text.
+    sql = f"SELECT * FROM {table_name} WHERE created > ?"
+    # Prepare the SQL template once, then bind data values separately.
+    stmt = ibm_db.prepare(conn, sql)
+    # Bind the current cursor value as a parameter so the driver handles quoting and typing safely.
+    ibm_db.bind_param(stmt, 1, last_created)
+    # Execute the prepared statement with the bound parameter value.
+    ibm_db.execute(stmt)
     # Fetch the first record from the result set
     # The ibm_db.fetch_assoc method fetches the next row from the result set as a dictionary
     data = ibm_db.fetch_assoc(stmt)
