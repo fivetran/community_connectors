@@ -213,10 +213,9 @@ def update(configuration: dict, state: dict):
     data = ibm_db.fetch_assoc(stmt)
     # Iterate over the result set and upsert each record until there are no more records
     while data:
-        # The 'upsert' operation is used to insert or update the record in the destination table.
-        # The op.upsert method is called with two arguments:
-        # - The first argument is the name of the table to upsert the data into, in this case, "sample_table".
-        # - The second argument is a dictionary containing the data to be upserted,
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table="sample_table", data=data)
 
         # Update the last_created variable with the created value of the current record
@@ -236,22 +235,31 @@ def update(configuration: dict, state: dict):
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     state["last_created"] = last_created
     op.checkpoint(state)
 
 
-# This creates the connector object that will use the update function defined in this connector.py file.
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
 # Check if the script is being run as the main module.
 # This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
-# This is useful for debugging while you write your code. Note this method is not called by Fivetran when executing your connector in production.
-# Please test using the Fivetran debug command prior to finalizing and deploying your connector.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
-    # Open the configuration.json file and load its contents into a dictionary.
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
-    # Adding this code to your `connector.py` allows you to test your connector by running your file directly from your IDE:
+
+    # Test the connector locally
     connector.debug(configuration=configuration)

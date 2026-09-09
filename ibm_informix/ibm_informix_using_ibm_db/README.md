@@ -79,7 +79,10 @@ The schema used in the example is as follows:
 ```json
 {
   "table": "sample_table",
-  "primary_key": ["tabid"]
+  "primary_key": ["tabid"],
+  "columns": {
+    "tabid": "INT"
+  }
 }
 ```
 
