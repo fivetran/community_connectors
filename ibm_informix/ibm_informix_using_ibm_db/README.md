@@ -136,7 +136,7 @@ This ensures the connector works for local debugging on Windows and the logic is
 ### SQL30081N during connect (connect timeout or recv socket close)
 
 Issue: Informix has two listener types:
-- `onsoctcp` = normal/native listener
+- `onsoctcp` = normal or native listener
 - `drsoctcp` = DRDA listener
 
 Some `ibm_db` connection paths require DRDA. If you point the connector to only the normal listener, `SQL30081N` can occur.
