@@ -235,7 +235,7 @@ def update(configuration: dict, state: dict):
                 last_created = last_created_from_data
         data = ibm_db.fetch_assoc(stmt)
 
-    log.info("Upsert completed for all records. ")
+    log.info("Upsert completed for all records.")
 
     # Close the database connection after the operation is complete
     if "conn" in locals() and conn:
