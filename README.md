@@ -106,6 +106,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Beehiiv** ([beehiiv](https://github.com/fivetran/community_connectors/tree/main/beehiiv)) - Sync newsletter data from the beehiiv API, including publications, subscriptions, posts, email blasts, automations, and engagement metrics
 - **Better Stack** ([betterstack](https://github.com/fivetran/community_connectors/tree/main/betterstack)) - Sync uptime monitoring data from Better Stack
 - **Bright Data Web Scraper** ([bright_data_scrape](https://github.com/fivetran/community_connectors/tree/main/bright_data_scrape)) - Sync scraped web page content and extracted fields from the Bright Data Web Scraper API
+- **Bright Data SERP** ([bright_data_serp](https://github.com/fivetran/community_connectors/tree/main/bright_data_serp)) - Sync Google, Bing, and Yandex search engine results from the Bright Data SERP API
 - **Bright Data Web Unlocker** ([bright_data_unlocker](https://github.com/fivetran/community_connectors/tree/main/bright_data_unlocker)) - Sync unlocked web page content for one or more URLs from the Bright Data Web Unlocker API
 - **CallMiner** ([callminer](https://github.com/fivetran/community_connectors/tree/main/callminer)) - Sync CallMiner Bulk Export data using OAuth2 authentication, export job polling, archive extraction, and per-data-type incremental state tracking
 - **Checkly** ([checkly](https://github.com/fivetran/community_connectors/tree/main/checkly)) - Sync monitoring check data and analytics from Checkly
