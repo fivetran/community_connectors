@@ -69,7 +69,9 @@ def validate_configuration(configuration: dict):
     try:
         port = int(str(configuration.get("port")).strip())
     except ValueError as value_error:
-        raise ValueError("Invalid port: must be an integer between 1 and 65535") from value_error
+        raise ValueError(
+            "Invalid port: must be an integer between 1 and 65535"
+        ) from value_error
     if port < 1 or port > 65535:
         raise ValueError("Invalid port: must be between 1 and 65535")
     configuration["port"] = port
@@ -79,7 +81,9 @@ def validate_configuration(configuration: dict):
     if len(table_name_parts) > 2 or not all(
         _is_safe_identifier(identifier_part) for identifier_part in table_name_parts
     ):
-        raise ValueError("Invalid table_name: use an unquoted identifier or schema.table format")
+        raise ValueError(
+            "Invalid table_name: use an unquoted identifier or schema.table format"
+        )
     configuration["table_name"] = table_name
 
 
@@ -206,7 +210,7 @@ def update(configuration: dict, state: dict):
     # The SQL query to select all records from the table specified in configuration
     # You can modify this query to suit your needs.
     # Use a parameter placeholder for the incremental cursor to avoid manual quote escaping in SQL text.
-    sql = f"SELECT * FROM {table_name} WHERE created >= ?"
+    sql = f"SELECT * FROM {table_name} WHERE created > ?"
     # Prepare the SQL template once, then bind data values separately.
     stmt = ibm_db.prepare(conn, sql)
     # Bind the current cursor value as a parameter so the driver handles quoting and typing safely.
@@ -231,7 +235,7 @@ def update(configuration: dict, state: dict):
                 last_created = last_created_from_data
         data = ibm_db.fetch_assoc(stmt)
 
-    log.info("upserted all records from the products table")
+    log.info("Upsert completed for all records. ")
 
     # Close the database connection after the operation is complete
     if "conn" in locals() and conn:
