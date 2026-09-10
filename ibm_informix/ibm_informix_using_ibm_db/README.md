@@ -144,4 +144,4 @@ Some `ibm_db` connection paths require DRDA. If you point the connector to only 
 Resolution:
 
 - If DRDA is already configured in Informix, set `port` in `configuration.json` to the DRDA port.
-- If DRDA is not configured, add a DRDA listener/alias in Informix first, then use that DRDA port in `configuration.json`.
+- If DRDA is not configured, add a DRDA listener in Informix first, then use that DRDA port in `configuration.json`.
