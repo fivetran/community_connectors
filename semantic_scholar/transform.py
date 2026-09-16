@@ -94,10 +94,7 @@ def flatten_authors(record: dict) -> list[dict]:
     for author in authors:
         author_id = author.get("authorId")
         if author_id is None:
-            log.info(
-                f"Skipping author with null authorId for paper {paper_id}: "
-                f"name={author.get('name')!r}"
-            )
+            log.debug(f"Skipping an author with a null authorId on paper {paper_id}")
             continue
         rows.append(
             {
