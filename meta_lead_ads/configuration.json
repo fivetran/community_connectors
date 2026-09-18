@@ -1,0 +1,11 @@
+{
+	"system_user_access_token": "YOUR_META_SYSTEM_USER_ACCESS_TOKEN",
+	"page_ids": "ALL",
+	"form_ids": "ALL",
+	"initial_start_time": "2023-01-01T00:00:00+0000",
+	"graph_version": "v24.0",
+	"include_archived_forms": "false",
+	"request_timeout_seconds": "30",
+	"fetch_limit": "500",
+	"check_point_limit": "3000"
+}
