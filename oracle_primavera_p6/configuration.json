@@ -1,0 +1,8 @@
+{
+  "username": "YOUR_P6_DATA_SERVICE_USERNAME",
+  "password": "YOUR_P6_DATA_SERVICE_PASSWORD",
+  "config_code": "ds_p6adminuser",
+  "base_url": "https://p6.oraclecloud.com/YOUR_TENANT/pds/rest-service/dataservice/",
+  "tables": "",
+  "incremental_tables": ""
+}
