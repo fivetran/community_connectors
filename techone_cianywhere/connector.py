@@ -335,9 +335,7 @@ def _paged_post(path, request_item, response_key, token_holder, configuration):
     """POST to a paginated list endpoint, yielding each page of rows until a short page ends it."""
     page = 1
     while True:
-        payload = {
-            "Items": [{**request_item, "PageNumber": page, "PageSize": __PAGE_SIZE}]
-        }
+        payload = {"Items": [{**request_item, "PageNumber": page, "PageSize": __PAGE_SIZE}]}
         response = _post(path, payload, token_holder, configuration)
         rows = []
         for item in response.get("Items", []):
@@ -463,16 +461,12 @@ def _sync_ledger_accounts(token_holder, configuration, ledgers):
             )
             for item in response.get("Items", []):
                 for account in item.get("LedgerAccounts", []):
-                    accnbri = account.get("AccountNumberInternal") or account.get(
-                        "AccountNumber"
-                    )
+                    accnbri = account.get("AccountNumberInternal") or account.get("AccountNumber")
                     if not accnbri:
                         continue
                     descr = account.get("AccountName2") or account.get("AccountName")
                     row = {
-                        "ldg_acct_rid": _stable_key(
-                            "glf_ldg_acct", ledger_name, accnbri
-                        ),
+                        "ldg_acct_rid": _stable_key("glf_ldg_acct", ledger_name, accnbri),
                         "ldg_name": ledger_name,
                         "chart_name": account.get("ChartName"),
                         "accnbri": accnbri,
@@ -624,16 +618,12 @@ def _sync_transaction_details(token_holder, configuration, transaction):
                         "linked_ldg_name": linked.get("LedgerName"),
                         "linked_accnbri": linked.get("AccountNumber"),
                         "linked_doc_type": linked.get("DocumentType"),
-                        "linked_doc_datei_1": _to_naive_datetime(
-                            linked.get("DocumentDate1")
-                        ),
+                        "linked_doc_datei_1": _to_naive_datetime(linked.get("DocumentDate1")),
                         "linked_doc_ref_1": linked.get("DocumentReference1"),
                         "linked_source": linked.get("Source"),
                         "linked_amt_1": _to_float(linked.get("Amount")),
                         "linked_vat_amt": _to_float(linked.get("VatAmount")),
-                        "linked_vat_exc_amt": _to_float(
-                            linked.get("VatExclusiveAmount")
-                        ),
+                        "linked_vat_exc_amt": _to_float(linked.get("VatExclusiveAmount")),
                     },
                 )
 
