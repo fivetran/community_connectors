@@ -205,9 +205,7 @@ def request_with_retries(
                     " Hint: this usually means a bad table/column name or a malformed request body. "
                     "Check the 'tables' configuration value, or consider a manual P6 metadata refresh."
                 )
-            log.severe(
-                f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}"
-            )
+            log.severe(f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}")
             raise RuntimeError(f"HTTP {status} calling {url}: {response.text}.{hint}")
 
         if status == 429:
@@ -257,9 +255,7 @@ def fetch_tables_metadata(configuration: dict) -> list:
     """Call GET metadata/tables and return the raw list of table metadata dicts."""
     url = f"{get_base_url(configuration)}metadata/tables"
     params = {"configCode": get_config_code(configuration)}
-    response = request_with_retries(
-        "GET", url, build_headers(configuration), params=params
-    )
+    response = request_with_retries("GET", url, build_headers(configuration), params=params)
     data = response.json()
     return data if isinstance(data, list) else []
 
@@ -268,9 +264,7 @@ def fetch_columns_metadata(configuration: dict, table_name: str) -> list:
     """Call GET metadata/columns/{tableName} and return the raw list of column metadata dicts."""
     url = f"{get_base_url(configuration)}metadata/columns/{table_name}"
     params = {"configCode": get_config_code(configuration)}
-    response = request_with_retries(
-        "GET", url, build_headers(configuration), params=params
-    )
+    response = request_with_retries("GET", url, build_headers(configuration), params=params)
     data = response.json()
     return data if isinstance(data, list) else []
 
@@ -291,9 +285,7 @@ def _is_lob_column(column_metadata: dict) -> bool:
 def _is_incremental_capable(columns_metadata: list) -> bool:
     """A table is incremental-capable if any column name (normalized) matches a known cursor column."""
     for column in columns_metadata:
-        normalized = (
-            str(column.get("columnName") or "").strip().lower().replace("_", "")
-        )
+        normalized = str(column.get("columnName") or "").strip().lower().replace("_", "")
         if normalized in __INCREMENTAL_CURSOR_COLUMNS:
             return True
     return False
@@ -406,9 +398,7 @@ def parse_pagination(payload: dict, physical_table_name: str):
             entry = None
             for item in pagination:
                 table_name = (
-                    str(item.get("tableName", "")).lower()
-                    if isinstance(item, dict)
-                    else None
+                    str(item.get("tableName", "")).lower() if isinstance(item, dict) else None
                 )
                 if table_name == physical_table_name.lower():
                     entry = item
@@ -493,9 +483,7 @@ def sync_table(
             if next_table_name is not None:
                 body["nextTableName"] = str(next_table_name)
 
-        response = request_with_retries(
-            "POST", url, headers, params=params, json_body=body
-        )
+        response = request_with_retries("POST", url, headers, params=params, json_body=body)
         payload = response.json()
 
         data = payload.get("data") if isinstance(payload, dict) else None
@@ -511,9 +499,7 @@ def sync_table(
                 )
                 total_rows += 1
 
-        next_key, next_table_name, has_more = parse_pagination(
-            payload, physical_table_name
-        )
+        next_key, next_table_name, has_more = parse_pagination(payload, physical_table_name)
         is_first_page = False
         page_count += 1
 
@@ -547,9 +533,7 @@ def schema(configuration: dict):
     schema_list = []
     for table_metadata in sorted(
         in_scope_tables,
-        key=lambda t: (
-            t.get("physicalTableName") or t.get("displayTableName") or ""
-        ).lower(),
+        key=lambda t: (t.get("physicalTableName") or t.get("displayTableName") or "").lower(),
     ):
         physical_name = table_metadata.get("physicalTableName") or table_metadata.get(
             "displayTableName"
@@ -562,9 +546,7 @@ def schema(configuration: dict):
         except FatalAuthError:
             raise
         except Exception as exc:
-            log.warning(
-                f"Skipping table '{physical_name}' during schema discovery: {exc}"
-            )
+            log.warning(f"Skipping table '{physical_name}' during schema discovery: {exc}")
             continue
 
         destination_table = sanitize_name(physical_name)
@@ -616,9 +598,7 @@ def update(configuration: dict, state: dict):
     in_scope_tables = get_in_scope_tables(configuration, tables_metadata)
     in_scope_tables_sorted = sorted(
         in_scope_tables,
-        key=lambda t: (
-            t.get("physicalTableName") or t.get("displayTableName") or ""
-        ).lower(),
+        key=lambda t: (t.get("physicalTableName") or t.get("displayTableName") or "").lower(),
     )
 
     for table_metadata in in_scope_tables_sorted:
@@ -646,17 +626,13 @@ def update(configuration: dict, state: dict):
             if column_metadata.get("columnName") and not _is_lob_column(column_metadata)
         ]
         if not sync_columns:
-            log.warning(
-                f"Table '{physical_name}' has no syncable (non-LOB) columns; skipping"
-            )
+            log.warning(f"Table '{physical_name}' has no syncable (non-LOB) columns; skipping")
             continue
 
         incremental = resolve_sync_type(configuration, physical_name, columns_metadata)
         sync_start_ts = datetime.now(timezone.utc).strftime(__TIMESTAMP_FORMAT)
         since_date = (
-            state["tables"].get(destination_table, {}).get("last_sync_at")
-            if incremental
-            else None
+            state["tables"].get(destination_table, {}).get("last_sync_at") if incremental else None
         )
 
         try:
