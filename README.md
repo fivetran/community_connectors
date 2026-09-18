@@ -136,6 +136,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Iterate** ([iterate](https://github.com/fivetran/community_connectors/tree/main/iterate)) - Sync NPS survey data from Iterate REST API
 - **Keycloak** ([keycloak](https://github.com/fivetran/community_connectors/tree/main/keycloak)) - Sync IAM data from Keycloak Admin API
 - **LeaveDates** ([leavedates](https://github.com/fivetran/community_connectors/tree/main/leavedates)) - Sync leave report data from LeaveDates API
+- Linkly ([linkly](https://github.com/fivetran/community_connectors/tree/main/linkly)) - Sync workspaces, links, custom domains, daily click totals, and conversions from the Linkly URL shortener API
 - **MailerLite** ([mailerlite](https://github.com/fivetran/community_connectors/tree/main/mailerlite)) - Sync email marketing data from MailerLite
 - **MasterTax** ([mastertax](https://github.com/fivetran/community_connectors/tree/main/mastertax)) - Sync data from MasterTax API
 - **MeiliSearch** ([meilisearch](https://github.com/fivetran/community_connectors/tree/main/meilisearch)) - Sync index metadata and documents from MeiliSearch
