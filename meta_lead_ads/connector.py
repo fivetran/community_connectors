@@ -72,9 +72,7 @@ def _process_leads(
         }
         op.upsert("leads", row)
         rows_written += 1
-    if batch_max_created and (
-        current_cursor is None or batch_max_created > current_cursor
-    ):
+    if batch_max_created and (current_cursor is None or batch_max_created > current_cursor):
         new_cursor = batch_max_created
     return rows_written, new_cursor
 
@@ -136,9 +134,7 @@ def _process_form(
         page_token, form_id, cfg, since_time=current_cursor
     ):
         batch_index += 1
-        rows, new_cursor = _process_leads(
-            page, form, batch, batch_max_created, current_cursor
-        )
+        rows, new_cursor = _process_leads(page, form, batch, batch_max_created, current_cursor)
         written += rows
         rows_since_checkpoint += rows
         current_cursor = new_cursor

@@ -37,9 +37,7 @@ def validate_configuration(configuration: Dict[str, str]) -> Dict[str, Any]:
         raise ValueError(f"Missing required configuration keys: {missing}")
 
     cfg: Dict[str, Any] = dict(configuration)
-    cfg["graph_version"] = (
-        configuration.get("graph_version") or __GRAPH_VERSION_FALLBACK
-    )
+    cfg["graph_version"] = configuration.get("graph_version") or __GRAPH_VERSION_FALLBACK
     cfg["include_archived_forms"] = _parse_bool(
         configuration.get("include_archived_forms", "false")
     )
@@ -56,18 +54,14 @@ def validate_configuration(configuration: Dict[str, str]) -> Dict[str, Any]:
     def _list(key: str) -> Optional[List[str]]:
         """Parse a comma-separated configuration value into an ID list, or None for 'ALL'."""
         raw_value = configuration.get(key, "")
-        raw = (
-            raw_value.strip() if isinstance(raw_value, str) else str(raw_value).strip()
-        )
+        raw = raw_value.strip() if isinstance(raw_value, str) else str(raw_value).strip()
         if not raw:
             raise ValueError(f"{key} is required; use 'ALL' or provide IDs.")
         if raw.upper() == "ALL":
             return None
         ids = [x.strip() for x in raw.split(",") if x.strip()]
         if not ids:
-            raise ValueError(
-                f"{key} contains no valid IDs; use 'ALL' or supply values."
-            )
+            raise ValueError(f"{key} contains no valid IDs; use 'ALL' or supply values.")
         return ids
 
     cfg["page_ids_list"] = _list("page_ids")

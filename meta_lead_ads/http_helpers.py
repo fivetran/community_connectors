@@ -29,9 +29,7 @@ def request_with_retries(
                 method, url, params=params, timeout=cfg["request_timeout_seconds"]
             )
         except requests.RequestException as e:
-            log.warning(
-                f"Network error (attempt {attempt}/{__MAX_ATTEMPTS}) url={url} error={e}"
-            )
+            log.warning(f"Network error (attempt {attempt}/{__MAX_ATTEMPTS}) url={url} error={e}")
             if attempt >= __MAX_ATTEMPTS:
                 return None
             time.sleep(__BACKOFF_BASE**attempt)
@@ -50,9 +48,7 @@ def request_with_retries(
             time.sleep(wait)
             continue
         if resp.status_code != 200:
-            log.severe(
-                f"Non-success status {resp.status_code} url={url} body={resp.text[:300]}"
-            )
+            log.severe(f"Non-success status {resp.status_code} url={url} body={resp.text[:300]}")
             return None
 
 
