@@ -33,7 +33,6 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-
 __DEFAULT_CONFIG_CODE = "ds_p6adminuser"
 __VALID_CONFIG_CODES = {"ds_p6adminuser", "ds_p6reportuser", "ds_unifier"}
 
