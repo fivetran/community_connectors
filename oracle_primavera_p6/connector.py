@@ -6,20 +6,33 @@ nextKey/nextTableName and using a per-table `sinceDate` cursor for tables that e
 update-timestamp column.
 """
 
+# For base64 operations
 import base64
+
+# For regex operations
 import re
+
+# For time operations
 import time
+
+# For datetime operations
 from datetime import datetime, timezone
 
+# For making API calls
 import requests
 
+# For reading configuration from a JSON file
+import json
+
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-# --------------------------------------------------------------------------------------
-# Constants
-# --------------------------------------------------------------------------------------
 
 __DEFAULT_CONFIG_CODE = "ds_p6adminuser"
 __VALID_CONFIG_CODES = {"ds_p6adminuser", "ds_p6reportuser", "ds_unifier"}
@@ -45,17 +58,10 @@ class FatalAuthError(Exception):
     """Raised when credentials/config_code are rejected (401/403). Should abort the whole sync."""
 
 
-# --------------------------------------------------------------------------------------
-# Configuration helpers
-# --------------------------------------------------------------------------------------
-
-
 def validate_configuration(configuration: dict):
     """Validate required configuration keys and fail fast on an invalid config_code.
-
     Args:
         configuration: dictionary of configuration values provided by the user.
-
     Raises:
         ValueError: if a required field is missing or config_code is not a recognized value.
     """
@@ -118,11 +124,6 @@ def build_headers(configuration: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------------------------
-# Name sanitization
-# --------------------------------------------------------------------------------------
-
-
 def sanitize_name(name: str) -> str:
     """Normalize a P6 table/column name (which may contain spaces/mixed case) to
     lowercase_snake_case for use as a Fivetran destination table/column name.
@@ -134,11 +135,6 @@ def sanitize_name(name: str) -> str:
     if normalized[0].isdigit():
         normalized = f"_{normalized}"
     return normalized
-
-
-# --------------------------------------------------------------------------------------
-# HTTP request handling with retry/error classification
-# --------------------------------------------------------------------------------------
 
 
 def _backoff_sleep(attempt: int):
@@ -190,7 +186,7 @@ def request_with_retries(
             return response
 
         if status in (401, 403):
-            log.severe(
+            log.critical(
                 f"Authentication/authorization failure (HTTP {status}) calling {url}: {response.text}"
             )
             raise FatalAuthError(
@@ -205,8 +201,8 @@ def request_with_retries(
                     " Hint: this usually means a bad table/column name or a malformed request body. "
                     "Check the 'tables' configuration value, or consider a manual P6 metadata refresh."
                 )
-            log.severe(f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}")
-            raise RuntimeError(f"HTTP {status} calling {url}: {response.text}.{hint}")
+            log.critical(f"Non-retryable HTTP {status} calling {url}: {response.text}.\n{hint}")
+            raise RuntimeError(f"HTTP {status} calling {url}: {response.text}.\n{hint}")
 
         if status == 429:
             retry_after_header = response.headers.get("Retry-After")
@@ -236,7 +232,7 @@ def request_with_retries(
             continue
 
         # Any other unexpected status code: treat as a fail-fast / code-path bug.
-        log.severe(f"Unexpected HTTP {status} calling {url}: {response.text}")
+        log.critical(f"Unexpected HTTP {status} calling {url}: {response.text}")
         raise RuntimeError(f"Unexpected HTTP {status} calling {url}: {response.text}")
 
     if last_exception:
@@ -244,11 +240,6 @@ def request_with_retries(
             f"Request to {url} failed after {__MAX_ATTEMPTS} attempts: {last_exception}"
         )
     raise RuntimeError(f"Request to {url} failed after {__MAX_ATTEMPTS} attempts")
-
-
-# --------------------------------------------------------------------------------------
-# Metadata endpoints
-# --------------------------------------------------------------------------------------
 
 
 def fetch_tables_metadata(configuration: dict) -> list:
@@ -347,11 +338,6 @@ def get_in_scope_tables(configuration: dict, tables_metadata: list) -> list:
             )
 
     return in_scope
-
-
-# --------------------------------------------------------------------------------------
-# runquery pagination parsing
-# --------------------------------------------------------------------------------------
 
 
 def _next_table_is_falsy(value) -> bool:
@@ -493,6 +479,9 @@ def sync_table(
 
         for row in rows:
             if isinstance(row, dict):
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     destination_table,
                     {sanitize_name(key): value for key, value in row.items()},
@@ -507,23 +496,24 @@ def sync_table(
             break
 
         if page_count % __CHECKPOINT_EVERY_PAGES == 0:
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state=state)
 
     return total_rows
 
 
-# --------------------------------------------------------------------------------------
-# Fivetran Connector SDK entry points
-# --------------------------------------------------------------------------------------
-
-
 def schema(configuration: dict):
-    """Define the destination schema by discovering in-scope tables and their columns.
-
-    Independently calls metadata/tables and metadata/columns/{tableName} (no reliance on
-    module-level state persisting between schema() and update()). Excludes LOB-typed columns.
-    Declares only `table` and `primary_key` (when a table has PK columns) so the SDK can infer
-    column types and the schema can evolve.
+    """
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
     """
     validate_configuration(configuration)
 
@@ -581,7 +571,14 @@ def schema(configuration: dict):
 
 
 def update(configuration: dict, state: dict):
-    """Sync every in-scope P6 table, one runquery call per table, one table at a time.
+    """
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
 
     For incremental-capable tables (those with an UPDATE_DATE/LASTUPDATEDATE/CHANGEDATE/UPDATEDATE
     column), a `sinceDate` cursor is stored in state and only advanced after that table's entire
@@ -589,6 +586,7 @@ def update(configuration: dict, state: dict):
     An error on one table's metadata/columns or runquery call is logged and that table is skipped,
     except for auth failures or an invalid config_code, which abort the whole run.
     """
+    log.warning("Examples: Saas & API - Oracle Primavera P6")
     validate_configuration(configuration)
 
     state = state or {}
@@ -669,9 +667,23 @@ def update(configuration: dict, state: dict):
         op.checkpoint(state=state)
 
 
-# Global connector object required by the Fivetran Connector SDK.
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
-
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
-    connector.debug()
+    # Open the configuration.json file and load its contents
+    with open("configuration.json", "r") as f:
+        configuration = json.load(f)
+
+    # Test the connector locally
+    connector.debug(configuration=configuration)

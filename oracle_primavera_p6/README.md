@@ -1,7 +1,7 @@
 # Oracle Primavera P6 Connector Example
 
 ## Connector overview
-This connector syncs data from the Oracle Primavera P6 EPPM "Data Service" REST API. It discovers all non-blacklisted tables via the metadata endpoints and syncs each one, one table at a time, using the `runquery` endpoint in `SYNC` mode.
+This connector syncs data from the Oracle Primavera P6 EPPM `Data Service` REST API. It discovers all non-blacklisted tables using the metadata endpoints and syncs them, one table at a time, using the `runquery` endpoint in `SYNC` mode.
 
 ## Requirements
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
@@ -12,6 +12,13 @@ This connector syncs data from the Oracle Primavera P6 EPPM "Data Service" REST 
 
 ## Getting started
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+```
+fivetran init --template oracle_primavera_p6
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
@@ -25,19 +32,19 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 ## Configuration file
 ```
 {
-  "username": "YOUR_P6_DATA_SERVICE_USERNAME",
-  "password": "YOUR_P6_DATA_SERVICE_PASSWORD",
-  "config_code": "ds_p6adminuser",
-  "base_url": "https://p6.oraclecloud.com/YOUR_TENANT/pds/rest-service/dataservice/",
-  "tables": "",
-  "incremental_tables": ""
+  "username": "<YOUR_P6_DATA_SERVICE_USERNAME>",
+  "password": "<YOUR_P6_DATA_SERVICE_PASSWORD>",
+  "config_code": "<YOUR_P6_DATA_CONFIGURATION_CODE>",
+  "base_url": "<YOUR_P6_DATA_BASE_URL>",
+  "tables": "<COMMA_SEPARATED_LIST_OF_TABLE_NAMES>",
+  "incremental_tables": "<COMMA_SEPARATED_LIST_OF_TABLE_NAMES>"
 }
 ```
 
 - `username` - P6 Data Service username.
 - `password` - P6 Data Service password.
 - `config_code` - one of `ds_p6adminuser`, `ds_p6reportuser`, or `ds_unifier`. Defaults to `ds_p6adminuser` if omitted.
-- `base_url` - your P6 Data Service base URL, including your tenant path.
+- `base_url` - P6 Data Service base URL, including your tenant path (eg. https://p6.oraclecloud.com/<YOUR_TENANT>/pds/rest-service/dataservice/)
 - `tables` - comma-separated list of table names to sync (matching `physicalTableName`, falling back to `displayTableName`, case-insensitive). Leave empty to sync all non-blacklisted tables.
 - `incremental_tables` - comma-separated list of table names (from `tables`) that should sync incrementally via `sinceDate`. When this key is present at all (even as an empty string), it fully overrides auto-detection: any in-scope table not listed here is fully resynced every run, regardless of whether it has an update-date column. Omit the key entirely to fall back to column-based auto-detection.
 
