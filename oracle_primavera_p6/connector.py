@@ -1,20 +1,25 @@
-"""Fivetran Connector SDK connector for the Oracle Primavera P6 EPPM 'Data Service' REST API.
-
-Authenticates with HTTP Basic Auth, discovers tables/columns via the metadata endpoints,
-and pulls data one table at a time via the `runquery` endpoint (SYNC mode), paginating with
-nextKey/nextTableName and using a per-table `sinceDate` cursor for tables that expose an
-update-timestamp column.
+"""This connector demonstrates syncing data from the Oracle Primavera P6 EPPM 'Data Service'
+REST API. It discovers tables/columns via the metadata endpoints and pulls data one table at
+a time via the `runquery` endpoint (SYNC mode), paginating with nextKey/nextTableName and using
+a per-table `sinceDate` cursor for tables that expose an update-timestamp column.
+See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
-import base64
-import re
-import time
-from datetime import datetime, timezone
+import base64  # For encoding the HTTP Basic Auth credentials sent on every request
+import re  # For sanitizing P6 table/column names and validating the base_url format
+import time  # For sleeping between retry attempts
+from datetime import datetime, timezone  # For recording each table's incremental sync cursor
 
-import requests
+import requests  # For issuing HTTP requests to the P6 Data Service REST API
 
+# Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
 # --------------------------------------------------------------------------------------
@@ -40,6 +45,11 @@ __DEFAULT_RETRY_AFTER_SECONDS = 60
 __REQUEST_TIMEOUT_SECONDS = 180
 __CHECKPOINT_EVERY_PAGES = 1
 
+# Exceptions our own HTTP/response-parsing code raises for an expected source-side failure.
+# Column-discovery and table-sync error handling only swallows these; anything else (including
+# an unexpected SDK operation failure) propagates and fails the sync.
+__EXPECTED_SOURCE_ERRORS = (RuntimeError, requests.RequestException, ValueError)
+
 
 class FatalAuthError(Exception):
     """Raised when credentials/config_code are rejected (401/403). Should abort the whole sync."""
@@ -51,17 +61,28 @@ class FatalAuthError(Exception):
 
 
 def validate_configuration(configuration: dict):
-    """Validate required configuration keys and fail fast on an invalid config_code.
-
+    """
+    Validate the configuration dictionary to ensure it contains all required parameters.
+    This function is called at the start of the update method to ensure that the connector has all necessary configuration values.
     Args:
-        configuration: dictionary of configuration values provided by the user.
-
+        configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if a required field is missing or config_code is not a recognized value.
+        ValueError: if any required configuration parameter is missing or invalid.
     """
     for key in ("username", "password", "base_url"):
         if not configuration.get(key):
             raise ValueError(f"Missing required configuration value: '{key}'")
+
+    base_url = str(configuration["base_url"]).strip()
+    if not re.match(r"^https?://", base_url, re.IGNORECASE):
+        raise ValueError(f"'base_url' must start with http:// or https://. Got: '{base_url}'")
+
+    for optional_csv_key in ("tables", "incremental_tables"):
+        value = configuration.get(optional_csv_key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(
+                f"'{optional_csv_key}' must be a comma-separated string of table names."
+            )
 
     config_code = configuration.get("config_code") or __DEFAULT_CONFIG_CODE
     if config_code not in __VALID_CONFIG_CODES:
@@ -152,7 +173,7 @@ def request_with_retries(
     """Execute an HTTP request, retrying transient failures and failing fast on permanent ones.
 
     Retries (up to __MAX_ATTEMPTS, exponential backoff): connection errors, timeouts,
-    chunked-encoding errors, HTTP 429 (honors Retry-After), HTTP 500, HTTP 503.
+    chunked-encoding errors, HTTP 429 (honors Retry-After), and HTTP 500/502/503/504.
 
     Fails fast (raises immediately, no retry): HTTP 400/404/405/406/415 (raise RuntimeError)
     and HTTP 401/403 (raise FatalAuthError, which callers must propagate to abort the run).
@@ -190,7 +211,7 @@ def request_with_retries(
             return response
 
         if status in (401, 403):
-            log.severe(
+            log.error(
                 f"Authentication/authorization failure (HTTP {status}) calling {url}: {response.text}"
             )
             raise FatalAuthError(
@@ -205,7 +226,7 @@ def request_with_retries(
                     " Hint: this usually means a bad table/column name or a malformed request body. "
                     "Check the 'tables' configuration value, or consider a manual P6 metadata refresh."
                 )
-            log.severe(f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}")
+            log.error(f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}")
             raise RuntimeError(f"HTTP {status} calling {url}: {response.text}.{hint}")
 
         if status == 429:
@@ -224,7 +245,7 @@ def request_with_retries(
             time.sleep(wait_seconds)
             continue
 
-        if status in (500, 503):
+        if status in (500, 502, 503, 504):
             log.warning(
                 f"Server error (HTTP {status}) calling {url} on attempt {attempt}/{__MAX_ATTEMPTS}: {response.text}"
             )
@@ -236,7 +257,7 @@ def request_with_retries(
             continue
 
         # Any other unexpected status code: treat as a fail-fast / code-path bug.
-        log.severe(f"Unexpected HTTP {status} calling {url}: {response.text}")
+        log.error(f"Unexpected HTTP {status} calling {url}: {response.text}")
         raise RuntimeError(f"Unexpected HTTP {status} calling {url}: {response.text}")
 
     if last_exception:
@@ -282,6 +303,11 @@ def _is_lob_column(column_metadata: dict) -> bool:
     return data_type in __LOB_TYPES or physical_type in __LOB_TYPES
 
 
+def _is_primary_key_column(column_metadata: dict) -> bool:
+    """Parse isPK defensively: P6 returns it as the STRING "true"/"false", not a real boolean."""
+    return str(column_metadata.get("isPK")).strip().lower() == "true"
+
+
 def _is_incremental_capable(columns_metadata: list) -> bool:
     """A table is incremental-capable if any column name (normalized) matches a known cursor column."""
     for column in columns_metadata:
@@ -292,17 +318,24 @@ def _is_incremental_capable(columns_metadata: list) -> bool:
 
 
 def resolve_sync_type(
-    configuration: dict, physical_table_name: str, columns_metadata: list
+    configuration: dict,
+    physical_table_name: str,
+    display_table_name: str,
+    columns_metadata: list,
 ) -> bool:
     """Return True if this table should sync incrementally.
 
-    If `incremental_tables` is configured, it fully overrides auto-detection: membership in
-    that list (case-insensitive) determines incremental vs. full-resync for every in-scope
-    table. Otherwise, falls back to column-based auto-detection (`_is_incremental_capable`).
+    If `incremental_tables` is configured, it fully overrides auto-detection: a table is
+    incremental if either its physical or display name (case-insensitive) is listed, matching
+    the same physical/display-name matching `get_in_scope_tables()` uses for table scope.
+    Otherwise, falls back to column-based auto-detection (`_is_incremental_capable`).
     """
     configured_incremental = get_configured_incremental_tables(configuration)
     if configured_incremental is not None:
-        return physical_table_name.strip().lower() in configured_incremental
+        candidate_names = {physical_table_name.strip().lower()}
+        if display_table_name:
+            candidate_names.add(display_table_name.strip().lower())
+        return bool(candidate_names & configured_incremental)
     return _is_incremental_capable(columns_metadata)
 
 
@@ -377,6 +410,15 @@ def _next_key_is_zero(value) -> bool:
     return False
 
 
+def _find_pagination_entry(pagination_list: list, physical_table_name: str):
+    """Return the pagination entry matching this table's name, or the sole entry as a fallback."""
+    for item in pagination_list:
+        table_name = str(item.get("tableName", "")).lower() if isinstance(item, dict) else None
+        if table_name == physical_table_name.lower():
+            return item
+    return pagination_list[0]
+
+
 def parse_pagination(payload: dict, physical_table_name: str):
     """Defensively extract (next_key, next_table_name, has_more) from a runquery response.
 
@@ -395,16 +437,7 @@ def parse_pagination(payload: dict, physical_table_name: str):
     if isinstance(data, dict):
         pagination = data.get("pagination")
         if isinstance(pagination, list) and pagination:
-            entry = None
-            for item in pagination:
-                table_name = (
-                    str(item.get("tableName", "")).lower() if isinstance(item, dict) else None
-                )
-                if table_name == physical_table_name.lower():
-                    entry = item
-                    break
-            if entry is None:
-                entry = pagination[0]
+            entry = _find_pagination_entry(pagination, physical_table_name)
             if isinstance(entry, dict):
                 next_key = entry.get("nextKey")
                 next_table_name = entry.get("nextTableName")
@@ -493,9 +526,12 @@ def sync_table(
 
         for row in rows:
             if isinstance(row, dict):
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
-                    destination_table,
-                    {sanitize_name(key): value for key, value in row.items()},
+                    table=destination_table,
+                    data={sanitize_name(key): value for key, value in row.items()},
                 )
                 total_rows += 1
 
@@ -507,6 +543,11 @@ def sync_table(
             break
 
         if page_count % __CHECKPOINT_EVERY_PAGES == 0:
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # This table's own cursor in `state` is intentionally left unchanged here; it only
+            # advances once the whole table finishes syncing (see update()), so this checkpoint
+            # purely flushes the rows upserted so far.
             op.checkpoint(state=state)
 
     return total_rows
@@ -518,12 +559,17 @@ def sync_table(
 
 
 def schema(configuration: dict):
-    """Define the destination schema by discovering in-scope tables and their columns.
+    """
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
 
     Independently calls metadata/tables and metadata/columns/{tableName} (no reliance on
     module-level state persisting between schema() and update()). Excludes LOB-typed columns.
-    Declares only `table` and `primary_key` (when a table has PK columns) so the SDK can infer
-    column types and the schema can evolve.
+    Declares only `table` and `primary_key` (when a table has PK columns) so the SDK infers
+    column types from the upserted rows and the schema can evolve.
     """
     validate_configuration(configuration)
 
@@ -545,7 +591,7 @@ def schema(configuration: dict):
             columns_metadata = fetch_columns_metadata(configuration, physical_name)
         except FatalAuthError:
             raise
-        except Exception as exc:
+        except __EXPECTED_SOURCE_ERRORS as exc:
             log.warning(f"Skipping table '{physical_name}' during schema discovery: {exc}")
             continue
 
@@ -563,10 +609,13 @@ def schema(configuration: dict):
                     )
                     logged_lob_columns.add(column_name)
                 continue
-            if column_metadata.get("isPK") is True:
+            if _is_primary_key_column(column_metadata):
                 primary_key_columns.append(sanitize_name(column_name))
 
-        incremental = resolve_sync_type(configuration, physical_name, columns_metadata)
+        display_name = str(table_metadata.get("displayTableName") or "")
+        incremental = resolve_sync_type(
+            configuration, physical_name, display_name, columns_metadata
+        )
         log.info(
             f"Table '{physical_name}' classified as "
             f"{'incremental' if incremental else 'full-resync-only'}"
@@ -581,14 +630,25 @@ def schema(configuration: dict):
 
 
 def update(configuration: dict, state: dict):
-    """Sync every in-scope P6 table, one runquery call per table, one table at a time.
+    """
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
 
     For incremental-capable tables (those with an UPDATE_DATE/LASTUPDATEDATE/CHANGEDATE/UPDATEDATE
-    column), a `sinceDate` cursor is stored in state and only advanced after that table's entire
-    pagination loop finishes successfully. Fully resynced tables never get a stored cursor.
-    An error on one table's metadata/columns or runquery call is logged and that table is skipped,
-    except for auth failures or an invalid config_code, which abort the whole run.
+    column, or listed in `incremental_tables`), a `sinceDate` cursor is stored in state and only
+    advanced after that table's entire pagination loop finishes successfully. Fully resynced
+    tables never get a stored cursor. An error on one table's metadata/columns or runquery call
+    is logged and that table is skipped, except for auth failures or an invalid config_code,
+    which abort the whole run.
     """
+    log.warning("Example: Databases : Oracle Primavera P6")
+
+    # Validate the configuration to ensure it contains all required values.
     validate_configuration(configuration)
 
     state = state or {}
@@ -614,7 +674,7 @@ def update(configuration: dict, state: dict):
             columns_metadata = fetch_columns_metadata(configuration, physical_name)
         except FatalAuthError:
             raise
-        except Exception as exc:
+        except __EXPECTED_SOURCE_ERRORS as exc:
             log.warning(
                 f"Skipping table '{physical_name}': failed to fetch column metadata: {exc}"
             )
@@ -629,7 +689,10 @@ def update(configuration: dict, state: dict):
             log.warning(f"Table '{physical_name}' has no syncable (non-LOB) columns; skipping")
             continue
 
-        incremental = resolve_sync_type(configuration, physical_name, columns_metadata)
+        display_name = str(table_metadata.get("displayTableName") or "")
+        incremental = resolve_sync_type(
+            configuration, physical_name, display_name, columns_metadata
+        )
         sync_start_ts = datetime.now(timezone.utc).strftime(__TIMESTAMP_FORMAT)
         since_date = (
             state["tables"].get(destination_table, {}).get("last_sync_at") if incremental else None
@@ -646,14 +709,18 @@ def update(configuration: dict, state: dict):
             )
         except FatalAuthError:
             raise
-        except Exception as exc:
+        except __EXPECTED_SOURCE_ERRORS as exc:
             # Flush whatever rows this table already emitted before moving on. Without this,
             # a mid-table failure leaves an unbounded partial batch buffered until some later
             # table's checkpoint tries to commit it, which surfaces as a confusing
             # "failed to upsert" against the *failed* table long after it was skipped.
+            # An unexpected (non-source) error, such as an SDK operation failure, is not caught
+            # here and propagates to fail the sync instead of silently continuing.
             log.warning(
                 f"Error syncing table '{physical_name}': {exc}. Skipping table and continuing."
             )
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
             op.checkpoint(state=state)
             continue
 
@@ -664,14 +731,25 @@ def update(configuration: dict, state: dict):
         if incremental:
             state["tables"][destination_table] = {"last_sync_at": sync_start_ts}
 
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
         # Checkpoint after every table (incremental or not) so upserts are flushed to the
         # destination in bounded batches rather than accumulating across many tables in one run.
         op.checkpoint(state=state)
 
 
-# Global connector object required by the Fivetran Connector SDK.
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
-
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
     connector.debug()
