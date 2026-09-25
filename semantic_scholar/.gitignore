@@ -1,0 +1,19 @@
+# Never packaged by `fivetran deploy`: it packages every file in this directory and reads only this .gitignore,
+# not the repository root's. Only secrets and transcripts are listed; tests/ and scripts/ hold nothing sensitive
+# and must stay versioned, and git honours this file too.
+configuration_local*.json
+configuration_negative*.json
+placeholder.json
+debug_output_*.txt
+deploy_output*.txt
+deploy_negative_output*.txt
+setup_tests_output.txt
+*.log
+files/
+__pycache__/
+.pytest_cache/
+
+# Added 2026-09-24: fivetran deploy reads only this file, so secrets and transcripts must be listed here
+configuration.json
+.env
+accounts.json
