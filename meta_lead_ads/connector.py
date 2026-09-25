@@ -1,39 +1,36 @@
-"""Facebook (Meta) Leads Connector (SDK >= 2.0.0)
-=================================================
-
-Single-table ingestion of Meta Lead Ads data using Fivetran Connector SDK 2.x pattern.
-
-Features:
- - Incremental sync per form via created_time cursor (threshold-based checkpointing)
- - One destination table: leads (primary key: lead_id)
- - Transformation: each lead converted to a single row with page/form metadata, ad_id, created_time, and raw field_data serialized as JSON in field_data (handled by process_leads)
- - Raw form field data preserved verbatim for downstream modeling
- - Resilient HTTP with retry/backoff
- - Direct Operations calls (no generator/yield required in SDK >=2.0.0)
-
-State structure (checkpoint):
-{
-    "forms": {
-        "<form_id>": {"last_created_time": "2025-08-31T07:45:31+0000"}
-    }
-}
-
-Incremental logic:
-- initial_start_time is optional—if omitted starts from available leads without filtering.
-- paginate each form fetching leads with created_time > last_created_time (if a cursor exists).
-- Track max created_time; accumulate written rows and perform checkpoint only when accumulated rows reach configuration.
-- final flush remaining rows after pagination.
+"""This connector demonstrates syncing Facebook (Meta) Lead Ads data into a single
+leads table via the Meta Graph API. It supports incremental sync per lead-gen form,
+using a created_time cursor that only advances once a form's pagination has fully
+completed, since Meta's page ordering by created_time is not guaranteed.
+See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
 from __future__ import annotations
 
+# For reading configuration from a JSON file when running this file directly
 import json
-import os
-from typing import Dict, List, Any, Optional
 
-from fivetran_connector_sdk import Connector, Logging as log, Operations as op
+# For resolving the local configuration.json path when running this file directly
+import os
+from typing import Any, Dict, List, Optional
+
+# Import required classes from fivetran_connector_sdk
+from fivetran_connector_sdk import Connector
+
+# For enabling Logs in your connector code
+from fivetran_connector_sdk import Logging as log
+
+# For supporting Data operations like upsert(), update(), delete() and checkpoint()
+from fivetran_connector_sdk import Operations as op
+
+# For building the Graph API base URL from the configured API version
 from http_helpers import BASE_URL_TEMPLATE
+
+# For page/form discovery and lead pagination against the Meta Graph API
 import meta_helpers
+
+# For validating and normalizing the raw configuration
 import validator
 
 # ---------------------------------------------------------------------------
@@ -54,11 +51,20 @@ def _process_leads(
     form: Dict[str, Any],
     leads: List[Dict[str, Any]],
     batch_max_created: Optional[str],
-    current_cursor: Optional[str],
+    current_max_cursor: Optional[str],
 ) -> tuple[int, Optional[str]]:
-    """Transform & upsert a batch of leads, returning (rows_written, new_cursor)."""
+    """
+    Transform and upsert a batch of leads, returning the row count and updated max cursor.
+    Args:
+        page: the page dictionary the leads' form belongs to.
+        form: the lead-gen form dictionary the leads belong to.
+        leads: the raw lead dictionaries returned by the Graph API for this page.
+        batch_max_created: the maximum created_time seen in this batch, if any.
+        current_max_cursor: the maximum created_time seen so far for this form.
+    Returns:
+        A tuple of (rows_written, new_max_cursor).
+    """
     rows_written = 0
-    new_cursor = current_cursor
     for lead in leads:
         row = {
             "lead_id": lead.get("id"),
@@ -70,49 +76,17 @@ def _process_leads(
             "ad_id": lead.get("ad_id"),
             "field_data": json.dumps(lead.get("field_data", []), ensure_ascii=False),
         }
-        op.upsert("leads", row)
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
+        op.upsert(table="leads", data=row)
         rows_written += 1
-    if batch_max_created and (current_cursor is None or batch_max_created > current_cursor):
-        new_cursor = batch_max_created
-    return rows_written, new_cursor
-
-
-def _maybe_checkpoint(
-    form_id: str,
-    forms_state: Dict[str, Dict[str, Optional[str]]],
-    current_cursor: Optional[str],
-    rows_since_checkpoint: int,
-    cfg: Dict[str, Any],
-    batch_index: int,
-) -> int:
-    """Flush checkpoint when the configured threshold is met."""
-    if rows_since_checkpoint >= cfg["check_point_limit"]:
-        _write_checkpoint(
-            form_id=form_id,
-            forms_state=forms_state,
-            current_cursor=current_cursor,
-            rows_flushed=rows_since_checkpoint,
-            context=f"Checkpoint batch={batch_index}",
-        )
-        return 0
-    return rows_since_checkpoint
-
-
-def _write_checkpoint(
-    form_id: str,
-    forms_state: Dict[str, Dict[str, Optional[str]]],
-    current_cursor: Optional[str],
-    rows_flushed: int,
-    context: str,
-) -> None:
-    """Persist the form's cursor into forms_state and checkpoint, unless there is nothing to flush."""
-    if current_cursor is None or rows_flushed == 0:
-        return
-    forms_state[form_id] = {"last_created_time": current_cursor}
-    op.checkpoint(state={"forms": forms_state})
-    log.info(
-        f"{context} form={form_id} rows_flushed={rows_flushed} last_created_time={current_cursor}"
-    )
+    new_max_cursor = current_max_cursor
+    if batch_max_created and (
+        current_max_cursor is None or batch_max_created > current_max_cursor
+    ):
+        new_max_cursor = batch_max_created
+    return rows_written, new_max_cursor
 
 
 def _process_form(
@@ -121,52 +95,73 @@ def _process_form(
     cfg: Dict[str, Any],
     forms_state: Dict[str, Dict[str, Optional[str]]],
 ) -> int:
-    """Sync all leads for a single form, paginating, upserting, and checkpointing as it goes."""
+    """
+    Sync all leads for a single form, upserting each page and periodically flushing state.
+    The form's resumable cursor only advances once its pagination fully completes, because
+    Meta's Graph API does not guarantee that pages are returned in ascending created_time
+    order; checkpointing a newer cursor mid-pagination could otherwise cause a later resume
+    to skip leads on pages that had not been processed yet.
+    Args:
+        page: the page dictionary the form belongs to, including its page-scoped access token.
+        form: the lead-gen form dictionary to sync leads for.
+        cfg: the validated connector configuration.
+        forms_state: the state dictionary of per-form cursors, updated in place.
+    Returns:
+        The number of lead rows written for this form.
+    """
     form_id = form.get("id")
-    current_cursor = forms_state.get(form_id, {}).get("last_created_time")
-    if current_cursor is None:
-        current_cursor = cfg.get("initial_start_time")
+    resume_cursor = forms_state.get(form_id, {}).get("last_created_time")
+    if resume_cursor is None:
+        resume_cursor = cfg.get("initial_start_time")
+    max_cursor = resume_cursor
     batch_index = 0
     written = 0
-    page_token = page.get("access_token")
     rows_since_checkpoint = 0
+    page_token = page.get("access_token")
     for batch, batch_max_created in meta_helpers.iterate_leads_for_form(
-        page_token, form_id, cfg, since_time=current_cursor
+        page_token, form_id, cfg, since_time=resume_cursor
     ):
         batch_index += 1
-        rows, new_cursor = _process_leads(page, form, batch, batch_max_created, current_cursor)
+        rows, max_cursor = _process_leads(page, form, batch, batch_max_created, max_cursor)
         written += rows
         rows_since_checkpoint += rows
-        current_cursor = new_cursor
         log.info(
-            f"Form {form_id} batch {batch_index} leads={len(batch)} written={rows} total_since_ckpt={rows_since_checkpoint} cursor={current_cursor}"
+            f"Form {form_id} batch {batch_index} leads={len(batch)} written={rows} "
+            f"total_since_ckpt={rows_since_checkpoint} max_cursor={max_cursor}"
         )
-        rows_since_checkpoint = _maybe_checkpoint(
-            form_id,
-            forms_state,
-            current_cursor,
-            rows_since_checkpoint,
-            cfg,
-            batch_index,
-        )
-    # Final checkpoint if any rows remain
-    _write_checkpoint(
-        form_id=form_id,
-        forms_state=forms_state,
-        current_cursor=current_cursor,
-        rows_flushed=rows_since_checkpoint,
-        context="Final checkpoint",
-    )
+        if rows_since_checkpoint >= cfg["check_point_limit"]:
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # The form's own cursor is intentionally left unchanged here (see docstring above);
+            # this checkpoint only flushes the upserted rows to the destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+            op.checkpoint(state={"forms": forms_state})
+            rows_since_checkpoint = 0
     if batch_index == 0:
         log.info(f"No new leads for form {form_id}")
+    # The form's pagination is now fully complete, so its cursor is safe to advance.
+    if max_cursor and max_cursor != resume_cursor:
+        forms_state[form_id] = {"last_created_time": max_cursor}
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+    op.checkpoint(state={"forms": forms_state})
     return written
 
 
-# ---------------------------------------------------------------------------
-# SDK Required Functions
-# ---------------------------------------------------------------------------
-def schema(configuration: Dict[str, str]):
-    """Define the single leads table, its primary key, and explicit column types."""
+def schema(configuration: dict):
+    """
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    """
     return [
         {
             "table": "leads",
@@ -185,9 +180,20 @@ def schema(configuration: Dict[str, str]):
     ]
 
 
-def update(configuration: Dict[str, str], state: Dict[str, Any] | None):
-    """Discover pages and forms, then sync leads for every in-scope form."""
-    log.info("Starting update for Facebook Leads connector")
+def update(configuration: dict, state: dict):
+    """
+    Define the update function, which is a required function, and is called by Fivetran during each sync.
+    See the technical reference documentation for more details on the update function
+    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    Args:
+        configuration: A dictionary containing connection details
+        state: A dictionary containing state information from previous runs
+        The state dictionary is empty for the first sync or for any full re-sync
+    """
+    log.warning("Example: SaaS & APIs : Meta Lead Ads")
+
+    # Validate the configuration to ensure it contains all required values, and normalize
+    # it into the typed dictionary the rest of the connector expects (see validator.py).
     cfg = validator.validate_configuration(configuration)
     base_url = BASE_URL_TEMPLATE.format(version=cfg["graph_version"])
     log.info(f"Using Graph API version {cfg['graph_version']} base={base_url}")
@@ -208,11 +214,24 @@ def update(configuration: Dict[str, str], state: Dict[str, Any] | None):
     log.info(f"Sync complete. Total leads upserted: {total_leads}")
 
 
+# Create the connector object using the schema and update functions
 connector = Connector(update=update, schema=schema)
 
-
+# Check if the script is being run as the main module.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
+#
+# IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
+#   fivetran debug
+#
+# This local testing block is provided as a convenience for quick debugging during development,
+# such as using IDE debug tools (breakpoints, step-through debugging, etc.).
+# Note: This method is not called by Fivetran when executing your connector in production.
+# Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
     config_path = os.environ.get("CONNECTOR_CONFIG", "configuration.json")
-    with open(config_path, "r", encoding="utf-8") as f:
-        configuration = json.load(f)
-    connector.debug(configuration=configuration)
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        local_configuration = json.load(config_file)
+
+    # Test the connector locally
+    connector.debug(configuration=local_configuration)
