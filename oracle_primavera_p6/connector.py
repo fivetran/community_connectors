@@ -7,6 +7,7 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 """
 
 import base64  # For encoding the HTTP Basic Auth credentials sent on every request
+import json  # For reading configuration.json when running this file directly
 import re  # For sanitizing P6 table/column names and validating the base_url format
 import time  # For sleeping between retry attempts
 from datetime import datetime, timezone  # For recording each table's incremental sync cursor
@@ -21,10 +22,6 @@ from fivetran_connector_sdk import Logging as log
 
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
-
-# --------------------------------------------------------------------------------------
-# Constants
-# --------------------------------------------------------------------------------------
 
 __DEFAULT_CONFIG_CODE = "ds_p6adminuser"
 __VALID_CONFIG_CODES = {"ds_p6adminuser", "ds_p6reportuser", "ds_unifier"}
@@ -53,11 +50,6 @@ __EXPECTED_SOURCE_ERRORS = (RuntimeError, requests.RequestException, ValueError)
 
 class FatalAuthError(Exception):
     """Raised when credentials/config_code are rejected (401/403). Should abort the whole sync."""
-
-
-# --------------------------------------------------------------------------------------
-# Configuration helpers
-# --------------------------------------------------------------------------------------
 
 
 def validate_configuration(configuration: dict):
@@ -139,11 +131,6 @@ def build_headers(configuration: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------------------------
-# Name sanitization
-# --------------------------------------------------------------------------------------
-
-
 def sanitize_name(name: str) -> str:
     """Normalize a P6 table/column name (which may contain spaces/mixed case) to
     lowercase_snake_case for use as a Fivetran destination table/column name.
@@ -155,11 +142,6 @@ def sanitize_name(name: str) -> str:
     if normalized[0].isdigit():
         normalized = f"_{normalized}"
     return normalized
-
-
-# --------------------------------------------------------------------------------------
-# HTTP request handling with retry/error classification
-# --------------------------------------------------------------------------------------
 
 
 def _backoff_sleep(attempt: int):
@@ -265,11 +247,6 @@ def request_with_retries(
             f"Request to {url} failed after {__MAX_ATTEMPTS} attempts: {last_exception}"
         )
     raise RuntimeError(f"Request to {url} failed after {__MAX_ATTEMPTS} attempts")
-
-
-# --------------------------------------------------------------------------------------
-# Metadata endpoints
-# --------------------------------------------------------------------------------------
 
 
 def fetch_tables_metadata(configuration: dict) -> list:
@@ -380,11 +357,6 @@ def get_in_scope_tables(configuration: dict, tables_metadata: list) -> list:
             )
 
     return in_scope
-
-
-# --------------------------------------------------------------------------------------
-# runquery pagination parsing
-# --------------------------------------------------------------------------------------
 
 
 def _next_table_is_falsy(value) -> bool:
@@ -551,11 +523,6 @@ def sync_table(
             op.checkpoint(state=state)
 
     return total_rows
-
-
-# --------------------------------------------------------------------------------------
-# Fivetran Connector SDK entry points
-# --------------------------------------------------------------------------------------
 
 
 def schema(configuration: dict):
@@ -752,4 +719,9 @@ connector = Connector(update=update, schema=schema)
 # Note: This method is not called by Fivetran when executing your connector in production.
 # Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
-    connector.debug()
+    # Open the configuration.json file and load its contents
+    with open("configuration.json", "r") as f:
+        configuration = json.load(f)
+
+    # Test the connector locally
+    connector.debug(configuration=configuration)

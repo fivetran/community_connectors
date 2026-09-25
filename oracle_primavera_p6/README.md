@@ -1,7 +1,7 @@
 # Oracle Primavera P6 Connector Example
 
 ## Connector overview
-This connector syncs data from the Oracle Primavera P6 EPPM "Data Service" REST API. It discovers all non-blacklisted tables via the metadata endpoints and syncs each one, one table at a time, using the `runquery` endpoint in `SYNC` mode.
+This connector syncs data from the Oracle Primavera P6 EPPM `Data Service` REST API. It discovers all non-blacklisted tables using the metadata endpoints and syncs them, one table at a time, using the `runquery` endpoint in `SYNC` mode.
 
 ## Requirements
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
@@ -45,7 +45,7 @@ fivetran init --template oracle_primavera_p6
 - `username` - P6 Data Service username.
 - `password` - P6 Data Service password.
 - `config_code` - one of `ds_p6adminuser`, `ds_p6reportuser`, or `ds_unifier`. Defaults to `ds_p6adminuser` if omitted.
-- `base_url` - your P6 Data Service base URL, including your tenant path. Must start with `http://` or `https://`.
+- `base_url` - your P6 Data Service base URL, including your tenant path (for example, `https://p6.oraclecloud.com/<YOUR_TENANT>/pds/rest-service/dataservice/`). Must start with `http://` or `https://`.
 - `tables` - comma-separated list of table names to sync (matching `physicalTableName`, falling back to `displayTableName`, case-insensitive). Omit this key, or leave it empty, to sync all non-blacklisted tables.
 - `incremental_tables` - comma-separated list of table names (matching either `physicalTableName` or `displayTableName`) that should sync incrementally via `sinceDate`. When this key is present at all (even as an empty string), it fully overrides auto-detection: any in-scope table not listed here is fully resynced every run, regardless of whether it has an update-date column. Omit the key entirely to fall back to column-based auto-detection.
 
