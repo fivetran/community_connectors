@@ -139,6 +139,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **MailerLite** ([mailerlite](https://github.com/fivetran/community_connectors/tree/main/mailerlite)) - Sync email marketing data from MailerLite
 - **MasterTax** ([mastertax](https://github.com/fivetran/community_connectors/tree/main/mastertax)) - Sync data from MasterTax API
 - **MeiliSearch** ([meilisearch](https://github.com/fivetran/community_connectors/tree/main/meilisearch)) - Sync index metadata and documents from MeiliSearch
+- **Meta Lead Ads** ([meta_lead_ads](https://github.com/fivetran/community_connectors/tree/main/meta_lead_ads)) - Sync lead data from Facebook (Meta) Lead Ads using the Graph API
 - **Microsoft Excel** ([microsoft_excel](https://github.com/fivetran/community_connectors/tree/main/microsoft_excel)) - Sync data from Microsoft Excel files
 - **Microsoft Intune** ([microsoft_intune](https://github.com/fivetran/community_connectors/tree/main/microsoft_intune)) - Retrieve managed devices from Microsoft Intune
 - **n8n** ([n8n](https://github.com/fivetran/community_connectors/tree/main/n8n)) - Sync workflow automation data from n8n

@@ -1,0 +1,11 @@
+{
+	"system_user_access_token": "<YOUR_META_SYSTEM_USER_ACCESS_TOKEN>",
+	"page_ids": "<ALL_OR_COMMA_SEPARATED_PAGE_IDS>",
+	"form_ids": "<ALL_OR_COMMA_SEPARATED_FORM_IDS>",
+	"initial_start_time": "<OPTIONAL_ISO8601_START_TIME_EG_2023-01-01T00:00:00Z>",
+	"graph_version": "<GRAPH_API_VERSION_EG_v24.0>",
+	"include_archived_forms": "<TRUE_OR_FALSE_DEFAULT_FALSE>",
+	"request_timeout_seconds": "<REQUEST_TIMEOUT_SECONDS_DEFAULT_30>",
+	"fetch_limit": "<LEADS_PAGE_SIZE_DEFAULT_500>",
+	"check_point_limit": "<ROWS_PER_CHECKPOINT_DEFAULT_3000>"
+}
