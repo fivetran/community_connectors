@@ -13,40 +13,56 @@ This connector syncs general ledger reference and transaction data from the Tech
 ## Getting started
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```
+fivetran init --template techone_cianywhere
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ## Features
-- Syncs ledgers, AR and GL chart of accounts (with user-defined fields), ledger accounts, transactions, and linked debits/credits for each transaction.
-- Automatically refreshes the OAuth2 access token on a 401 response and retries the request once.
-- Retries transient network errors and retryable HTTP status codes (429, 5xx) with backoff, honoring `Retry-After` when present.
-- Periodically checkpoints during large account listings so upserts are flushed to the destination in bounded batches.
+- Syncs ledgers, AR and GL chart of accounts (with user-defined fields), ledger accounts, transactions, and linked debits/credits for each transaction, syncing each account's transactions immediately after the account itself instead of holding the whole tenant's accounts in memory.
+- Automatically refreshes the OAuth2 access token on a 401 response, using a retry cycle separate from the transient-error backoff so a refreshed token always gets a full retry attempt.
+- Retries transient network errors and retryable HTTP status codes (429, 5xx) with backoff, honoring a `Retry-After` header in either delay-seconds or HTTP-date form.
+- Periodically checkpoints during large account and transaction listings so upserts are flushed to the destination in bounded batches.
 
 ## Configuration file
-```
+```json
 {
-  "base_url": "https://YOUR_TENANT.t1cloud.com/T1Default/CiAnywhere/Web/YOUR_ENV",
-  "client_id": "YOUR_TECHONE_CLIENT_ID",
-  "client_secret": "YOUR_TECHONE_CLIENT_SECRET"
+  "base_url": "<YOUR_TECHONE_CIANYWHERE_BASE_URL_EG_https://YOUR_TENANT.t1cloud.com/T1Default/CiAnywhere/Web/YOUR_ENV>",
+  "client_id": "<YOUR_TECHONE_CLIENT_ID>",
+  "client_secret": "<YOUR_TECHONE_CLIENT_SECRET>"
 }
 ```
 
-- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path.
+- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path. Must start with `http://` or `https://`.
 - `client_id` - OAuth2 client ID for a TechOne service account with access to the ledger and chart-of-accounts web services.
 - `client_secret` - OAuth2 client secret for the same service account.
 
-> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
-Authentication uses OAuth2 client credentials. Refer to `_get_token()`. The connector requests an access token from `{base_url}/oauth2/access_token` using `client_id` and `client_secret`, and automatically requests a new token if a request returns HTTP 401.
+This connector authenticates to TechOne CiAnywhere using OAuth2 client credentials. Refer to `def _get_token` in `connector.py`.
+
+To set up authentication:
+
+1. Ask your TechOne administrator for a service account (client ID and client secret) with access to the ledger and chart-of-accounts web services.
+2. Provide your tenant's CiAnywhere base URL as `base_url` in `configuration.json`.
+3. Provide the service account's client ID and client secret as `client_id` and `client_secret` in `configuration.json`.
+
+The connector requests an access token from `{base_url}/oauth2/access_token` using `client_id` and `client_secret`, and automatically requests a new token if a request returns HTTP 401.
 
 ## Pagination
-Refer to `_paged_post()`. List endpoints are paginated by requesting successive `PageNumber` values at a fixed `PageSize` of 100 until a page returns fewer rows than the page size.
+Refer to `def _paged_post` in `connector.py`. List endpoints are paginated by requesting successive `PageNumber` values at a fixed `PageSize` of 100 until a page returns fewer rows than the page size.
 
 ## Data handling
-Refer to `update()` and `schema()`. The connector first syncs all ledgers, then AR and GL chart-of-accounts entries (and any populated user-defined fields) for the chart names found on those ledgers, then per-ledger accounts, and finally transactions and their linked debits/credits for each ledger account. Synthetic primary keys for transaction and linked-transaction rows are derived with a stable SHA-1 hash over their natural identifying fields, since the source API does not expose a single unique ID for them.
+Refer to `def update` and `def schema` in `connector.py`. The connector first syncs all ledgers, then AR and GL chart-of-accounts entries (and any populated user-defined fields) for the chart names found on those ledgers, then per-ledger accounts and, immediately after each account, its transactions and their linked debits/credits. If an account's user-defined fields become entirely empty on a later sync, its `glf_chart_acc_usf` row is deleted rather than left stale. Synthetic primary keys for transaction and linked-transaction rows are derived with a stable SHA-1 hash over their natural identifying fields, since the source API does not expose a single unique ID for them.
 
 ## Error handling
-Refer to `_request()`. Connection errors and timeouts are retried with backoff. HTTP 401 triggers one token refresh and retry. Retryable status codes (429, 5xx) are retried with backoff, honoring `Retry-After` when the source provides it. Other non-2xx responses raise an exception, which fails the sync.
+Refer to `def _request_with_backoff` and `def _request` in `connector.py`. Connection errors and timeouts are retried with backoff. Retryable status codes (429 and 5xx) are retried with backoff, honoring `Retry-After` when the source provides it. HTTP 401 triggers one token refresh, using its own retry attempt separate from the transient-error backoff budget. Other non-2xx responses raise an exception, which fails the sync.
 
 ## Tables created
 - `glf_ldg_ctl` (primary key: `ldg_name`) - ledgers.
