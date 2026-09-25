@@ -1,0 +1,5 @@
+{
+  "base_url": "<YOUR_TECHONE_CIANYWHERE_BASE_URL_EG_https://YOUR_TENANT.t1cloud.com/T1Default/CiAnywhere/Web/YOUR_ENV>",
+  "client_id": "<YOUR_TECHONE_CLIENT_ID>",
+  "client_secret": "<YOUR_TECHONE_CLIENT_SECRET>"
+}

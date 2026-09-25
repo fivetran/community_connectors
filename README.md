@@ -174,6 +174,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **SuiteDash** ([suitedash](https://github.com/fivetran/community_connectors/tree/main/suitedash)) - Sync CRM data from SuiteDash API
 - **Supabase** ([supabase](https://github.com/fivetran/community_connectors/tree/main/supabase)) - Sync employee data from Supabase database
 - **Talon.One** ([talon_one](https://github.com/fivetran/community_connectors/tree/main/talon_one)) - Sync events data from Talon.One
+- **TechOne CiAnywhere** ([techone_cianywhere](https://github.com/fivetran/community_connectors/tree/main/techone_cianywhere)) - Sync general ledger, chart of accounts, and transaction data from the TechOne CiAnywhere web services API
 - **Temporal Cloud** ([temporal_cloud](https://github.com/fivetran/community_connectors/tree/main/temporal_cloud)) - Sync workflow execution and schedule data from Temporal Cloud.
 - **Toast** ([toast](https://github.com/fivetran/community_connectors/tree/main/toast)) - Sync POS data from Toast
 - **Tulip Interfaces** ([tulip_interfaces](https://github.com/fivetran/community_connectors/tree/main/tulip_interfaces)) - Sync data from Tulip Tables
