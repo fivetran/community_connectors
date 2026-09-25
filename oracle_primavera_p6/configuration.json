@@ -1,0 +1,8 @@
+{
+  "username": "<YOUR_P6_DATA_SERVICE_USERNAME>",
+  "password": "<YOUR_P6_DATA_SERVICE_PASSWORD>",
+  "config_code": "<ds_p6adminuser_OR_ds_p6reportuser_OR_ds_unifier>",
+  "base_url": "<YOUR_P6_DATASERVICE_BASE_URL_EG_https://p6.oraclecloud.com/YOUR_TENANT/pds/rest-service/dataservice/>",
+  "tables": "<OPTIONAL_COMMA_SEPARATED_TABLE_NAMES_OR_OMIT_FOR_ALL>",
+  "incremental_tables": "<OPTIONAL_COMMA_SEPARATED_INCREMENTAL_TABLE_NAMES_OMIT_FOR_AUTO_DETECT>"
+}
