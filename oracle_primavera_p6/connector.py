@@ -42,14 +42,23 @@ __DEFAULT_RETRY_AFTER_SECONDS = 60
 __REQUEST_TIMEOUT_SECONDS = 180
 __CHECKPOINT_EVERY_PAGES = 1
 
-# Exceptions our own HTTP/response-parsing code raises for an expected source-side failure.
-# Column-discovery and table-sync error handling only swallows these; anything else (including
-# an unexpected SDK operation failure) propagates and fails the sync.
-__EXPECTED_SOURCE_ERRORS = (RuntimeError, requests.RequestException, ValueError)
-
 
 class FatalAuthError(Exception):
     """Raised when credentials/config_code are rejected (401/403). Should abort the whole sync."""
+
+
+class SourceRequestError(Exception):
+    """Raised for an expected failure calling or parsing a response from the P6 Data Service API.
+
+    Column-discovery and table-sync error handling in schema()/update() only catches this
+    (and requests.RequestException as a safety net); anything else, including an unexpected
+    SDK operation failure, propagates and fails the sync instead of being treated as a
+    skippable per-table error.
+    """
+
+
+# Exceptions that schema()/update() treat as an expected, per-table skippable failure.
+__EXPECTED_SOURCE_ERRORS = (SourceRequestError, requests.RequestException)
 
 
 def validate_configuration(configuration: dict):
@@ -85,20 +94,41 @@ def validate_configuration(configuration: dict):
 
 
 def get_base_url(configuration: dict) -> str:
-    """Return the configured base URL, normalizing a trailing slash."""
-    base_url = configuration["base_url"]
+    """Return the configured base URL, stripped of surrounding whitespace and trailing-slashed.
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        str: the normalized base URL, the same value validate_configuration() validated.
+    """
+    base_url = configuration["base_url"].strip()
     if not base_url.endswith("/"):
         base_url += "/"
     return base_url
 
 
 def get_config_code(configuration: dict) -> str:
-    """Return the configured config_code, defaulting to ds_p6adminuser."""
+    """Return the configured config_code, defaulting to ds_p6adminuser.
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        str: the config_code to send on every request.
+    """
     return configuration.get("config_code") or __DEFAULT_CONFIG_CODE
 
 
 def get_configured_table_filter(configuration: dict) -> list:
-    """Return the lowercase list of table names the user restricted syncing to (may be empty)."""
+    """Return the lowercase list of table names the user restricted syncing to (may be empty).
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        list: lowercase, trimmed table names from the `tables` configuration value.
+    """
     raw = configuration.get("tables") or ""
     return [name.strip().lower() for name in raw.split(",") if name.strip()]
 
@@ -110,8 +140,13 @@ def get_configured_incremental_tables(configuration: dict):
     trimming individual entries), it takes full precedence over the column-based
     auto-detection heuristic: any in-scope table listed here syncs incrementally, and every
     other in-scope table is fully resynced every run, regardless of what columns it has.
-    Returns None when the configuration key itself is absent, meaning "fall back to
-    auto-detection" (used for discovery runs where the table scope isn't finalized yet).
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        set: lowercase, trimmed table names from `incremental_tables`, or None when the
+        configuration key itself is absent, meaning "fall back to auto-detection".
     """
     if "incremental_tables" not in configuration:
         return None
@@ -120,7 +155,14 @@ def get_configured_incremental_tables(configuration: dict):
 
 
 def build_headers(configuration: dict) -> dict:
-    """Build the HTTP Basic Auth + JSON headers required by every dataservice request."""
+    """Build the HTTP Basic Auth + JSON headers required by every dataservice request.
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        dict: the headers to send on every request.
+    """
     username = configuration.get("username", "")
     password = configuration.get("password", "")
     token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
@@ -132,8 +174,13 @@ def build_headers(configuration: dict) -> dict:
 
 
 def sanitize_name(name: str) -> str:
-    """Normalize a P6 table/column name (which may contain spaces/mixed case) to
-    lowercase_snake_case for use as a Fivetran destination table/column name.
+    """Normalize a P6 table/column name to lowercase_snake_case for use as a Fivetran name.
+
+    Args:
+        name: the raw P6 table or column name, which may contain spaces or mixed case.
+
+    Returns:
+        str: the normalized lowercase_snake_case name.
     """
     normalized = re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").strip()).strip("_").lower()
     normalized = re.sub(r"_+", "_", normalized)
@@ -145,7 +192,11 @@ def sanitize_name(name: str) -> str:
 
 
 def _backoff_sleep(attempt: int):
-    """Exponential backoff sleep between retry attempts."""
+    """Sleep for an exponentially increasing delay between retry attempts.
+
+    Args:
+        attempt: the 1-based attempt number.
+    """
     time.sleep(min(60, 2**attempt))
 
 
@@ -157,8 +208,22 @@ def request_with_retries(
     Retries (up to __MAX_ATTEMPTS, exponential backoff): connection errors, timeouts,
     chunked-encoding errors, HTTP 429 (honors Retry-After), and HTTP 500/502/503/504.
 
-    Fails fast (raises immediately, no retry): HTTP 400/404/405/406/415 (raise RuntimeError)
+    Fails fast (raises immediately, no retry): HTTP 400/404/405/406/415 (raise SourceRequestError)
     and HTTP 401/403 (raise FatalAuthError, which callers must propagate to abort the run).
+
+    Args:
+        method: the HTTP method to use.
+        url: the absolute URL to request.
+        headers: the request headers.
+        params: optional query-string parameters.
+        json_body: optional JSON request body.
+
+    Returns:
+        requests.Response: the successful (200/201) response.
+
+    Raises:
+        FatalAuthError: on HTTP 401/403.
+        SourceRequestError: on any other non-retryable or retry-exhausted failure.
     """
     last_exception = None
     for attempt in range(1, __MAX_ATTEMPTS + 1):
@@ -181,7 +246,7 @@ def request_with_retries(
                 f"Transient network error on attempt {attempt}/{__MAX_ATTEMPTS} calling {url}: {exc}"
             )
             if attempt >= __MAX_ATTEMPTS:
-                raise RuntimeError(
+                raise SourceRequestError(
                     f"Request to {url} failed after {__MAX_ATTEMPTS} attempts: {exc}"
                 ) from exc
             _backoff_sleep(attempt)
@@ -209,7 +274,7 @@ def request_with_retries(
                     "Check the 'tables' configuration value, or consider a manual P6 metadata refresh."
                 )
             log.error(f"Non-retryable HTTP {status} calling {url}: {response.text}.{hint}")
-            raise RuntimeError(f"HTTP {status} calling {url}: {response.text}.{hint}")
+            raise SourceRequestError(f"HTTP {status} calling {url}: {response.text}.{hint}")
 
         if status == 429:
             retry_after_header = response.headers.get("Retry-After")
@@ -221,7 +286,7 @@ def request_with_retries(
                 f"waiting {wait_seconds}s before retrying"
             )
             if attempt >= __MAX_ATTEMPTS:
-                raise RuntimeError(
+                raise SourceRequestError(
                     f"HTTP 429 calling {url} after {__MAX_ATTEMPTS} attempts: {response.text}"
                 )
             time.sleep(wait_seconds)
@@ -232,7 +297,7 @@ def request_with_retries(
                 f"Server error (HTTP {status}) calling {url} on attempt {attempt}/{__MAX_ATTEMPTS}: {response.text}"
             )
             if attempt >= __MAX_ATTEMPTS:
-                raise RuntimeError(
+                raise SourceRequestError(
                     f"HTTP {status} calling {url} after {__MAX_ATTEMPTS} attempts: {response.text}"
                 )
             _backoff_sleep(attempt)
@@ -240,53 +305,129 @@ def request_with_retries(
 
         # Any other unexpected status code: treat as a fail-fast / code-path bug.
         log.error(f"Unexpected HTTP {status} calling {url}: {response.text}")
-        raise RuntimeError(f"Unexpected HTTP {status} calling {url}: {response.text}")
+        raise SourceRequestError(f"Unexpected HTTP {status} calling {url}: {response.text}")
 
     if last_exception:
-        raise RuntimeError(
+        raise SourceRequestError(
             f"Request to {url} failed after {__MAX_ATTEMPTS} attempts: {last_exception}"
         )
-    raise RuntimeError(f"Request to {url} failed after {__MAX_ATTEMPTS} attempts")
+    raise SourceRequestError(f"Request to {url} failed after {__MAX_ATTEMPTS} attempts")
+
+
+def _parse_json_list_response(response, context: str) -> list:
+    """Parse a response body as JSON, requiring (and returning) a list payload.
+
+    An explicitly empty list is a valid, successful result. Any other shape (a non-list
+    value, or a body that is not valid JSON at all) is a source contract failure and must
+    not be silently downgraded to "no rows", since that could permanently skip data for an
+    incremental table.
+
+    Args:
+        response: the requests.Response to parse.
+        context: a short description of the call, used in the error message.
+
+    Returns:
+        list: the decoded JSON list.
+
+    Raises:
+        SourceRequestError: if the body is not valid JSON, or is not a list.
+    """
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise SourceRequestError(f"{context}: response body is not valid JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise SourceRequestError(f"{context}: expected a list payload, got {type(data).__name__}")
+    return data
 
 
 def fetch_tables_metadata(configuration: dict) -> list:
-    """Call GET metadata/tables and return the raw list of table metadata dicts."""
+    """Call GET metadata/tables and return the raw list of table metadata dicts.
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        list: the raw table metadata dicts.
+
+    Raises:
+        FatalAuthError: on an authentication/authorization failure.
+        SourceRequestError: on any other request failure, or an unexpected response shape.
+    """
     url = f"{get_base_url(configuration)}metadata/tables"
     params = {"configCode": get_config_code(configuration)}
     response = request_with_retries("GET", url, build_headers(configuration), params=params)
-    data = response.json()
-    return data if isinstance(data, list) else []
+    return _parse_json_list_response(response, "metadata/tables")
 
 
 def fetch_columns_metadata(configuration: dict, table_name: str) -> list:
-    """Call GET metadata/columns/{tableName} and return the raw list of column metadata dicts."""
+    """Call GET metadata/columns/{tableName} and return the raw list of column metadata dicts.
+
+    Args:
+        configuration: the validated connector configuration.
+        table_name: the P6 physical table name to fetch column metadata for.
+
+    Returns:
+        list: the raw column metadata dicts.
+
+    Raises:
+        FatalAuthError: on an authentication/authorization failure.
+        SourceRequestError: on any other request failure, or an unexpected response shape.
+    """
     url = f"{get_base_url(configuration)}metadata/columns/{table_name}"
     params = {"configCode": get_config_code(configuration)}
     response = request_with_retries("GET", url, build_headers(configuration), params=params)
-    data = response.json()
-    return data if isinstance(data, list) else []
+    return _parse_json_list_response(response, f"metadata/columns/{table_name}")
 
 
 def _is_blacklisted(table_metadata: dict) -> bool:
-    """Parse isBlackListed defensively: P6 returns it as the STRING "true"/"false"."""
+    """Parse isBlackListed defensively: P6 returns it as the STRING "true"/"false".
+
+    Args:
+        table_metadata: a single table metadata dict from metadata/tables.
+
+    Returns:
+        bool: True if the table is blacklisted and must not be synced.
+    """
     value = table_metadata.get("isBlackListed")
     return str(value).strip().lower() == "true"
 
 
 def _is_lob_column(column_metadata: dict) -> bool:
-    """Return True if a column's dataType/physicalDataType is a LOB type unsupported by SYNC mode."""
+    """Return True if a column's dataType/physicalDataType is a LOB type unsupported by SYNC mode.
+
+    Args:
+        column_metadata: a single column metadata dict from metadata/columns/{tableName}.
+
+    Returns:
+        bool: True if the column must be excluded from the sync.
+    """
     data_type = str(column_metadata.get("dataType") or "").strip().upper()
     physical_type = str(column_metadata.get("physicalDataType") or "").strip().upper()
     return data_type in __LOB_TYPES or physical_type in __LOB_TYPES
 
 
 def _is_primary_key_column(column_metadata: dict) -> bool:
-    """Parse isPK defensively: P6 returns it as the STRING "true"/"false", not a real boolean."""
+    """Parse isPK defensively: P6 returns it as the STRING "true"/"false", not a real boolean.
+
+    Args:
+        column_metadata: a single column metadata dict from metadata/columns/{tableName}.
+
+    Returns:
+        bool: True if the column is part of the table's primary key.
+    """
     return str(column_metadata.get("isPK")).strip().lower() == "true"
 
 
 def _is_incremental_capable(columns_metadata: list) -> bool:
-    """A table is incremental-capable if any column name (normalized) matches a known cursor column."""
+    """Return True if any column name (normalized) matches a known incremental cursor column.
+
+    Args:
+        columns_metadata: the column metadata dicts for one table.
+
+    Returns:
+        bool: True if the table has an UPDATE_DATE/LASTUPDATEDATE/CHANGEDATE-style column.
+    """
     for column in columns_metadata:
         normalized = str(column.get("columnName") or "").strip().lower().replace("_", "")
         if normalized in __INCREMENTAL_CURSOR_COLUMNS:
@@ -306,6 +447,15 @@ def resolve_sync_type(
     incremental if either its physical or display name (case-insensitive) is listed, matching
     the same physical/display-name matching `get_in_scope_tables()` uses for table scope.
     Otherwise, falls back to column-based auto-detection (`_is_incremental_capable`).
+
+    Args:
+        configuration: the validated connector configuration.
+        physical_table_name: the table's physicalTableName.
+        display_table_name: the table's displayTableName, or an empty string if unset.
+        columns_metadata: the table's column metadata, used for auto-detection.
+
+    Returns:
+        bool: True if the table should sync incrementally via a sinceDate cursor.
     """
     configured_incremental = get_configured_incremental_tables(configuration)
     if configured_incremental is not None:
@@ -322,6 +472,13 @@ def get_in_scope_tables(configuration: dict, tables_metadata: list) -> list:
     Matching against the configured CSV is case-insensitive on physicalTableName, falling back to
     displayTableName. Configured names that match nothing are logged and skipped rather than
     failing the whole run.
+
+    Args:
+        configuration: the validated connector configuration.
+        tables_metadata: the raw table metadata dicts from fetch_tables_metadata().
+
+    Returns:
+        list: the table metadata dicts that are in scope for this sync.
     """
     configured = get_configured_table_filter(configuration)
     matched = set()
@@ -360,7 +517,14 @@ def get_in_scope_tables(configuration: dict, tables_metadata: list) -> list:
 
 
 def _next_table_is_falsy(value) -> bool:
-    """True if nextTableName should be treated as "no more pages"."""
+    """Return True if nextTableName should be treated as "no more pages".
+
+    Args:
+        value: the raw nextTableName value from a runquery response.
+
+    Returns:
+        bool: True if the value is None, blank, "-1", or -1.
+    """
     if value is None:
         return True
     if isinstance(value, str):
@@ -372,7 +536,14 @@ def _next_table_is_falsy(value) -> bool:
 
 
 def _next_key_is_zero(value) -> bool:
-    """True if nextKey should be treated as the "0"/0 sentinel."""
+    """Return True if nextKey should be treated as the "0"/0 sentinel.
+
+    Args:
+        value: the raw nextKey value from a runquery response.
+
+    Returns:
+        bool: True if the value is None, "0", or 0.
+    """
     if value is None:
         return True
     if isinstance(value, str):
@@ -383,7 +554,15 @@ def _next_key_is_zero(value) -> bool:
 
 
 def _find_pagination_entry(pagination_list: list, physical_table_name: str):
-    """Return the pagination entry matching this table's name, or the sole entry as a fallback."""
+    """Return the pagination entry matching this table's name, or the sole entry as a fallback.
+
+    Args:
+        pagination_list: the non-empty response["data"]["pagination"] list.
+        physical_table_name: the table whose pagination entry is being looked up.
+
+    Returns:
+        The matching pagination entry dict, or pagination_list[0] if none matches.
+    """
     for item in pagination_list:
         table_name = str(item.get("tableName", "")).lower() if isinstance(item, dict) else None
         if table_name == physical_table_name.lower():
@@ -399,6 +578,13 @@ def parse_pagination(payload: dict, physical_table_name: str):
 
     Pagination stops when no pagination info is found at all, OR nextTableName is falsy/"-1"/-1,
     OR nextKey is "0"/0 alongside an absent/-1 nextTableName.
+
+    Args:
+        payload: the decoded runquery JSON response body.
+        physical_table_name: the table this response page is for.
+
+    Returns:
+        tuple: (next_key, next_table_name, has_more) for the next runquery call.
     """
     next_key = None
     next_table_name = None
@@ -452,13 +638,28 @@ def sync_table(
     since_date: str,
     state: dict,
 ) -> int:
-    """Page through runquery for a single table and upsert every row. Returns the row count.
+    """Page through runquery for a single table and upsert every row.
 
     Checkpoints periodically (every __CHECKPOINT_EVERY_PAGES pages) using the unmodified `state`
     passed in, so large tables get flushed to the destination incrementally instead of
     accumulating an unbounded backlog of unflushed upserts across many tables in one run.
     This does not advance this table's own incremental cursor (that only happens once the
     whole table finishes, in update()) — it only bounds how much unflushed data can build up.
+
+    Args:
+        configuration: the validated connector configuration.
+        physical_table_name: the P6 physical table name to query.
+        destination_table: the sanitized destination table name to upsert into.
+        columns: the physical column names to request and sync.
+        since_date: the sinceDate cursor to pass for an incremental table, or None for a full sync.
+        state: the connector state, used only for the periodic mid-table checkpoint.
+
+    Returns:
+        int: the number of rows upserted.
+
+    Raises:
+        FatalAuthError: on an authentication/authorization failure.
+        SourceRequestError: on any other request failure, or an unexpected response shape.
     """
     base_url = get_base_url(configuration)
     headers = build_headers(configuration)
@@ -489,12 +690,24 @@ def sync_table(
                 body["nextTableName"] = str(next_table_name)
 
         response = request_with_retries("POST", url, headers, params=params, json_body=body)
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise SourceRequestError(
+                f"runquery response for table '{physical_table_name}' is not valid JSON: {exc}"
+            ) from exc
 
         data = payload.get("data") if isinstance(payload, dict) else None
         rows = data.get(physical_table_name) if isinstance(data, dict) else None
+        if rows is None:
+            raise SourceRequestError(
+                f"runquery response for table '{physical_table_name}' is missing rows data"
+            )
         if not isinstance(rows, list):
-            rows = []
+            raise SourceRequestError(
+                f"runquery response for table '{physical_table_name}' returned non-list rows "
+                f"({type(rows).__name__})"
+            )
 
         for row in rows:
             if isinstance(row, dict):
@@ -703,6 +916,12 @@ def update(configuration: dict, state: dict):
         # Checkpoint after every table (incremental or not) so upserts are flushed to the
         # destination in bounded batches rather than accumulating across many tables in one run.
         op.checkpoint(state=state)
+
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # An unconditional checkpoint here guarantees at least one checkpoint even when there were
+    # no in-scope tables, or every table was skipped before its own checkpoint was reached.
+    op.checkpoint(state=state)
 
 
 # Create the connector object using the schema and update functions

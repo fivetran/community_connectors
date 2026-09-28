@@ -15,7 +15,7 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
-```
+```bash
 fivetran init --template oracle_primavera_p6
 ```
 
@@ -67,7 +67,7 @@ Each `runquery` call returns a page of rows for one table. Refer to `def sync_ta
 Refer to `def schema` and `def update` in `connector.py`. Table and column metadata is discovered dynamically, LOB columns are excluded, and names are sanitized to `lowercase_snake_case`. Each table's sync type (full or incremental) is resolved from `incremental_tables` when present, or auto-detected from update-timestamp columns otherwise, by `def resolve_sync_type`.
 
 ## Error handling
-Refer to `def request_with_retries` in `connector.py`. Connection errors, timeouts, chunked-encoding errors, and HTTP 429/500/502/503/504 are retried with backoff (429 honors `Retry-After`). HTTP 400/404/405/406/415 fail fast with a `RuntimeError`. HTTP 401/403, or an invalid `config_code`, abort the entire sync immediately. Any other per-table error raised by this connector's own request/response handling is logged and that table is skipped, with the sync continuing for the remaining tables; an unexpected error (for example, from an SDK operation) is not swallowed and fails the sync.
+Refer to `def request_with_retries` in `connector.py`. Connection errors, timeouts, chunked-encoding errors, and HTTP 429/500/502/503/504 are retried with backoff (429 honors `Retry-After`). HTTP 400/404/405/406/415 fail fast with a `SourceRequestError`. HTTP 401/403, or an invalid `config_code`, abort the entire sync immediately. A response with an unexpected shape (missing rows data, a non-list payload, or invalid JSON) also raises `SourceRequestError` instead of being treated as an empty page, since silently treating it as empty could permanently skip rows for an incremental table. `schema()` and `update()` catch only `SourceRequestError` (and `requests.RequestException`) per table, log it, and continue with the remaining tables; any other error, including an SDK operation failure, is not swallowed and fails the sync.
 
 ## Tables created
 Tables are created dynamically based on the P6 tables discovered (or listed in `tables`). Refer to `def schema` in `connector.py`: each table declares only its `table` name and, when the source reports primary-key columns, its `primary_key`; the Fivetran SDK infers column types from the upserted rows.
