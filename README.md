@@ -150,6 +150,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **OData API** ([odata_api](https://github.com/fivetran/community_connectors/tree/main/odata_api)) - Sync data from OData APIs (versions 2 and 4)
 - **Oktopost** ([oktopost](https://github.com/fivetran/community_connectors/tree/main/oktopost)) - Sync social media exports from Oktopost BI API
 - **Open-Meteo Marine Weather** ([open_meteo_marine_weather](https://github.com/fivetran/community_connectors/tree/main/open_meteo_marine_weather)) - Sync hourly and daily marine weather data (wave height, direction, period, swell, wind waves) from the Open-Meteo Marine Weather API
+- **Oracle Primavera P6** ([oracle_primavera_p6](https://github.com/fivetran/community_connectors/tree/main/oracle_primavera_p6)) - Sync project, activity, and resource data from the Oracle Primavera P6 EPPM Data Service REST API
 - **Oura Ring** ([oura_ring](https://github.com/fivetran/community_connectors/tree/main/oura_ring)) - Sync daily activity, sleep, readiness, stress, and heart rate data from the Oura Ring API v2.
 - **OWASP API Vulnerabilities** ([owasp_api_vulns](https://github.com/fivetran/community_connectors/tree/main/owasp_api_vulns)) - Sync OWASP API vulnerability data from NVD 2.0
 - **Partech (Punchh)** ([partech](https://github.com/fivetran/community_connectors/tree/main/partech)) - Sync POS data from Partech (formerly Punchh)
