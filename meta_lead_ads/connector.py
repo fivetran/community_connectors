@@ -96,11 +96,13 @@ def _process_form(
     forms_state: Dict[str, Dict[str, Optional[str]]],
 ) -> int:
     """
-    Sync all leads for a single form, upserting each page and periodically flushing state.
-    The form's resumable cursor only advances once its pagination fully completes, because
-    Meta's Graph API does not guarantee that pages are returned in ascending created_time
-    order; checkpointing a newer cursor mid-pagination could otherwise cause a later resume
-    to skip leads on pages that had not been processed yet.
+    Sync all leads for a single form, upserting each page and periodically checkpointing state.
+    The form's resumable cursor advances at each periodic checkpoint (not only once the form
+    fully completes), so a failure only risks replaying up to check_point_limit rows rather
+    than the whole form. This is safe against Meta's Graph API not guaranteeing pages are
+    returned in strict created_time order, because iterate_leads_for_form() re-queries with a
+    1-second overlap on the saved cursor, and leads are upserted by lead_id, so replaying that
+    overlap window on resume never skips or duplicates a row.
     Args:
         page: the page dictionary the form belongs to, including its page-scoped access token.
         form: the lead-gen form dictionary to sync leads for.
@@ -130,10 +132,10 @@ def _process_form(
             f"total_since_ckpt={rows_since_checkpoint} max_cursor={max_cursor}"
         )
         if rows_since_checkpoint >= cfg["check_point_limit"]:
+            if max_cursor:
+                forms_state[form_id] = {"last_created_time": max_cursor}
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
-            # The form's own cursor is intentionally left unchanged here (see docstring above);
-            # this checkpoint only flushes the upserted rows to the destination.
             # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
             # Learn more about how and where to checkpoint by reading our best practices documentation
             # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
@@ -141,8 +143,7 @@ def _process_form(
             rows_since_checkpoint = 0
     if batch_index == 0:
         log.info(f"No new leads for form {form_id}")
-    # The form's pagination is now fully complete, so its cursor is safe to advance.
-    if max_cursor and max_cursor != resume_cursor:
+    if max_cursor and max_cursor != forms_state.get(form_id, {}).get("last_created_time"):
         forms_state[form_id] = {"last_created_time": max_cursor}
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
@@ -201,15 +202,29 @@ def update(configuration: dict, state: dict):
     state = state or {}
     forms_state: Dict[str, Dict[str, str]] = state.get("forms", {})
 
-    pages = meta_helpers.discover_pages(cfg)
-    log.info(f"Discovered {len(pages)} pages")
-
+    explicit_form_ids = cfg["form_ids_list"]
+    matched_form_ids: set = set()
     total_leads = 0
-    for page in pages:
-        forms = meta_helpers.list_forms(page, cfg)
-        log.info(f"Page {page.get('id')} forms={len(forms)}")
-        for form in forms:
+    page_count = 0
+    for page in meta_helpers.discover_pages(cfg):
+        page_count += 1
+        form_count = 0
+        for form in meta_helpers.list_forms(page, cfg):
+            form_count += 1
+            if explicit_form_ids is not None and form.get("id") in explicit_form_ids:
+                matched_form_ids.add(form["id"])
             total_leads += _process_form(page, form, cfg, forms_state)
+        log.info(f"Page {page.get('id')} forms={form_count}")
+    log.info(f"Discovered {page_count} pages")
+
+    # A misconfigured, inaccessible, or unattached form_id would otherwise be silently
+    # skipped, letting the sync complete successfully with missing data.
+    if explicit_form_ids is not None:
+        missing_form_ids = sorted(set(explicit_form_ids) - matched_form_ids)
+        if missing_form_ids:
+            raise ValueError(
+                f"Configured form_ids not found on any selected page: {missing_form_ids}"
+            )
 
     log.info(f"Sync complete. Total leads upserted: {total_leads}")
 

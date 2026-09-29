@@ -11,64 +11,65 @@ from http_helpers import _graph_get
 from validator import validate_page_access_tokens
 
 
-def discover_pages(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return the list of pages to sync, honoring explicit IDs when provided.
+def discover_pages(cfg: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Yield the pages to sync, honoring explicit IDs when provided.
+
+    Pages are yielded one at a time (one explicit page ID, or one paginated response, at a
+    time) instead of being accumulated into a list first, so the connector can start
+    processing a page's forms before later pages (or IDs) are even fetched. Each yielded
+    page's access token is validated immediately, so a missing token fails fast.
 
     Args:
         cfg: the validated connector configuration.
 
-    Returns:
-        list: page dictionaries with "id", "name", and "access_token" keys.
+    Yields:
+        dict: a page dictionary with "id", "name", and "access_token" keys.
     """
     if cfg["page_ids_list"] is not None:
-        pages: List[Dict[str, Any]] = []
         for page_id in cfg["page_ids_list"]:
             data = _graph_get(
                 f"{page_id}?fields=id,name,access_token",
                 {"access_token": cfg["system_user_access_token"]},
                 cfg,
             )
-            pages.append(
-                {
-                    "id": page_id,
-                    "name": data.get("name"),
-                    "access_token": data.get("access_token"),
-                }
-            )
-        validate_page_access_tokens(pages)
-        return pages
-    pages = []
+            page = {
+                "id": page_id,
+                "name": data.get("name"),
+                "access_token": data.get("access_token"),
+            }
+            validate_page_access_tokens([page])
+            yield page
+        return
     for resp in _paginate_graph_collection(
         "me/accounts?fields=id,name,access_token",
         {"access_token": cfg["system_user_access_token"]},
         cfg,
     ):
-        pages.extend(resp.get("data", []))
-    validate_page_access_tokens(pages)
-    return pages
+        for page in resp.get("data", []):
+            validate_page_access_tokens([page])
+            yield page
 
 
-def list_forms(page: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """List lead-gen forms for a page, filtered per configuration.
+def list_forms(page: Dict[str, Any], cfg: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Yield lead-gen forms for a page, filtered per configuration.
 
     When explicit `form_ids` are configured, every listed form is returned by ID
     regardless of status, and `include_archived_forms` is ignored. Otherwise, all
     forms are returned unless `include_archived_forms` is false, in which case only
-    ACTIVE forms are kept. Each page of forms is filtered as it is fetched instead of
-    being accumulated in full first.
+    ACTIVE forms are kept. Forms are yielded one page of results at a time instead of
+    being accumulated into a list first.
 
     Args:
         page: the page dictionary returned by discover_pages(), used for its ID and
             page-scoped access token.
         cfg: the validated connector configuration.
 
-    Returns:
-        list: form dictionaries with "id", "name", and "status" keys.
+    Yields:
+        dict: a form dictionary with "id", "name", and "status" keys.
     """
     explicit_form_ids = cfg["form_ids_list"]
     keep_active_only = explicit_form_ids is None and not cfg["include_archived_forms"]
     params = {"access_token": page.get("access_token")}
-    forms: List[Dict[str, Any]] = []
     for resp in _paginate_graph_collection(
         f"{page['id']}/leadgen_forms?fields=id,name,status",
         params,
@@ -77,10 +78,9 @@ def list_forms(page: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]
         for form in resp.get("data", []):
             if explicit_form_ids is not None:
                 if form.get("id") in explicit_form_ids:
-                    forms.append(form)
+                    yield form
             elif not keep_active_only or form.get("status") == "ACTIVE":
-                forms.append(form)
-    return forms
+                yield form
 
 
 def _convert_time_to_unix(timestr: str) -> int:
@@ -129,12 +129,17 @@ def iterate_leads_for_form(
         "fields": "created_time,id,ad_id,form_id,field_data",
     }
     if since_time:
+        # Query with a 1-second overlap on the lower bound: since the cursor may have been
+        # checkpointed mid-pagination (see connector.py's _process_form), a strict lower
+        # bound could permanently skip a lead with the same second-level created_time as the
+        # saved cursor. Re-fetching that second is safe because leads are upserted by lead_id.
+        overlap_unix_time = _convert_time_to_unix(since_time) - 1
         params["filtering"] = json.dumps(
             [
                 {
                     "field": "time_created",
                     "operator": "GREATER_THAN",
-                    "value": _convert_time_to_unix(since_time),
+                    "value": overlap_unix_time,
                 }
             ]
         )

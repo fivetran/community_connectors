@@ -67,11 +67,17 @@ def request_with_retries(
                 method, url, params=params, timeout=cfg["request_timeout_seconds"]
             )
         except requests.RequestException as e:
-            log.warning(f"Network error (attempt {attempt}/{__MAX_ATTEMPTS}) url={safe_url}: {e}")
+            # Log only the exception type, and suppress chaining the original exception: both
+            # the prepared request and requests' own exception message can embed the request
+            # URL, including the access_token supplied via `params`.
+            error_type = type(e).__name__
+            log.warning(
+                f"Network error (attempt {attempt}/{__MAX_ATTEMPTS}) url={safe_url}: {error_type}"
+            )
             if attempt >= __MAX_ATTEMPTS:
                 raise RuntimeError(
-                    f"Request to {safe_url} failed after {__MAX_ATTEMPTS} attempts: {e}"
-                ) from e
+                    f"Request to {safe_url} failed after {__MAX_ATTEMPTS} attempts: {error_type}"
+                ) from None
             time.sleep(__BACKOFF_BASE**attempt)
             continue
         if resp.status_code == 200:
