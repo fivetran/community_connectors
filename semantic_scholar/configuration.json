@@ -1,0 +1,13 @@
+{
+  "search_query": "<YOUR_SEARCH_QUERY>",
+  "api_key": "<OPTIONAL_SEMANTIC_SCHOLAR_API_KEY>",
+  "snowflake_account": "<YOUR_SNOWFLAKE_ACCOUNT_HOSTNAME>",
+  "snowflake_pat_token": "<YOUR_SNOWFLAKE_PAT>",
+  "cortex_model": "<CORTEX_MODEL_NAME>",
+  "enable_cortex": "<TRUE_OR_FALSE>",
+  "max_records_per_sync": "<MAX_RECORDS_PER_SYNC>",
+  "batch_size": "<BATCH_SIZE>",
+  "cortex_timeout": "<CORTEX_TIMEOUT_SECONDS>",
+  "max_enrichments": "<MAX_CORTEX_ENRICHMENTS>",
+  "max_enrichments_per_day": "<MAX_CORTEX_ENRICHMENTS_PER_DAY>"
+}
