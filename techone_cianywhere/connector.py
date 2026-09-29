@@ -48,6 +48,21 @@ def validate_configuration(configuration: dict):
         raise ValueError(f"'base_url' must start with http:// or https://. Got: '{base_url}'")
 
 
+def get_base_url(configuration: dict) -> str:
+    """Return the configured base URL with any trailing slash removed.
+
+    Every API path used in this connector (including __TOKEN_PATH) starts with a leading
+    slash, so a trailing slash left on base_url would otherwise produce a double slash.
+
+    Args:
+        configuration: the validated connector configuration.
+
+    Returns:
+        str: the base URL, stripped of surrounding whitespace and any trailing slash.
+    """
+    return configuration["base_url"].strip().rstrip("/")
+
+
 def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
@@ -312,7 +327,7 @@ def _get_token(configuration):
     """
     response = _request_with_backoff(
         "POST",
-        f"{configuration['base_url']}{__TOKEN_PATH}",
+        f"{get_base_url(configuration)}{__TOKEN_PATH}",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data={
             "client_id": configuration["client_id"],
@@ -350,7 +365,7 @@ def _request(method, path, token_holder, configuration, **kwargs):
     Returns:
         The decoded JSON response body, or an empty dict for an empty response body.
     """
-    url = f"{configuration['base_url']}{path}"
+    url = f"{get_base_url(configuration)}{path}"
     token_refreshed = False
     while True:
         response = _request_with_backoff(method, url, headers=_headers(token_holder[0]), **kwargs)

@@ -3,6 +3,8 @@
 ## Connector overview
 This connector syncs general ledger reference and transaction data from the TechOne CiAnywhere web services API. It syncs all ledgers, the AR and GL charts of accounts (including user-defined fields), per-ledger accounts, and transactions with their linked debits and credits.
 
+Every sync is a full resync: none of the list endpoints this connector uses (ledgers, chart of accounts, ledger accounts, transactions, or linked debits/credits) expose a modified-since or date-range filter, so there is no field to build an incremental cursor from. Every run re-fetches and re-upserts the full dataset; this is safe because every row is upserted by a stable key, but it also means sync duration scales with the size of the general ledger rather than with how much has changed since the last run.
+
 ## Requirements
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
@@ -15,7 +17,7 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
-```
+```bash
 fivetran init --template techone_cianywhere
 ```
 
@@ -38,7 +40,7 @@ fivetran init --template techone_cianywhere
 }
 ```
 
-- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path. Must start with `http://` or `https://`.
+- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path. Must start with `http://` or `https://`; a trailing slash is stripped automatically.
 - `client_id` - OAuth2 client ID for a TechOne service account with access to the ledger and chart-of-accounts web services.
 - `client_secret` - OAuth2 client secret for the same service account.
 
@@ -60,6 +62,8 @@ Refer to `def _paged_post` in `connector.py`. List endpoints are paginated by re
 
 ## Data handling
 Refer to `def update` and `def schema` in `connector.py`. The connector first syncs all ledgers, then AR and GL chart-of-accounts entries (and any populated user-defined fields) for the chart names found on those ledgers, then per-ledger accounts and, immediately after each account, its transactions and their linked debits/credits. If an account's user-defined fields become entirely empty on a later sync, its `glf_chart_acc_usf` row is deleted rather than left stale. Synthetic primary keys for transaction and linked-transaction rows are derived with a stable SHA-1 hash over their natural identifying fields, since the source API does not expose a single unique ID for them.
+
+Refer to `def _sync_transaction_details` in `connector.py`: the source only exposes linked debits/credits one transaction at a time (`ListLinkedDebitsAndCreditsForTransaction`), so this connector issues one such call per transaction. This is a known limitation of the source API, not a batching choice in the connector; revisit if TechOne exposes a bulk variant of this endpoint.
 
 ## Error handling
 Refer to `def _request_with_backoff` and `def _request` in `connector.py`. Connection errors and timeouts are retried with backoff. Retryable status codes (429 and 5xx) are retried with backoff, honoring `Retry-After` when the source provides it. HTTP 401 triggers one token refresh, using its own retry attempt separate from the transient-error backoff budget. Other non-2xx responses raise an exception, which fails the sync.
