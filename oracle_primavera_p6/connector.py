@@ -577,7 +577,7 @@ def parse_pagination(payload: dict, physical_table_name: str):
     -> response["data"]["nextTableName"]/["nextKey"] -> top-level response["nextTableName"]/["nextKey"].
 
     Pagination stops when no pagination info is found at all, OR nextTableName is falsy/"-1"/-1,
-    OR nextKey is "0"/0 alongside an absent/-1 nextTableName.
+    OR nextKey is the "0"/0 sentinel (regardless of nextTableName).
 
     Args:
         payload: the decoded runquery JSON response body.
@@ -624,7 +624,7 @@ def parse_pagination(payload: dict, physical_table_name: str):
     if _next_table_is_falsy(next_table_name):
         return None, None, False
 
-    if _next_key_is_zero(next_key) and _next_table_is_falsy(next_table_name):
+    if _next_key_is_zero(next_key):
         return None, None, False
 
     return next_key, next_table_name, True
