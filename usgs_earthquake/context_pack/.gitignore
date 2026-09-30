@@ -1,0 +1,25 @@
+# Keys never live in this directory: export ANTHROPIC_API_KEY, or pass --env-file with a path outside the connector.
+.env
+.env.*
+
+# dbt build output, logs and the per-target DuckDB files
+dbt/target/
+dbt/target_*/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+logs/
+target/
+
+# DuckDB files
+*.db
+*.duckdb
+*.duckdb.wal
+*.db.wal
+.duckdb/
+
+# Rendered SQL. The reviewed production string is embedded in agent/SKILL.md instead.
+lake_sql/
+
+__pycache__/
+.pytest_cache/

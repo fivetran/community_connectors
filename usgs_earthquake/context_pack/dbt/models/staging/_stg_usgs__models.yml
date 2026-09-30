@@ -1,0 +1,255 @@
+version: 2
+models:
+  - name: stg_usgs__earthquakes
+    description: Live USGS events from the connector's earthquake table, one row per USGS preferred event id. Rows with
+      _fivetran_deleted = true are removed, event_time and updated_at are converted from timestamptz to UTC timestamps without
+      a time zone with timezone('UTC', ...), never with a cast, and id is renamed to event_id. When the var updated_at_cutoff
+      is set (to compare two copies of the table by updated_at), rows updated after it are also removed. Every event type and every magnitude is kept,
+      including null and negative magnitudes; fct_seismic_events assigns regions and applies the significant-event rule.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: event_id
+        description: The USGS preferred event id, the connector's primary key, renamed from id. A network code followed
+          by that network's event code, for example aka2026pfgrzb. When USGS changes which id is preferred, the connector
+          deletes the row under the old id, so an old id survives only inside ids.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - unique
+          - not_null
+      - name: event_time_utc
+        description: When the event occurred (origin time), as a UTC timestamp without a time zone, from event_time through
+          timezone('UTC', ...). Millisecond precision.
+        data_type: timestamp
+        config:
+          meta:
+            pii: false
+            unit: UTC
+        data_tests:
+          - not_null
+      - name: updated_at_utc
+        description: 'When USGS last updated the event, as a UTC timestamp without a time zone, from updated_at through
+          timezone(''UTC'', ...). Not unique: two events can share an update time.'
+        data_type: timestamp
+        config:
+          meta:
+            pii: false
+            unit: UTC
+        data_tests:
+          - not_null
+      - name: mag
+        description: The preferred magnitude, on the scale named in mag_type. Scales differ by network and event size, so
+          values are not strictly comparable across mag_type. Negative values are real, very small local events (profile
+          minimum -1.25). Null for an event USGS has not sized (1 row in the profile).
+        data_type: double
+        config:
+          meta:
+            pii: false
+            unit: magnitude, on the scale given in mag_type
+      - name: mag_type
+        description: The method behind the preferred magnitude, for example ml (local), md (duration), mb (body wave), mww
+          (W-phase moment magnitude). 11 values observed, led by ml and md. The one null in the profile is the same event
+          as the null mag.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+      - name: event_type
+        description: USGS event type, from the API field type. Mostly earthquake; also quarry blast, explosion, ice quake,
+          landslide, mining explosion and experimental explosion in the profile. USGS defines further types that can appear
+          later. Only earthquake can count toward significant events. The accepted values are the event types the FDSN event
+          service documents (fdsnws/event/1/application.json).
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - accidental explosion
+                  - acoustic noise
+                  - acoustic_noise
+                  - anthropogenic_event
+                  - building collapse
+                  - chemical explosion
+                  - chemical_explosion
+                  - collapse
+                  - debris avalanche
+                  - earthquake
+                  - eq
+                  - experimental explosion
+                  - explosion
+                  - ice quake
+                  - induced or triggered event
+                  - industrial explosion
+                  - landslide
+                  - meteor
+                  - meteorite
+                  - mine collapse
+                  - mine_collapse
+                  - mining explosion
+                  - mining_explosion
+                  - not existing
+                  - not reported
+                  - not_reported
+                  - nuclear explosion
+                  - nuclear_explosion
+                  - other
+                  - other event
+                  - other_event
+                  - quarry
+                  - quarry blast
+                  - quarry_blast
+                  - rock burst
+                  - Rock Slide
+                  - rock_burst
+                  - rockslide
+                  - snow avalanche
+                  - snow_avalanche
+                  - sonic boom
+                  - sonic_boom
+                  - sonicboom
+                  - train crash
+                  - volcanic eruption
+                  - volcanic explosion
+              config:
+                severity: warn
+      - name: review_status
+        description: automatic (a machine solution that can still be revised or deleted) or reviewed (checked by a seismologist).
+          From the API field status. Deleted events never reach this model.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              arguments:
+                values:
+                  - automatic
+                  - reviewed
+              config:
+                severity: warn
+      - name: latitude
+        description: Epicenter latitude in decimal degrees (WGS84), -90 to 90. fct_seismic_events assigns the region from
+          latitude and longitude; an event without coordinates would fall into Other / open ocean, which the not_null test
+          guards against.
+        data_type: double
+        config:
+          meta:
+            pii: false
+            unit: decimal degrees (WGS84)
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: longitude
+        description: Epicenter longitude in decimal degrees (WGS84), -180 to 180. Events near 180 sit in antimeridian region
+          boxes.
+        data_type: double
+        config:
+          meta:
+            pii: false
+            unit: decimal degrees (WGS84)
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: depth_km
+        description: Hypocenter depth below the reference surface. Small negative values (profile minimum -3.48) are events
+          located above it, not errors. Profile maximum 665 km.
+        data_type: double
+        config:
+          meta:
+            pii: false
+            unit: km
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: place
+        description: USGS free-text description of the nearest named place, for example 16 km NE of Milford, Utah. US state
+          names are spelled out for some states and abbreviated for others (CA). Not used for region assignment.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+      - name: network
+        description: Code, usually two letters, of the preferred contributing network, for example ak, nc, ci or us. From
+          the API field net. 15 values observed; other networks can become preferred.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: alert
+        description: 'PAGER alert level for estimated impact: green, yellow, orange or red. Null for events PAGER did not
+          assess, which is almost all of them; null does not mean green.'
+        data_type: varchar
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - green
+                  - yellow
+                  - orange
+                  - red
+              config:
+                severity: warn
+      - name: tsunami
+        description: 1 when the event is large and in an oceanic region, so USGS links tsunami information, otherwise 0.
+          It is not a tsunami warning and does not mean a tsunami occurred.
+        data_type: integer
+        config:
+          meta:
+            pii: false
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              arguments:
+                values:
+                  - '0'
+                  - '1'
+                quote: false
+      - name: sig
+        description: USGS significance score from magnitude, felt reports and estimated impact. Documented as 0 to 1000,
+          but the profile's maximum is 2910, so no cap can be assumed. Unrelated to fct_seismic_events.is_significant.
+        data_type: integer
+        config:
+          meta:
+            pii: false
+            unit: dimensionless score
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: felt
+        description: Number of Did You Feel It? reports. Null when none are on record, which is most events; 0 also occurs.
+        data_type: integer
+        config:
+          meta:
+            pii: false
+            unit: reports
+      - name: ids
+        description: Every id associated with the event, comma-separated, with no leading or trailing commas (the connector
+          strips them), for example us7000abcd,at00xyz. Includes event_id. Use it to find an event by a non-preferred id.
+        data_type: varchar
+        config:
+          meta:
+            pii: false
