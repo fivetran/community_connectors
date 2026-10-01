@@ -91,6 +91,14 @@ __MIN_START_DATE = datetime(1900, 1, 1, tzinfo=timezone.utc)
 # The epoch as an aware datetime, for exact millisecond conversions, including before 1970.
 __EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
+# Both incremental passes read event times from here, not from start_date. USGS can revise an event's
+# origin time, and an event revised to before start_date must still be read so its row can be deleted.
+# The catalog holds no event before this date, and it is the earliest one format_query_time can write
+# and parse back (see __MIN_START_DATE).
+__INCREMENTAL_FLOOR_MS = (datetime(1000, 1, 1, tzinfo=timezone.utc) - __EPOCH) // timedelta(
+    milliseconds=1
+)
+
 # GeoJSON coordinates are [longitude, latitude, depth].
 __COORDINATE_COUNT = 3
 
@@ -236,9 +244,28 @@ def as_float(value):
     Args:
         value: the raw value.
     Returns:
-        The float, or None when the value is missing or not a number.
+        The float, or None when the value is missing, a boolean or not a number.
     """
+    if isinstance(value, bool):
+        return None
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def as_int(value):
+    """
+    Return a whole-number value as an int, so an INT column never receives a float or a string.
+    Args:
+        value: the raw value.
+    Returns:
+        The int, or None when the value is missing, a boolean or not a whole number.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 def strip_list(value):
@@ -279,18 +306,18 @@ def build_event_row(feature: dict) -> dict:
         "longitude": as_float(coordinates[0]),
         "latitude": as_float(coordinates[1]),
         "depth_km": as_float(coordinates[2]),
-        "felt": properties.get("felt"),
+        "felt": as_int(properties.get("felt")),
         "cdi": as_float(properties.get("cdi")),
         "mmi": as_float(properties.get("mmi")),
         "alert": properties.get("alert"),
-        "tsunami": properties.get("tsunami"),
-        "sig": properties.get("sig"),
+        "tsunami": as_int(properties.get("tsunami")),
+        "sig": as_int(properties.get("sig")),
         "network": properties.get("net"),
         "network_event_code": properties.get("code"),
         "ids": strip_list(properties.get("ids")),
         "sources": strip_list(properties.get("sources")),
         "types": strip_list(properties.get("types")),
-        "nst": properties.get("nst"),
+        "nst": as_int(properties.get("nst")),
         "dmin": as_float(properties.get("dmin")),
         "rms": as_float(properties.get("rms")),
         "gap": as_float(properties.get("gap")),
@@ -400,18 +427,44 @@ def next_keyset_position(features: list, position: int) -> int:
     return last_time
 
 
-def upsert_events(features: list) -> int:
+def is_before_start(feature: dict, start_ms: int) -> bool:
+    """
+    Report whether an event's origin time is before start_date, which only a revision can cause
+    for an event the connector has already synced.
+    Args:
+        feature: one element of the response's features array.
+        start_ms: start_date in epoch ms.
+    Returns:
+        True when the event time is an integer before start_ms.
+    """
+    event_time = (feature.get("properties") or {}).get("time")
+    return isinstance(event_time, int) and event_time < start_ms
+
+
+def upsert_events(features: list, start_ms: int) -> int:
     """
     Upsert each event, then delete the rows of its non-preferred ids. USGS can change which id is
     preferred, and this removes the row left under the old one. Deleting an absent key does nothing.
+    An event whose origin time USGS has revised to before start_date has left the synced range, so
+    the rows of all its ids are deleted instead of upserted.
     Args:
         features: GeoJSON events from the historical sync or the upsert pass.
+        start_ms: start_date in epoch ms.
     Returns:
-        The number of events upserted.
+        The number of events processed: upserted, or deleted for being before start_date.
     """
-    upserted = 0
+    upserted, skipped, out_of_range = 0, 0, 0
     for feature in features:
         if not feature.get("id"):
+            skipped += 1
+            continue
+        if is_before_start(feature, start_ms):
+            for event_id in event_ids(feature):
+                # The 'delete' operation marks a row as deleted in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the primary key of the row.
+                op.delete(table=__TABLE_NAME, keys={"id": event_id})
+            out_of_range += 1
             continue
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
@@ -424,10 +477,15 @@ def upsert_events(features: list) -> int:
             # The second argument is a dictionary containing the primary key of the row.
             op.delete(table=__TABLE_NAME, keys={"id": other_id})
         upserted += 1
-    if upserted < len(features):
+    if out_of_range:
+        log.info(
+            f"Deleted the ids of {out_of_range} updated events from before start_date, which removes "
+            "any row synced before a revision moved the event out of range"
+        )
+    if skipped:
         # The 'warning' operation logs the message and shows it in the Fivetran dashboard without failing the sync.
-        op.warning(f"Skipped {len(features) - upserted} events that have no id")
-    return upserted
+        op.warning(f"Skipped {skipped} events that have no id")
+    return upserted + out_of_range
 
 
 def delete_events(features: list) -> int:
@@ -515,7 +573,7 @@ def run_backfill(session: requests.Session, state: dict, start_ms: int):
             state["backfill_end"] = format_query_time(generated)
             state["pending_cursor"] = format_query_time(generated - __CURSOR_OVERLAP_MS)
             window_end = min(window_end, backfill_end)
-        window_events += upsert_events(features)
+        window_events += upsert_events(features, start_ms)
         # A short page ends the window; a full page continues it from its last event's time.
         if len(features) < __PAGE_SIZE:
             if window_events:
@@ -540,7 +598,9 @@ def run_pass(session: requests.Session, state: dict, start_ms: int, pass_name: s
     """
     Page through the events updated after updated_cursor, oldest first, upserting or deleting each.
     Every query sends starttime: without it, the API silently limits updatedafter to events from the
-    last 30 days, while an event from any year can be updated today.
+    last 30 days, while an event from any year can be updated today. The starttime is
+    __INCREMENTAL_FLOOR_MS, not start_date, so an event whose origin time USGS revised to before
+    start_date is still read, and upsert_events deletes its row instead of leaving it live.
     Args:
         session: the shared HTTP session.
         state: the sync state, checkpointed after every full page.
@@ -548,7 +608,7 @@ def run_pass(session: requests.Session, state: dict, start_ms: int, pass_name: s
         pass_name: __UPSERT_PASS or __DELETE_PASS.
     """
     stored_position = parse_query_time(state["pass_next_start"])
-    position = start_ms if stored_position is None else stored_position
+    position = __INCREMENTAL_FLOOR_MS if stored_position is None else stored_position
     processed = 0
     while True:
         params = {
@@ -567,12 +627,12 @@ def run_pass(session: requests.Session, state: dict, start_ms: int, pass_name: s
         if pass_name == __DELETE_PASS:
             processed += delete_events(features)
         else:
-            processed += upsert_events(features)
+            processed += upsert_events(features, start_ms)
         if len(features) < __PAGE_SIZE:
             flags = ", includedeleted=only" if pass_name == __DELETE_PASS else ""
             log.info(
                 f"The {pass_name} pass read {processed} events (updatedafter={state['updated_cursor']}, "
-                f"starttime={format_query_time(start_ms)}{flags})"
+                f"starttime={format_query_time(__INCREMENTAL_FLOOR_MS)}{flags})"
             )
             return
         position = next_keyset_position(features, position)

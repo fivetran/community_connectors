@@ -1,4 +1,4 @@
-# USGS earthquake context pack
+# USGS Earthquake Context Pack
 
 This directory gives an AI agent governed context for the `earthquake` table that the `usgs_earthquake` connector syncs. It sits beside the connector directory, `usgs_earthquake/connector/`, not inside it, so `fivetran debug` and `fivetran deploy` of the connector never scan or package it. The connector does not use it.
 
@@ -177,21 +177,21 @@ The production week filter is `date_trunc('week', timezone('UTC', now())) - inte
 - `dbt/models/staging/` – The source and the staging model.
 - `dbt/models/marts/` – The region dimension, the two facts, the time spine and `_semantic.yml`.
 
-The scripts also write `context_pack_draft/`, `_ai_calls.jsonl`, `lake_sql/`, `dbt/target*/` and DuckDB files here. The draft and the call ledger are meant to be reviewed and committed. `lake_sql/`, `dbt/target*/` and the DuckDB files are gitignored.
+The scripts also write `context_pack_draft/`, `_ai_calls.jsonl`, `lake_sql/`, `dbt/target*/` and DuckDB files here. The draft and the call ledger are for the person who runs `generate` to review. This example does not ship them: the reviewed results are the files in `dbt/` and `agent/`. `lake_sql/`, `dbt/target*/` and the DuckDB files are gitignored.
 
 ## Human-owned and AI-drafted files
 
 `generate` drafts, a person reviews, and only then does anything reach `dbt/` or `agent/`.
 
 - Human-owned: the region seed, `_semantic.yml`, the marts models, `dbt_project.yml`, both scripts and the canonical string. `generate` never writes them. It records the hashes of the seed, `_semantic.yml` and the renderer before and after the run in `REVIEW.md`, and refuses an `--out` inside `dbt/` or `lake_sql/`.
-- AI-drafted, then reviewed: the staging model and its YAML (column docs, units, PII flags and tests), `agent/AGENTS.md`, and `agent/SKILL.md` apart from the canonical string. The model writes `{{CANONICAL_SQL}}`, `{{LAKE_CATALOG}}` and `{{LAKE_SCHEMA}}` placeholders, and `assemble` fills them in. The shipped files came from one Claude draft. Claude Code edited it and the connector's author approved the edits before it was committed.
+- AI-drafted, then reviewed: the staging model and its YAML (column docs, units, PII flags and tests), `agent/AGENTS.md`, and `agent/SKILL.md` apart from the canonical string. The model writes `{{CANONICAL_SQL}}`, `{{LAKE_CATALOG}}` and `{{LAKE_SCHEMA}}` placeholders, and `assemble` fills them in. The shipped files came from one Claude draft, which is not included. Claude Code edited it and the connector's author approved the edits before it was committed.
 
 `generate` gives Claude the profile (row count and, per column, nulls, distinct values, min and max, and top values where values repeat, plus five sample rows, read in a UTC session) and the human-owned files as context: the connector README, this README, the seed, every model and YAML file, `dbt_project.yml` and `render_lake_sql.py`. The script renders the column YAML itself from structured output, so it is always valid dbt. `REVIEW.md` records these checks:
 
 - The staging proposal keeps the `not coalesce(_fivetran_deleted, false)` filter and the `updated_at_cutoff` block, converts both timestamps with `timezone('UTC', ...)`, casts no timestamp to `date` and keeps the columns the marts read.
 - The proposal's output columns and types, described against the local warehouse, match its YAML, so the enforced contract cannot fail later at `dbt build`.
 - `SKILL.md` holds the canonical placeholder exactly once.
-- Every drill-down SQL block is one read-only `select`. Each runs against the local warehouse under both UTC and `Pacific/Kiritimati` and must return the same rows in both.
+- Every drill-down SQL block is one read-only `select`. Each runs against the local warehouse under both UTC and `Pacific/Kiritimati`, must return the same rows in both, and must fit the agent tool's 200-row cap. Each check session has a 1 GB memory limit and 2 threads, and each run of a block, once per time zone, has a 30-second time limit, so a runaway block fails the check instead of exhausting the machine.
 - The human-owned files are unchanged, and both staging proposals are shown as diffs against `dbt/`.
 
 ## Cost

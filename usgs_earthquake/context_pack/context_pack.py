@@ -50,6 +50,9 @@ import re
 # For the exit code and stderr
 import sys
 
+# For the time limit on each checked SQL block
+import threading
+
 # For the call's latency
 import time
 
@@ -113,6 +116,14 @@ LAKE_SCHEMA_TEMPLATE = "<lake_schema>"
 # Run in every check session after the warehouse is attached: no file or network access beyond it, and no setting a
 # drill-down could change back.
 LOCKDOWN_STATEMENTS = ("set enable_external_access = false", "set lock_configuration = true")
+# Resource bounds for every check session, set before the lockdown locks them. A generated block that cross-joins or
+# ranges without end fails the check with an error instead of exhausting the machine's memory or CPU.
+CHECK_MEMORY_LIMIT = "1GB"
+CHECK_THREADS = 2
+CHECK_TIMEOUT_SECONDS = 30
+# The agent's query tool returns at most this many rows (AGENTS.md and SKILL.md document the default). A block that
+# returns more fails, and the check never fetches more than one row past the cap.
+CHECK_ROW_CAP = 200
 # Every drill-down block runs under both zones and must return the same rows: the UTC rule, checked, not trusted.
 CHECK_TIME_ZONES = ("UTC", "Pacific/Kiritimati")
 # A drill-down is one read-only select. Anything that changes the session or writes is refused.
@@ -765,10 +776,11 @@ def local_relation(schema: str, table: str) -> str:
 
 
 def open_check_session(db_path: Path, time_zone: str | None = None) -> duckdb.DuckDBPyConnection:
-    """An in-memory session with the warehouse attached read-only, then locked down.
+    """An in-memory session with bounded memory and threads, the warehouse attached read-only, then locked down.
 
     After the attach, external access is switched off and the configuration locked, so a checked block can read the
-    attached warehouse and nothing else: no read_text('/etc/hosts'), no httpfs, no settings changed back.
+    attached warehouse and nothing else: no read_text('/etc/hosts'), no httpfs, no settings changed back, including
+    CHECK_MEMORY_LIMIT and CHECK_THREADS.
 
     Args:
         db_path: the warehouse file. A path holding a single quote is refused rather than escaped.
@@ -782,6 +794,8 @@ def open_check_session(db_path: Path, time_zone: str | None = None) -> duckdb.Du
     try:
         if time_zone:
             con.execute(f"set TimeZone = '{time_zone}'")
+        con.execute(f"set memory_limit = '{CHECK_MEMORY_LIMIT}'")
+        con.execute(f"set threads = {CHECK_THREADS}")
         con.execute(f"attach '{db_path}' as {LOCAL_ALIAS} (read_only)")
         for statement in LOCKDOWN_STATEMENTS:
             con.execute(statement)
@@ -863,14 +877,37 @@ def statement_problem(sql: str) -> str | None:
     return None
 
 
+def _interrupt_quietly(con: duckdb.DuckDBPyConnection) -> None:
+    """Interrupt a check session from the timer thread. A session closed in the meantime has nothing to interrupt."""
+    try:
+        con.interrupt()
+    except duckdb.Error:
+        pass
+
+
+def run_capped(con: duckdb.DuckDBPyConnection, sql: str) -> list[tuple]:
+    """Run one checked block under CHECK_TIMEOUT_SECONDS and return at most CHECK_ROW_CAP + 1 rows.
+
+    fetchmany streams, so a block with a huge result is never materialized. A block still running at the time limit is
+    interrupted, which raises duckdb.InterruptException like any other DuckDB error.
+    """
+    timer = threading.Timer(CHECK_TIMEOUT_SECONDS, _interrupt_quietly, args=(con,))
+    timer.start()
+    try:
+        return con.execute(sql).fetchmany(CHECK_ROW_CAP + 1)
+    finally:
+        timer.cancel()
+
+
 def check_sql_blocks(
     markdown: str, db_path: Path, schema: str = "tester", table: str = "earthquake"
 ) -> list[dict[str, Any]]:
     """Run each drill-down block against the local warehouse, with the lake table swapped for the local one.
 
-    Every block must be one read-only select, and must return the same rows under each of CHECK_TIME_ZONES. Each
-    session is locked down after the attach (open_check_session). The canonical placeholder block is skipped: the
-    render is built and checked by render_lake_sql.py.
+    Every block must be one read-only select, must return the same rows under each of CHECK_TIME_ZONES, and must fit
+    the agent tool's CHECK_ROW_CAP. Each session is bounded in memory and threads and locked down after the attach
+    (open_check_session), and each run of a block has a time limit (run_capped). The canonical placeholder block is
+    skipped: the render is built and checked by render_lake_sql.py.
     """
     results = []
     sessions: dict[str, duckdb.DuckDBPyConnection] = {}
@@ -901,13 +938,22 @@ def check_sql_blocks(
                 )
                 continue
             try:
-                rows = {zone: con.execute(local).fetchall() for zone, con in sessions.items()}
+                rows = {zone: run_capped(con, local) for zone, con in sessions.items()}
             except duckdb.Error as exc:
                 results.append(
                     {"block": index, "status": f"error: {str(exc).splitlines()[0]}", "rows": None}
                 )
                 continue
             first = rows[CHECK_TIME_ZONES[0]]
+            if len(first) > CHECK_ROW_CAP:
+                results.append(
+                    {
+                        "block": index,
+                        "status": f"returns more than the {CHECK_ROW_CAP}-row cap",
+                        "rows": None,
+                    }
+                )
+                continue
             if any(other != first for other in rows.values()):
                 results.append(
                     {

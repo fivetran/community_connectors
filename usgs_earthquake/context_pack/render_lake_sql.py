@@ -246,7 +246,10 @@ def resolve_start_date(dbt_vars: Mapping[str, str], project_dir: Path = DBT_DIR)
         start = project.get("vars", {}).get("start_date")
     if not start:
         raise RenderError("start_date is not set; pass --var start_date=YYYY-MM-DD")
-    return date.fromisoformat(str(start))
+    try:
+        return date.fromisoformat(str(start))
+    except ValueError as exc:
+        raise RenderError(f"start_date must be a YYYY-MM-DD date, not {start!r}") from exc
 
 
 def _sha256(path: Path) -> str:

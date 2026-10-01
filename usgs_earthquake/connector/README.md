@@ -51,7 +51,7 @@ The connector has one configuration parameter.
 }
 ```
 
-- `start_date` (required) – The earliest event date to sync, in `YYYY-MM-DD` format, interpreted as midnight UTC. It must be between 1900-01-01 and today. The historical sync makes at least one request per 30-day window from this date, so `1900-01-01` means more than 1,500 requests before any recent event is read. Changing `start_date` after the first sync restarts the historical sync from the new date. Moving it later does not remove rows already synced from before the new date: they stay, and are no longer updated or deleted, until a full re-sync. Refer to `def validate_configuration(configuration: dict)` and `def parse_start_date(value)`.
+- `start_date` (required) – The earliest event date to sync, in `YYYY-MM-DD` format, interpreted as midnight UTC. It must be between 1900-01-01 and today. The historical sync makes at least one request per 30-day window from this date, so `1900-01-01` means more than 1,500 requests before any recent event is read. Changing `start_date` after the first sync restarts the historical sync from the new date. Moving it later does not remove rows already synced from before the new date: they stay until a full re-sync, and if USGS updates one of them, the next incremental sync deletes its row. Refer to `def validate_configuration(configuration: dict)` and `def parse_start_date(value)`.
 
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -78,12 +78,14 @@ The historical sync upserts every event from `start_date` up to the server time 
 
 Each incremental sync makes two passes in the same run, over events updated after the stored cursor (refer to `def run_incremental(session: requests.Session, state: dict, start_ms: int)` and `def run_pass(session: requests.Session, state: dict, start_ms: int, pass_name: str)`):
 
-- The upsert pass queries `updatedafter=<cursor>&starttime=<start_date>` and upserts each event (refer to `def upsert_events(features: list)`).
+- The upsert pass queries `updatedafter=<cursor>&starttime=1000-01-01` and upserts each event on or after `start_date` (refer to `def upsert_events(features: list, start_ms: int)`).
 - The delete pass sends the same query with `includedeleted=only`, which returns only the events USGS has deleted, and deletes each one (refer to `def delete_events(features: list)`).
 
 The passes are separate because the service cannot return live and deleted events together on this query. `includedeleted=true` would return both, but over multi-day spans the query exceeds the CDN's 60-second limit and returns HTTP 504. Without the delete pass, events USGS removes, such as duplicates and false detections, would stay in the destination as live rows.
 
 Both passes send an explicit `starttime`. Without it, the service silently limits `updatedafter` to events from the last 30 days, while an event from any year can be updated today.
+
+That `starttime` is 1000-01-01, not `start_date`, because USGS can revise an event's origin time. No event in the catalog is older, so a revision cannot move an event out of view. An already-synced event revised to before `start_date` would otherwise drop out of both passes, and its row would stay live with the old time. With the earlier `starttime`, the upsert pass reads it and deletes the rows of all its ids instead of upserting it, and the delete pass still reads it if USGS later deletes it (refer to `def is_before_start(feature: dict, start_ms: int)`). The passes also read updated events from before `start_date` that were never synced, and deleting an id that has no row does nothing. In a 7-day sample taken on 2026-10-01, `starttime=1000-01-01` returned 5,010 updated events and `starttime=2026-08-03` returned 3,559. That is about 180 events per 6-hour sync, far below one 5,000-event page.
 
 After both passes finish, the cursor moves to the server time of the sync's first response, less the 10-minute overlap. The overlap absorbs the whole-second precision of the server time and responses served from the 60-second cache. An event updated while a sync runs is read again by the next sync rather than missed.
 
@@ -93,6 +95,7 @@ Each event becomes one row (refer to `def build_event_row(feature: dict)`):
 
 - API fields whose names are reserved or ambiguous in SQL are renamed: `time` to `event_time`, `updated` to `updated_at`, `magType` to `mag_type`, `status` to `review_status`, `net` to `network`, `code` to `network_event_code` and `type` to `event_type`.
 - `event_time` and `updated_at` are converted from epoch milliseconds to UTC datetimes.
+- Numbers are typed by column. DOUBLE columns take any number as a float, so a magnitude of 5 loads as 5.0. INT columns take only whole numbers, so 3.0 loads as 3. A boolean, a string such as `"5.2"` or a fraction in an INT column becomes null (refer to `def as_float(value)` and `def as_int(value)`).
 - `geometry.coordinates` is split into `longitude`, `latitude` and `depth_km`. A missing or short coordinate array gives null values.
 - The wrapping commas are removed from `ids`, `sources` and `types`, so `,us7000abcd,at00xyz,` becomes `us7000abcd,at00xyz`.
 - `tz` is not synced. It is empty in the service's responses.
@@ -105,7 +108,7 @@ The connector checkpoints after every full page and at the end of each pass, so 
 - Other HTTP errors – Any other error status fails the sync immediately with the status code and the start of the response body, because a retry cannot fix the request.
 - Request timeout – Every request has a 90-second timeout, longer than the CDN's 60-second limit, so the CDN answers a slow query first with an HTTP 504, which is retried.
 - Missing server time – A response without `metadata.generated` fails the sync, because the cursor cannot be set without it.
-- Events without an id – Skipped, and reported with a warning that shows in the Fivetran dashboard. Refer to `def upsert_events(features: list)`.
+- Events without an id – Skipped, and reported with a warning that shows in the Fivetran dashboard. Refer to `def upsert_events(features: list, start_ms: int)`.
 - Invalid configuration – A missing, placeholder, malformed, pre-1900 or future `start_date` fails the sync with a message naming the parameter. Refer to `def validate_configuration(configuration: dict)`.
 
 ## Tables created
@@ -130,7 +133,7 @@ The connector creates one table, `earthquake`, with the primary key `id` (refer 
 | `mmi` | DOUBLE | The maximum estimated instrumental intensity from ShakeMap |
 | `alert` | STRING | The PAGER alert level: `green`, `yellow`, `orange` or `red` |
 | `tsunami` | INT | 1 for large events in oceanic regions, otherwise 0. It does not mean a tsunami occurred |
-| `sig` | INT | A significance score from 0 to 1000, based on magnitude, intensity, felt reports and estimated impact |
+| `sig` | INT | A significance score based on magnitude, intensity, felt reports and estimated impact. USGS documents it as 0 to 1000, but larger values occur: the data this example was tested on reached 2910 |
 | `network` | STRING | The id of the preferred contributing network. From the API field `net` |
 | `network_event_code` | STRING | The event's code within the preferred network. From the API field `code` |
 | `ids` | STRING | Comma-separated list of every id associated with the event |
