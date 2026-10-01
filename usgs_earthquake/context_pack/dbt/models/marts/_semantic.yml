@@ -1,0 +1,145 @@
+# Human-owned: the measure, the metrics and the saved query that answer "which regions had more M4.5+ events in the
+# last complete week than their prior 4-week average?". context_pack.py may add docs around them but does not rewrite them.
+version: 2
+
+semantic_models:
+  - name: seismic_events
+    description: USGS events at event grain, one row per live event.
+    model: ref('fct_seismic_events')
+    defaults:
+      agg_time_dimension: event_day
+    entities:
+      - name: event
+        type: primary
+        expr: event_id
+      - name: region
+        type: foreign
+        expr: region_id
+    dimensions:
+      - name: event_day
+        type: time
+        type_params:
+          time_granularity: day
+      - name: event_type
+        type: categorical
+      - name: is_significant
+        type: categorical
+    measures:
+      - name: events
+        description: Every live event, any event_type.
+        expr: event_id
+        agg: count
+      - name: largest_magnitude
+        description: The largest magnitude, any event_type.
+        expr: mag
+        agg: max
+
+  - name: region_days
+    description: >
+      One row per region per day, zero-filled, so a region-week with no events is a real 0. The significant-event
+      metrics count here rather than at event grain: fill_nulls_with does not fill a region with no rows in the
+      offset weeks, and at event grain that blanked the 4-week average.
+    model: ref('fct_region_days')
+    defaults:
+      agg_time_dimension: activity_day
+    entities:
+      - name: region_day
+        type: primary
+        expr: region_day_id
+      - name: region
+        type: foreign
+        expr: region_id
+    dimensions:
+      - name: activity_day
+        type: time
+        type_params:
+          time_granularity: day
+    measures:
+      - name: significant_events
+        description: >
+          Earthquakes of magnitude 4.5 or more (fct_seismic_events.is_significant). Quarry blasts, explosions and
+          other types never count.
+        expr: significant_events
+        agg: sum
+
+  - name: regions
+    description: The regions events are assigned to.
+    model: ref('dim_region')
+    entities:
+      - name: region
+        type: primary
+        expr: region_id
+    dimensions:
+      - name: name
+        type: categorical
+
+metrics:
+  - name: event_count
+    label: Events
+    description: Every live event, any event_type. For drill-down.
+    type: simple
+    type_params:
+      measure: events
+
+  - name: max_magnitude
+    label: Largest magnitude
+    description: The largest magnitude, any event_type. For drill-down.
+    type: simple
+    type_params:
+      measure: largest_magnitude
+
+  - name: significant_event_count
+    label: M4.5+ earthquakes
+    description: Earthquakes of magnitude 4.5 or more. A period with none reads 0, not null.
+    type: simple
+    type_params:
+      measure:
+        name: significant_events
+        fill_nulls_with: 0
+        join_to_timespine: true
+
+  - name: significant_events_4wk_avg
+    label: M4.5+ earthquakes, prior 4-week average
+    description: >
+      The average weekly M4.5+ count over the four weeks before the period. The current week is not in the window,
+      which is why this is a derived metric over offsets and not a cumulative one.
+    type: derived
+    type_params:
+      expr: (w1 + w2 + w3 + w4) / 4.0
+      metrics:
+        - name: significant_event_count
+          offset_window: 1 week
+          alias: w1
+        - name: significant_event_count
+          offset_window: 2 weeks
+          alias: w2
+        - name: significant_event_count
+          offset_window: 3 weeks
+          alias: w3
+        - name: significant_event_count
+          offset_window: 4 weeks
+          alias: w4
+
+  - name: significant_events_vs_4wk_avg
+    label: M4.5+ earthquakes vs prior 4-week average
+    description: This period's M4.5+ count minus the prior 4-week average. Positive means more than usual.
+    type: derived
+    type_params:
+      expr: significant_event_count - significant_events_4wk_avg
+      metrics:
+        - name: significant_event_count
+        - name: significant_events_4wk_avg
+
+saved_queries:
+  - name: weekly_exposure_by_region
+    description: >
+      Weekly M4.5+ earthquakes by region against the prior 4-week average. The week is passed at render time as a
+      where constraint on TimeDimension('metric_time', 'week').
+    query_params:
+      metrics:
+        - significant_event_count
+        - significant_events_4wk_avg
+        - significant_events_vs_4wk_avg
+      group_by:
+        - "Dimension('region__name')"
+        - "TimeDimension('metric_time', 'week')"

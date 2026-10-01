@@ -1,0 +1,38 @@
+version: 2
+
+seeds:
+  - name: region_bounds
+    description: >
+      Human-owned lat/lon boxes that assign every event to exactly one region. Boxes may overlap: an event takes the
+      matching box with the highest priority. A box with lon_min > lon_max crosses the antimeridian and matches
+      lon >= lon_min or lon <= lon_max. The "other" row has null bounds and the lowest priority, so it matches every
+      event that no other box claims.
+    config:
+      column_types:
+        region_id: varchar
+        name: varchar
+        lat_min: double
+        lat_max: double
+        lon_min: double
+        lon_max: double
+        priority: integer
+    columns:
+      - name: region_id
+        description: Stable snake_case region key.
+        data_tests: [unique, not_null]
+      - name: name
+        description: Display name, the value agents group and report by.
+        data_tests: [unique, not_null]
+      - name: lat_min
+        description: Southern edge in decimal degrees (WGS84). Null only on the "other" row.
+      - name: lat_max
+        description: Northern edge in decimal degrees (WGS84). Null only on the "other" row.
+      - name: lon_min
+        description: Western edge in decimal degrees, -180 to 180. Greater than lon_max for an antimeridian box.
+      - name: lon_max
+        description: Eastern edge in decimal degrees, -180 to 180.
+      - name: priority
+        description: >
+          Higher wins where boxes overlap; overlapping boxes at the same priority fall back to region_id order. The
+          "other" row is 0, below every real box.
+        data_tests: [not_null]
