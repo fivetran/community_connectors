@@ -34,13 +34,13 @@ fivetran init --template techone_cianywhere
 ## Configuration file
 ```json
 {
-  "base_url": "<YOUR_TECHONE_CIANYWHERE_BASE_URL_EG_https://YOUR_TENANT.t1cloud.com/T1Default/CiAnywhere/Web/YOUR_ENV>",
+  "base_url": "<YOUR_TECHONE_CIANYWHERE_BASE_URL>",
   "client_id": "<YOUR_TECHONE_CLIENT_ID>",
   "client_secret": "<YOUR_TECHONE_CLIENT_SECRET>"
 }
 ```
 
-- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path. Must start with `http://` or `https://`; a trailing slash is stripped automatically.
+- `base_url` - your TechOne CiAnywhere web services base URL, including your tenant and environment path, e.g. `https://YOUR_TENANT.t1cloud.com/T1Default/CiAnywhere/Web/YOUR_ENV`. Must start with `http://` or `https://`; a trailing slash is stripped automatically.
 - `client_id` - OAuth2 client ID for a TechOne service account with access to the ledger and chart-of-accounts web services.
 - `client_secret` - OAuth2 client secret for the same service account.
 
@@ -69,12 +69,14 @@ Refer to `def _sync_transaction_details` in `connector.py`: the source only expo
 Refer to `def _request_with_backoff` and `def _request` in `connector.py`. Connection errors and timeouts are retried with backoff. Retryable status codes (429 and 5xx) are retried with backoff, honoring `Retry-After` when the source provides it. HTTP 401 triggers one token refresh, using its own retry attempt separate from the transient-error backoff budget. Other non-2xx responses raise an exception, which fails the sync.
 
 ## Tables created
-- `glf_ldg_ctl` (primary key: `ldg_name`) - ledgers.
-- `glf_chart_acct` (primary key: `chart_name`, `accnbri`) - AR and GL chart-of-accounts entries.
-- `glf_chart_acc_usf` (primary key: `chart_name`, `accnbri`) - user-defined fields for chart-of-accounts entries that have at least one populated.
-- `glf_ldg_acct` (primary key: `ldg_acct_rid`) - accounts by ledger.
-- `glf_ldg_acc_trans` (primary key: `ldg_trans_rid`) - transactions by ledger account.
-- `glf_ldg_acc_transd` (primary key: `ldg_transd_rid`) - linked debits and credits for a transaction.
+| Table | Primary key | Description |
+| --- | --- | --- |
+| `glf_ldg_ctl` | `ldg_name` | Ledgers. |
+| `glf_chart_acct` | `chart_name`, `accnbri` | AR and GL chart-of-accounts entries. |
+| `glf_chart_acc_usf` | `chart_name`, `accnbri` | User-defined fields for chart-of-accounts entries that have at least one populated. |
+| `glf_ldg_acct` | `ldg_acct_rid` | Accounts by ledger. |
+| `glf_ldg_acc_trans` | `ldg_trans_rid` | Transactions by ledger account. |
+| `glf_ldg_acc_transd` | `ldg_transd_rid` | Linked debits and credits for a transaction. |
 
 ## Additional considerations
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
