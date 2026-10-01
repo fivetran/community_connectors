@@ -34,7 +34,7 @@ fivetran init --template usgs_earthquake/connector
 
 - Historical sync of every event from a configured start date, in 30-day windows of event time.
 - Incremental syncs that read every event updated since the previous sync, including revisions to events from any year on or after `start_date`.
-- Deleted events are applied as deletes, so duplicates and false detections that USGS removes do not stay in the destination as live rows.
+- Deleted events are applied as deletes, in the historical sync and in every incremental sync, so duplicates and false detections that USGS removes do not stay in the destination as live rows.
 - When USGS changes an event's preferred id, the row under the old id is deleted, leaving one live row per event.
 - Keyset pagination on event time, so rows entering or leaving the result between requests cannot shift other rows out of view.
 - A cursor taken from the server's clock rather than the local clock, and resumable state: a failed sync continues where it stopped.
@@ -51,7 +51,7 @@ The connector has one configuration parameter.
 }
 ```
 
-- `start_date` (required) – The earliest event date to sync, in `YYYY-MM-DD` format, interpreted as midnight UTC. It must be between 1900-01-01 and today. The historical sync makes at least one request per 30-day window from this date, so `1900-01-01` means more than 1,500 requests before any recent event is read. Changing `start_date` after the first sync restarts the historical sync from the new date. Moving it later does not remove rows already synced from before the new date: they stay until a full re-sync, and if USGS updates one of them, the next incremental sync deletes its row. Refer to `def validate_configuration(configuration: dict)` and `def parse_start_date(value)`.
+- `start_date` (required) – The earliest event date to sync, in `YYYY-MM-DD` format, interpreted as midnight UTC. It must be between 1900-01-01 and today. The historical sync makes at least one request per 30-day window from this date, so `1900-01-01` means more than 1,500 requests before any recent event is read. Changing `start_date` after the first sync restarts the historical sync from the new date. Moving it later does not remove rows already synced from before the new date. A full re-sync does not remove them either, because it clears the connector's state but not the destination table. If USGS updates one of them, the next incremental sync deletes its row. Refer to `def validate_configuration(configuration: dict)` and `def parse_start_date(value)`.
 
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -68,13 +68,13 @@ The FDSN event service can order results only by event time or by magnitude, not
 - Keyset paging filters on a value rather than an offset. Responses are cached at the CDN for 60 seconds per URL, so two pages of an offset query can come from different snapshots and skip rows. A keyset query cannot shift rows out of view that way. An event whose time is revised to before the current position mid-pass is missed by that pass, and the next sync reads it, because its update time is after the cursor.
 - If a full page ends at the same millisecond it started at, more than 5000 events share one millisecond and paging on time cannot advance. The connector stops the sync with an error rather than looping or skipping events.
 
-The historical sync also bounds each query with `endtime`, walking event time in 30-day windows from `start_date` (refer to `def run_backfill(session: requests.Session, state: dict, start_ms: int)`). The windows bound the server-side sort, and keyset paging runs inside each window.
+Both passes of the historical sync also bound each query with `endtime`, walking event time in 30-day windows from `start_date` (refer to `def walk_backfill_windows(session: requests.Session, state: dict, start_ms: int, pass_name: str)`). The windows bound the server-side sort, and keyset paging runs inside each window.
 
 ## Data handling
 
 The first sync is a historical sync, and every later sync is incremental (refer to `def update(configuration: dict, state: dict)`).
 
-The historical sync upserts every event from `start_date` up to the server time of its first response (refer to `def run_backfill(session: requests.Session, state: dict, start_ms: int)`). That server time, `metadata.generated`, is stored as the end of the historical sync, and the same time less a 10-minute overlap is stored as the starting cursor for the first incremental sync. Both are kept until the historical sync completes, so a historical sync that spans several syncs stops at the same point. It has no delete pass: an event deleted before the historical sync never lands, and an event deleted during it is updated after the stored cursor, so the first incremental sync removes it.
+The historical sync upserts every event from `start_date` up to the server time of its first response (refer to `def run_backfill(session: requests.Session, state: dict, start_ms: int)`). That server time, `metadata.generated`, is stored as the end of the historical sync, and the same time less a 10-minute overlap is stored as the starting cursor for the first incremental sync. Both are kept until the historical sync completes, so a historical sync that spans several syncs stops at the same point. It then makes a delete pass over the same 30-day windows with `includedeleted=only` and deletes each event USGS has deleted. The destination table is not always empty when a historical sync runs: a full re-sync clears the connector's state but keeps the table, and so does a change to `start_date`. Without the delete pass, a row from an earlier sync would stay live whenever USGS deleted its event after the last incremental sync. Deleting an event that never landed does nothing. An event deleted while the historical sync runs is updated after the stored cursor, so the first incremental sync removes it. A failed historical sync resumes the pass it was in. On 2026-10-01, USGS listed 742 deleted events from 2026-08-03 on, and a 30-day window of them came back in under two seconds.
 
 Each incremental sync makes two passes in the same run, over events updated after the stored cursor (refer to `def run_incremental(session: requests.Session, state: dict, start_ms: int)` and `def run_pass(session: requests.Session, state: dict, start_ms: int, pass_name: str)`):
 

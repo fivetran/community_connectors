@@ -59,7 +59,8 @@ __RETRYABLE_STATUS_CODES = (429, 500, 502, 503, 504)
 # How much of an error response body goes into the error message.
 __ERROR_BODY_PREVIEW_CHARS = 500
 
-# The two passes of an incremental sync.
+# The two passes of a historical or incremental sync, stored in the pass state key so a failed sync resumes the
+# pass it was in.
 __UPSERT_PASS = "upsert"
 __DELETE_PASS = "delete"
 
@@ -543,15 +544,19 @@ def resolve_state(state: dict, fingerprint: str):
     state["config_fingerprint"] = fingerprint
 
 
-def run_backfill(session: requests.Session, state: dict, start_ms: int):
+def walk_backfill_windows(
+    session: requests.Session, state: dict, start_ms: int, pass_name: str
+) -> int:
     """
-    Historical sync: upsert every event from start_date to the server time of its first response.
-    It has no delete pass. An event deleted before the backfill never lands, and one deleted during
-    it is updated after pending_cursor, so the first incremental delete pass removes it.
+    Page through event time from start_date to backfill_end in 30-day windows, upserting the live
+    events or, in the delete pass, deleting the events USGS has deleted.
     Args:
         session: the shared HTTP session.
         state: the sync state, checkpointed after every page.
         start_ms: start_date in epoch ms.
+        pass_name: __UPSERT_PASS or __DELETE_PASS.
+    Returns:
+        The number of events processed in this run.
     """
     stored_position = parse_query_time(state["backfill_next_start"])
     position = start_ms if stored_position is None else stored_position
@@ -565,6 +570,8 @@ def run_backfill(session: requests.Session, state: dict, start_ms: int):
             "starttime": format_query_time(position),
             "endtime": format_query_time(window_end),
         }
+        if pass_name == __DELETE_PASS:
+            params["includedeleted"] = "only"
         features, generated = fetch_page(session, params)
         if backfill_end is None:
             # The first server time fixes where the backfill stops and, less the overlap, where the
@@ -573,11 +580,17 @@ def run_backfill(session: requests.Session, state: dict, start_ms: int):
             state["backfill_end"] = format_query_time(generated)
             state["pending_cursor"] = format_query_time(generated - __CURSOR_OVERLAP_MS)
             window_end = min(window_end, backfill_end)
-        window_events += upsert_events(features, start_ms)
+        if pass_name == __DELETE_PASS:
+            window_events += delete_events(features)
+        else:
+            window_events += upsert_events(features, start_ms)
         # A short page ends the window; a full page continues it from its last event's time.
         if len(features) < __PAGE_SIZE:
             if window_events:
-                log.info(f"Backfill to {format_query_time(window_end)}: {window_events} events")
+                log.info(
+                    f"Backfill {pass_name} pass to {format_query_time(window_end)}: "
+                    f"{window_events} events"
+                )
             total += window_events
             position = window_start = window_end
             window_events = 0
@@ -585,12 +598,37 @@ def run_backfill(session: requests.Session, state: dict, start_ms: int):
             position = next_keyset_position(features, position)
         state["backfill_next_start"] = format_query_time(position)
         save_state(state)
+    return total
+
+
+def run_backfill(session: requests.Session, state: dict, start_ms: int):
+    """
+    Historical sync: upsert every event from start_date to the server time of its first response,
+    then delete every event USGS has deleted in the same range. The table is not always empty: a
+    full re-sync or a start_date change starts the historical sync again over rows from earlier
+    syncs, and the delete pass removes those whose events USGS deleted before this backfill began.
+    An event deleted during it is updated after pending_cursor, so the first incremental delete pass
+    removes it. A failed backfill resumes the pass it was in, from the stored position.
+    Args:
+        session: the shared HTTP session.
+        state: the sync state, checkpointed after every page.
+        start_ms: start_date in epoch ms.
+    """
+    if state["pass"] != __DELETE_PASS:
+        state["pass"] = __UPSERT_PASS
+        upserted = walk_backfill_windows(session, state, start_ms, __UPSERT_PASS)
+        log.info(f"Historical upsert pass complete: {upserted} events in this run")
+        state["pass"], state["backfill_next_start"] = __DELETE_PASS, None
+        save_state(state)
+    deleted = walk_backfill_windows(session, state, start_ms, __DELETE_PASS)
 
     state["updated_cursor"] = state["pending_cursor"]
     state["pending_cursor"] = state["backfill_end"] = state["backfill_next_start"] = None
+    state["pass"] = None
     save_state(state)
     log.info(
-        f"Historical sync complete: {total} events in this run, up to {state['updated_cursor']}"
+        f"Historical sync complete: {deleted} deleted events applied in this run, "
+        f"up to {state['updated_cursor']}"
     )
 
 
