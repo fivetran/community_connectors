@@ -5,13 +5,23 @@ See the Technical Reference documentation (https://fivetran.com/docs/connectors/
 and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
-import hashlib  # For deriving stable synthetic primary keys from natural-key parts
-import re  # For validating the base_url format
-import time  # For sleeping between retry attempts
-from datetime import datetime, timezone  # For interpreting a Retry-After HTTP-date header
-from email.utils import parsedate_to_datetime  # For parsing a Retry-After HTTP-date header
+# For deriving stable synthetic primary keys from natural-key parts
+import hashlib
 
-import requests  # For issuing HTTP requests to the TechOne CiAnywhere web services API
+# For validating the base_url format
+import re
+
+# For sleeping between retry attempts
+import time
+
+# For interpreting a Retry-After HTTP-date header
+from datetime import datetime, timezone
+
+# For parsing a Retry-After HTTP-date header
+from email.utils import parsedate_to_datetime
+
+# For issuing HTTP requests to the TechOne CiAnywhere web services API
+import requests
 
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
@@ -21,6 +31,16 @@ from fivetran_connector_sdk import Logging as log
 
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
+
+# Destination table column definitions, kept in a separate module for readability
+from schemas import (
+    ACCOUNT_COLUMNS,
+    LEDGER_ACCOUNT_COLUMNS,
+    LEDGER_COLUMNS,
+    TRANSACTION_COLUMNS,
+    TRANSACTION_DETAIL_COLUMNS,
+    USER_FIELD_COLUMNS,
+)
 
 __TOKEN_PATH = "/oauth2/access_token"
 __PAGE_SIZE = 100
@@ -71,167 +91,36 @@ def schema(configuration: dict):
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
-    account_columns = {
-        "chart_name": "STRING",
-        "accnbri": "STRING",
-        "accnbr": "STRING",
-        "vers": "LONG",
-        "descr_1": "STRING",
-        "descr_2": "STRING",
-        "sdescr": "STRING",
-        "stat_ind": "STRING",
-        "soundex_name": "STRING",
-        "profile_type": "STRING",
-        "profile_code": "STRING",
-        "ldg_code_def": "STRING",
-        "accnbri_def": "STRING",
-        "vat_type_def": "STRING",
-        "vat_rate_code_def": "STRING",
-        "frgn_ccy_ind": "STRING",
-        "ccy_code": "STRING",
-        "exch_rate_table_name": "STRING",
-        **{f"seln_type_{i}_code": "STRING" for i in range(1, 41)},
-    }
-
-    user_field_columns = {
-        "chart_name": "STRING",
-        "accnbri": "STRING",
-        "vers": "LONG",
-        **{f"user_fld_{i}": "STRING" for i in range(1, 13)},
-        **{f"user_num_{i}": "DOUBLE" for i in range(1, 13)},
-        **{f"user_datei_{i}": "NAIVE_DATETIME" for i in range(1, 13)},
-    }
-
-    ledger_account_columns = {
-        "ldg_acct_rid": "STRING",
-        "ldg_name": "STRING",
-        "chart_name": "STRING",
-        "accnbri": "STRING",
-        "accnbr": "STRING",
-        "stat_ind": "STRING",
-        "bal_units_1": "DOUBLE",
-        "bal_amt_1": "DOUBLE",
-        "commitment_total": "DOUBLE",
-        "total_balance": "DOUBLE",
-        "descr": "STRING",
-        "sdescr": "STRING",
-    }
-
-    transaction_columns = {
-        "ldg_trans_rid": "STRING",
-        "ldg_name": "STRING",
-        "accnbri": "STRING",
-        "accnbr": "STRING",
-        "trans_nbr": "DOUBLE",
-        "seqnbr": "LONG",
-        "period": "INT",
-        "bat_name": "STRING",
-        "doc_type": "STRING",
-        "doc_datei_1": "NAIVE_DATETIME",
-        "doc_datei_2": "NAIVE_DATETIME",
-        "doc_datei_3": "NAIVE_DATETIME",
-        "doc_datei_4": "NAIVE_DATETIME",
-        "doc_ref_1": "STRING",
-        "doc_ref_2": "STRING",
-        "doc_ref_3": "STRING",
-        "source": "STRING",
-        "source_id": "STRING",
-        "source_datei": "NAIVE_DATETIME",
-        "source_timei": "STRING",
-        "narr_1": "STRING",
-        "narr_2": "STRING",
-        "narr_3": "STRING",
-        "status": "STRING",
-        "doc_unique_id": "STRING",
-        "attach_ind": "STRING",
-        "item_type": "STRING",
-        "item_code": "STRING",
-        "rate_amt": "DOUBLE",
-        "units_1": "DOUBLE",
-        "units_2": "DOUBLE",
-        "units_3": "DOUBLE",
-        "units_4": "DOUBLE",
-        "amt_1": "DOUBLE",
-        "amt_2": "DOUBLE",
-        "amt_3": "DOUBLE",
-        "amt_4": "DOUBLE",
-        "ccy_code": "STRING",
-        "ccy_amt": "DOUBLE",
-        "exch_rate_amt": "DOUBLE",
-        "vat_type": "STRING",
-        "vat_rate_code": "STRING",
-        "vat_rate_amt": "DOUBLE",
-        "vat_amt": "DOUBLE",
-        "vat_exc_amt": "DOUBLE",
-        "vat_inc_amt": "DOUBLE",
-        **{f"seln_type_{i}_code": "STRING" for i in range(1, 41)},
-    }
-
-    transaction_detail_columns = {
-        "ldg_transd_rid": "STRING",
-        "ldg_name": "STRING",
-        "accnbri": "STRING",
-        "trans_nbr": "DOUBLE",
-        "seqnbr": "LONG",
-        "period": "INT",
-        "doc_type": "STRING",
-        "doc_datei_1": "NAIVE_DATETIME",
-        "doc_ref_1": "STRING",
-        "source": "STRING",
-        "narr_1": "STRING",
-        "item_type": "STRING",
-        "item_code": "STRING",
-        "amt_1": "DOUBLE",
-        "vat_amt": "DOUBLE",
-        "vat_exc_amt": "DOUBLE",
-        "linked_ldg_name": "STRING",
-        "linked_accnbri": "STRING",
-        "linked_doc_type": "STRING",
-        "linked_doc_datei_1": "NAIVE_DATETIME",
-        "linked_doc_ref_1": "STRING",
-        "linked_source": "STRING",
-        "linked_amt_1": "DOUBLE",
-        "linked_vat_amt": "DOUBLE",
-        "linked_vat_exc_amt": "DOUBLE",
-    }
-
     return [
         {
             "table": "glf_ldg_ctl",
             "primary_key": ["ldg_name"],
-            "columns": {
-                "ldg_name": "STRING",
-                "descr": "STRING",
-                "chart_name": "STRING",
-                "stat_ind": "STRING",
-                "system_code": "STRING",
-                "chart_type": "STRING",
-            },
+            "columns": LEDGER_COLUMNS,
         },
         {
             "table": "glf_chart_acct",
             "primary_key": ["chart_name", "accnbri"],
-            "columns": account_columns,
+            "columns": ACCOUNT_COLUMNS,
         },
         {
             "table": "glf_chart_acc_usf",
             "primary_key": ["chart_name", "accnbri"],
-            "columns": user_field_columns,
+            "columns": USER_FIELD_COLUMNS,
         },
         {
             "table": "glf_ldg_acct",
             "primary_key": ["ldg_acct_rid"],
-            "columns": ledger_account_columns,
+            "columns": LEDGER_ACCOUNT_COLUMNS,
         },
         {
             "table": "glf_ldg_acc_trans",
             "primary_key": ["ldg_trans_rid"],
-            "columns": transaction_columns,
+            "columns": TRANSACTION_COLUMNS,
         },
         {
             "table": "glf_ldg_acc_transd",
             "primary_key": ["ldg_transd_rid"],
-            "columns": transaction_detail_columns,
+            "columns": TRANSACTION_DETAIL_COLUMNS,
         },
     ]
 
