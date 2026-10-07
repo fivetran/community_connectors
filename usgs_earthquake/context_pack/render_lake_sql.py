@@ -45,8 +45,14 @@ import sys
 
 # For type hints
 from collections.abc import Mapping
+
+# For the start_date var and the earliest complete week it allows
 from datetime import date, timedelta
+
+# For the dbt project, output and executable paths
 from pathlib import Path
+
+# For type hints on manifest values
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -181,11 +187,13 @@ def wrap_single_row(key: str, sql: str, order_by: str) -> str:
     text's md5, so a result copied out of a session by hand cannot drift.
 
     The rows are listed in `order_by` order, so the md5 is stable across sessions and DuckDB versions. An aggregate
-    over an ordered subquery does not keep its order.
+    over an ordered subquery does not keep its order. A week with no qualifying region is a valid answer, and `list()`
+    over no rows is NULL, so the text is coalesced to `[]`: an empty answer still has a JSON list and an md5.
     """
     return (
         f"select k, rows, md5(rows) as rows_md5 from (\n"
-        f"select {_quote(key)} as k, cast(to_json(list(t order by {order_by})) as varchar) as rows from (\n{sql}\n) t\n"
+        f"select {_quote(key)} as k, "
+        f"coalesce(cast(to_json(list(t order by {order_by})) as varchar), '[]') as rows from (\n{sql}\n) t\n"
         f") w"
     )
 
@@ -465,19 +473,20 @@ def main(argv: list[str] | None = None) -> int:
         sql = render(
             args.target, args.week, _parse_vars(args.var), args.single_row, not args.no_compile
         )
-    except RenderError as exc:
+        if args.stdout:
+            sys.stdout.write(sql)
+            return 0
+        OUT_DIR.mkdir(exist_ok=True)
+        week_label = (
+            args.week.replace("-", "") if args.week != "last-complete" else "last_complete_week"
+        )
+        suffix = ".single_row" if args.single_row else ""
+        out = OUT_DIR / f"{SAVED_QUERY}.{args.target}.{week_label}{suffix}.sql"
+        out.write_text(sql)
+    # OSError: an unreadable manifest or an unwritable lake_sql/ is a usage error, not a crash.
+    except (RenderError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    if args.stdout:
-        sys.stdout.write(sql)
-        return 0
-    OUT_DIR.mkdir(exist_ok=True)
-    week_label = (
-        args.week.replace("-", "") if args.week != "last-complete" else "last_complete_week"
-    )
-    suffix = ".single_row" if args.single_row else ""
-    out = OUT_DIR / f"{SAVED_QUERY}.{args.target}.{week_label}{suffix}.sql"
-    out.write_text(sql)
     print(f"wrote {out.relative_to(HERE)} ({len(sql.splitlines())} lines)")
     return 0
 

@@ -11,7 +11,7 @@ Use it for rephrasings too: which regions are busier than usual, which regions a
 Pass the string below to the query tool, whole and unchanged, in one call. Copy it character for character, including the `-- render:` comment on its first line. Do not reformat, shorten or split it. If the call errors, report the error. Leave the row cap at its default: the result has at most one row per region (the seed has 20), so it always fits.
 
 ```sql
--- render: target=lake week=last-complete start_date=2026-08-03 updated_at_cutoff=none single_row=false seed_sha256=e5da23b9eaad589c7562b6c08a75949634e409af8c6d377852065bef659f687e semantic_sha256=6ac42c322011a92ad2b62c89826d28a0fb667c5dd91f0dc3ddd2d74f589891b3 models_sha256=1692df0e720ce69114930935997ce1daca8c9091d700cb6ed2f8969b9c80c576 renderer_sha256=7505c5b638bce1d3d0b2beacd1c798bb830fa811f2ded2a19f179ebe694ad2bb
+-- render: target=lake week=last-complete start_date=2026-08-03 updated_at_cutoff=none single_row=false seed_sha256=e5da23b9eaad589c7562b6c08a75949634e409af8c6d377852065bef659f687e semantic_sha256=6ac42c322011a92ad2b62c89826d28a0fb667c5dd91f0dc3ddd2d74f589891b3 models_sha256=1692df0e720ce69114930935997ce1daca8c9091d700cb6ed2f8969b9c80c576 renderer_sha256=b6055a47c3b3b2fe80854560afbe722c1423dbb1b1aa63c9afbbe3e377f79ec0
 attach if not exists ':memory:' as usgs_local;
 
 create schema if not exists "usgs_local"."usgs";

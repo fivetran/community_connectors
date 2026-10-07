@@ -58,9 +58,17 @@ import time
 
 # For type hints
 from collections.abc import Mapping, Sequence
+
+# For turning DuckDB timestamps and dates into JSON, and the ledger's UTC timestamp
 from datetime import date, datetime, timezone
+
+# For turning DuckDB decimals into JSON
 from decimal import Decimal
+
+# For the warehouse, pack and output paths
 from pathlib import Path
+
+# For type hints on JSON-shaped values
 from typing import Any
 
 # For profiling the warehouse read-only and running the drill-down checks
@@ -1328,7 +1336,8 @@ def main(argv: list[str] | None = None) -> int:
                 connector_dir=connector_dir,
             )
         return assemble(args.draft, args.sql, args.lake_catalog, args.lake_schema, args.out)
-    except ContextPackError as exc:
+    # OSError: a --sql, --draft or --out path that is missing, unreadable or not writable is a usage error, not a crash.
+    except (ContextPackError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
