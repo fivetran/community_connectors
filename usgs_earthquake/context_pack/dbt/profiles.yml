@@ -1,0 +1,29 @@
+# DuckDB only, no credentials. Run dbt from this dbt/ directory with --profiles-dir ., so the relative paths below
+# resolve from here.
+#
+# Every target keeps its models in a database named usgs_local (the file name below), which is the name the rendered
+# preamble attaches (`attach if not exists ':memory:' as usgs_local`), so the compiled relation names are the same on
+# every path.
+usgs_earthquake_context:
+  target: local
+  outputs:
+    # The connector's local debug warehouse, attached read-only. `fivetran debug`, run from usgs_earthquake/connector/, writes
+    # it to usgs_earthquake/connector/files/warehouse.db, beside this pack. Set USGS_WAREHOUSE to read a copy somewhere else.
+    # Source: usgs_wh.tester.earthquake
+    local:
+      type: duckdb
+      path: usgs_local.duckdb
+      schema: usgs
+      threads: 4
+      attach:
+        - path: "{{ env_var('USGS_WAREHOUSE', '../../connector/files/warehouse.db') }}"
+          alias: usgs_wh
+          read_only: true
+    # Compile only, for render_lake_sql.py --target lake. The source resolves to
+    # <lake_catalog_alias>.<lake_schema>.earthquake from the vars lake_catalog and lake_schema in dbt_project.yml.
+    # The agent's DuckDB session attaches the lake catalog itself, so nothing here attaches it or holds its secret.
+    lake:
+      type: duckdb
+      path: .duckdb/lake/usgs_local.duckdb
+      schema: usgs
+      threads: 4

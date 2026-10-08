@@ -1,0 +1,21 @@
+region_id,name,lat_min,lat_max,lon_min,lon_max,priority
+yellowstone,Yellowstone,44.0,45.2,-111.2,-109.8,50
+hawaii,Hawaii,18.0,23.0,-161.0,-154.0,40
+pacific_northwest,Pacific Northwest,42.0,50.0,-128.0,-116.0,30
+california_nevada,California and Nevada,32.0,42.0,-126.0,-114.0,30
+new_zealand,New Zealand,-48.0,-34.0,165.0,179.0,25
+melanesia,"Papua New Guinea, Solomon Islands, Vanuatu and New Caledonia",-25.0,0.0,142.0,172.0,25
+mariana_islands,Mariana Islands and Guam,11.0,23.0,142.0,150.0,25
+alaska_aleutians,Alaska and the Aleutians,50.0,72.0,170.0,-129.0,20
+intermountain_west,Intermountain West,31.0,49.0,-116.0,-102.0,20
+caribbean,Caribbean,10.0,24.0,-86.0,-59.0,20
+japan_kuril_kamchatka,"Japan, Kuril Islands and Kamchatka",24.0,60.0,122.0,165.0,20
+indonesia_philippines,Indonesia and the Philippines,-11.0,21.0,94.0,142.0,20
+tonga_fiji_kermadec,"Tonga, Fiji and Kermadec",-40.0,-10.0,172.0,-170.0,20
+south_sandwich_scotia,South Sandwich Islands and Scotia Sea,-62.0,-53.0,-50.0,-20.0,20
+mexico_central_america,Mexico and Central America,7.0,32.0,-118.0,-77.0,15
+south_america,South America,-56.0,13.0,-82.0,-34.0,15
+mediterranean_middle_east,Mediterranean and Middle East,11.0,46.0,-10.0,60.0,15
+central_south_asia,Central and South Asia,20.0,50.0,60.0,122.0,15
+central_eastern_us,Central and Eastern US,24.0,50.0,-102.0,-65.0,10
+other,Other / open ocean,,,,,0

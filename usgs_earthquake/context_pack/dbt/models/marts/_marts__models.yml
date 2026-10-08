@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: dim_region
+    description: One row per region in seeds/region_bounds.csv, with the box and priority that assign events to it.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: region_id
+        description: Stable snake_case region key.
+        data_type: varchar
+        data_tests: [unique, not_null]
+      - name: name
+        description: Display name, the value agents group and report by.
+        data_type: varchar
+        data_tests: [unique, not_null]
+      - name: lat_min
+        description: Southern edge in decimal degrees. Null only on the "other" row.
+        data_type: double
+      - name: lat_max
+        description: Northern edge in decimal degrees. Null only on the "other" row.
+        data_type: double
+      - name: lon_min
+        description: Western edge in decimal degrees. Greater than lon_max for an antimeridian box.
+        data_type: double
+      - name: lon_max
+        description: Eastern edge in decimal degrees.
+        data_type: double
+      - name: priority
+        description: Higher wins where boxes overlap. The "other" row is 0.
+        data_type: integer
+        data_tests: [not_null]
+
+  - name: fct_seismic_events
+    description: >
+      One row per live USGS event (deleted events excluded), each assigned to exactly one region. The grain the
+      significant-event metrics count at.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: event_id
+        description: The USGS preferred event id. Unique after region assignment, so no event lands in two regions.
+        data_type: varchar
+        data_tests: [unique, not_null]
+      - name: region_id
+        description: The region the event was assigned to.
+        data_type: varchar
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_region')
+                field: region_id
+      - name: event_time
+        description: When the event happened, UTC, without a time zone.
+        data_type: timestamp
+        data_tests: [not_null]
+      - name: event_day
+        description: The UTC calendar day of event_time. The metrics' time dimension.
+        data_type: date
+        data_tests: [not_null]
+      - name: mag
+        description: Magnitude on the event's mag_type scale. Can be null.
+        data_type: double
+      - name: event_type
+        description: USGS event type. Only earthquake counts toward significant events.
+        data_type: varchar
+        data_tests: [not_null]
+      - name: is_significant
+        description: >
+          True for an earthquake of magnitude 4.5 or more. Quarry blasts, explosions and other types, and events with
+          no magnitude yet, are false. The one definition every significant-event metric counts.
+        data_type: boolean
+        data_tests: [not_null]
+
+  - name: fct_region_days
+    description: >
+      One row per region per day, from the Monday of start_date's week through today, with the day's count of
+      significant events (zero when there were none). Zero-filled so every region-week exists for the 4-week average.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: region_day_id
+        description: region_id and the day, joined with a pipe. The grain key.
+        data_type: varchar
+        data_tests: [unique, not_null]
+      - name: region_id
+        description: The region.
+        data_type: varchar
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_region')
+                field: region_id
+      - name: activity_day
+        description: The UTC calendar day.
+        data_type: date
+        data_tests: [not_null]
+      - name: significant_events
+        description: Count of the region's significant events (fct_seismic_events.is_significant) that day.
+        data_type: bigint
+        data_tests: [not_null]
+
+  - name: metricflow_time_spine
+    description: One row per day from the Monday of start_date's week through one year past today.
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: One calendar day.
+        granularity: day
+        data_tests: [unique, not_null]
