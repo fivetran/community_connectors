@@ -3,6 +3,14 @@
 Kept separate from connector.py so the `schema()` function stays readable.
 """
 
+# TechOne chart-of-accounts and transaction records expose up to 40 selection-type codes
+# (seln_type_1_code .. seln_type_40_code).
+NUM_SELECTION_TYPES = 40
+
+# TechOne chart-of-accounts records expose up to 12 user-defined fields of each type
+# (user_fld_1 .. user_fld_12, user_num_1 .. user_num_12, user_datei_1 .. user_datei_12).
+NUM_USER_DEFINED_FIELDS = 12
+
 LEDGER_COLUMNS = {
     "ldg_name": "STRING",
     "descr": "STRING",
@@ -31,16 +39,16 @@ ACCOUNT_COLUMNS = {
     "frgn_ccy_ind": "STRING",
     "ccy_code": "STRING",
     "exch_rate_table_name": "STRING",
-    **{f"seln_type_{i}_code": "STRING" for i in range(1, 41)},
+    **{f"seln_type_{i}_code": "STRING" for i in range(1, NUM_SELECTION_TYPES + 1)},
 }
 
 USER_FIELD_COLUMNS = {
     "chart_name": "STRING",
     "accnbri": "STRING",
     "vers": "LONG",
-    **{f"user_fld_{i}": "STRING" for i in range(1, 13)},
-    **{f"user_num_{i}": "DOUBLE" for i in range(1, 13)},
-    **{f"user_datei_{i}": "NAIVE_DATETIME" for i in range(1, 13)},
+    **{f"user_fld_{i}": "STRING" for i in range(1, NUM_USER_DEFINED_FIELDS + 1)},
+    **{f"user_num_{i}": "DOUBLE" for i in range(1, NUM_USER_DEFINED_FIELDS + 1)},
+    **{f"user_datei_{i}": "NAIVE_DATETIME" for i in range(1, NUM_USER_DEFINED_FIELDS + 1)},
 }
 
 LEDGER_ACCOUNT_COLUMNS = {
@@ -105,7 +113,7 @@ TRANSACTION_COLUMNS = {
     "vat_amt": "DOUBLE",
     "vat_exc_amt": "DOUBLE",
     "vat_inc_amt": "DOUBLE",
-    **{f"seln_type_{i}_code": "STRING" for i in range(1, 41)},
+    **{f"seln_type_{i}_code": "STRING" for i in range(1, NUM_SELECTION_TYPES + 1)},
 }
 
 TRANSACTION_DETAIL_COLUMNS = {
