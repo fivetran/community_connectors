@@ -20,6 +20,9 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 # For reading configuration from a JSON file and serialising unexpected container values
 import json
 
+# For sizing the paging guard from the row count the API reports
+import math
+
 # For time-based operations and rate limiting
 import time
 
@@ -58,9 +61,9 @@ __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 __MAX_PAGE_SIZE = 1500  # the datastore API rejects a larger limit with HTTP 400
 __DEFAULT_DELAY_SECONDS = 0.2
 __MAX_DELAY_SECONDS = 10.0
-__MAX_PAGES_PER_DATASET = (
-    2000  # a guard against a paging loop; the largest dataset is about 100 pages
-)
+# Extra pages allowed beyond the count the first page reports, so a release that grows while it is paged still
+# finishes. Past that the API is not advancing, and the sync stops instead of paging forever.
+__PAGE_LIMIT_SLACK = 10
 __RELEASE_TABLE = "dataset_release"
 __RELEASE_COLUMN = "cms_release_version"
 __RELEASED_COLUMN = "cms_released"
@@ -164,7 +167,7 @@ def _optional_delay_seconds(value) -> float:
     return seconds
 
 
-def validate_configuration(configuration: dict):
+def validate_configuration(configuration: dict) -> tuple:
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
     This function is called at the start of the update method to ensure that the connector has all necessary
@@ -173,11 +176,15 @@ def validate_configuration(configuration: dict):
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
 
+    Returns:
+        (page_size, delay_seconds), parsed once so update() does not parse the configuration again
+
     Raises:
         ValueError: if any required configuration parameter is missing or invalid.
     """
-    _optional_page_size(configuration.get("page_size"))
-    _optional_delay_seconds(configuration.get("request_delay_seconds"))
+    page_size = _optional_page_size(configuration.get("page_size"))
+    delay_seconds = _optional_delay_seconds(configuration.get("request_delay_seconds"))
+    return page_size, delay_seconds
 
 
 def _as_text(value):
@@ -421,8 +428,14 @@ def sync_dataset(
 
     seen_keys = set()
     count = 0
-    for _ in range(__MAX_PAGES_PER_DATASET):
+    pages = 0
+    max_pages = None
+    while True:
         records, count = fetch_page(session, dataset, offset, page_size)
+        pages += 1
+        if max_pages is None:
+            # Size the guard from the first page's count, so it scales with page_size and the release size.
+            max_pages = math.ceil(max(count - offset, 0) / page_size) + __PAGE_LIMIT_SLACK
         for record in records:
             if not isinstance(record, dict):
                 totals["skipped"] += 1
@@ -456,11 +469,11 @@ def sync_dataset(
         op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
         if len(records) < page_size or offset >= count:
             break
+        if pages >= max_pages:
+            raise RuntimeError(
+                f"{table}: more than {max_pages} pages for about {count} rows; the API may be ignoring the offset"
+            )
         time.sleep(delay_seconds)
-    else:
-        raise RuntimeError(
-            f"{table}: more than {__MAX_PAGES_PER_DATASET} pages; the API may be ignoring the offset"
-        )
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
     # otherwise the next sync loads the new release from the start.
@@ -553,10 +566,7 @@ def update(configuration: dict, state: dict):
         The state dictionary is empty for the first sync or for any full re-sync
     """
     log.warning("Example: Source Examples : CMS Hospital Compare")
-    validate_configuration(configuration)
-
-    page_size = _optional_page_size(configuration.get("page_size"))
-    delay_seconds = _optional_delay_seconds(configuration.get("request_delay_seconds"))
+    page_size, delay_seconds = validate_configuration(configuration)
     datasets_state = dict(state.get("datasets") or {})
     log.info(f"Syncing {len(__DATASETS)} CMS datasets, {page_size} rows per page")
 
@@ -581,6 +591,7 @@ def update(configuration: dict, state: dict):
             f"CMS replaced a release during the sync for {', '.join(totals['superseded'])}; "
             "the next sync loads the new release."
         )
+        log.warning(message)
         op.warning(message)
     log.info(f"Sync complete: {totals['upserted']} rows upserted")
 

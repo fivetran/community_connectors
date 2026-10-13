@@ -26,20 +26,43 @@
 
 -- Every release that loaded completely, one row per table per release. is_latest_release marks the release the
 -- plain views read.
+--
+-- release_version is the data file's Unix epoch, or the catalog's %modified timestamp (2026-08-13T01:41:07-0400)
+-- when CMS publishes no file version. Both are ranked as epoch seconds, and the latest load breaks a tie or ranks
+-- a value that parses as neither.
 create or replace view cms_release_history as
+with releases as (
+  select
+    dataset_id,
+    release_version,
+    table_name,
+    try_cast(cms_released as date) as cms_released,
+    cms_modified,
+    row_count,
+    api_row_count,
+    loaded_at,
+    coalesce(
+      try_cast(release_version as bigint),
+      cast(epoch(try_cast(release_version as timestamptz)) as bigint)
+    ) as release_epoch
+  from dataset_release
+  where not coalesce(_fivetran_deleted, false)
+)
+
 select
   dataset_id,
   release_version,
   table_name,
-  try_cast(cms_released as date) as cms_released,
+  cms_released,
   cms_modified,
   row_count,
   api_row_count,
   loaded_at,
-  cast(release_version as bigint)
-    = max(cast(release_version as bigint)) over (partition by table_name) as is_latest_release
-from dataset_release
-where not coalesce(_fivetran_deleted, false);
+  row_number() over (
+    partition by table_name
+    order by release_epoch desc nulls last, loaded_at desc nulls last
+  ) = 1 as is_latest_release
+from releases;
 
 create or replace view cms_release as
 select * exclude (is_latest_release)

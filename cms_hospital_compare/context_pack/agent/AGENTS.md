@@ -32,9 +32,9 @@ Join on `facility_id` (the CMS Certification Number) between hospital-level view
 
 ## Readmissions: two measures, two periods
 
-- `cms_unplanned_hospital_visit`, `measure_id = 'READM_30_HF'`: the heart failure 30-day readmission rate, in percent, for discharges from 2023-07-01 to 2025-06-30 in the current release. Compare it with `national_rate` for the same `measure_id`.
-- `cms_hrrp`, `condition = 'HF'`: the HRRP excess readmission ratio, a payment-program measure for discharges from 2021-07-01 to 2024-06-30. HRRP reports only hospitals with enough discharges; the others have a NULL ratio.
-- CMS sends a "compared to the national rate" category in `compared_to_national`, folded into `comparison` as `better`, `no_different`, `worse`, `too_few_cases` or `not_available`. In the current release CMS left it `not_available` for every `READM_30_*` row. For those measures, a filter on `comparison = 'worse'` returns 0 hospitals, and that is not the answer. Compare `score` with `national_rate`, and say in the answer that this is a comparison of rates, not CMS's statistical test.
+- `cms_unplanned_hospital_visit`, `measure_id = 'READM_30_HF'`: the heart failure 30-day readmission rate, in percent, for discharges from 2023-07-01 to 2025-06-30 as of the 2026-09-30 release. Compare it with `national_rate` for the same `measure_id`.
+- `cms_hrrp`, `condition = 'HF'`: the HRRP excess readmission ratio, a payment-program measure for discharges from 2021-07-01 to 2024-06-30 as of the 2026-08-13 release. HRRP reports only hospitals with enough discharges; the others have a NULL ratio.
+- CMS sends a "compared to the national rate" category in `compared_to_national`, folded into `comparison` as `better`, `no_different`, `worse`, `too_few_cases` or `not_available`. In the 2026-09-30 release CMS left it `not_available` for every `READM_30_*` row. For those measures, a filter on `comparison = 'worse'` returns 0 hospitals, and that is not the answer. Compare `score` with `national_rate`, and say in the answer that this is a comparison of rates, not CMS's statistical test.
 
 ## Checked questions
 
@@ -45,6 +45,19 @@ Each question has checked SQL and the answer it returned on the release dated in
 "Which hospitals in Connecticut are worse than the nation on heart failure readmissions?"
 
 ```sql
+with state_hf as (
+  select
+    facility_id,
+    facility_name,
+    measure_id,
+    score,
+    denominator,
+    count(score) over () as hospitals_reporting
+  from cms_unplanned_hospital_visit
+  where measure_id = 'READM_30_HF'
+    and state = 'CT'
+)
+
 select
   u.facility_id,
   u.facility_name,
@@ -52,14 +65,11 @@ select
   n.national_rate as national_rate_pct,
   u.denominator as eligible_discharges,
   count(*) over () as hospitals_above,
-  (select count(score) from cms_unplanned_hospital_visit
-     where measure_id = 'READM_30_HF' and state = 'CT') as hospitals_reporting
-from cms_unplanned_hospital_visit as u
+  u.hospitals_reporting
+from state_hf as u
 inner join cms_unplanned_hospital_visit_national as n
   on n.measure_id = u.measure_id
-where u.measure_id = 'READM_30_HF'
-  and u.state = 'CT'
-  and u.score > n.national_rate
+where u.score > n.national_rate
 order by u.score desc, u.facility_id
 limit 5
 ```

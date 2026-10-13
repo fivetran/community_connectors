@@ -21,7 +21,7 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/co
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
 ```bash
-fivetran init --template cms_hospital_compare
+fivetran init --template cms_hospital_compare/connector
 ```
 
 `fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
@@ -59,7 +59,7 @@ A placeholder or empty value uses the default, so the `configuration.json` in th
 
 This connector has no `requirements.txt`: it needs only `requests` and the Connector SDK.
 
-Note: The `fivetran_connector_sdk` and `requests` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 
@@ -73,7 +73,7 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 
 - Release detection: the catalog metadata (`/metastore/schemas/dataset/items/<dataset_id>?show-reference-ids`) carries the data file's version, a Unix epoch that changes whenever CMS replaces the file. It is the release identifier, written to every row as `cms_release_version`. When no version is published, the catalog's `%modified` timestamp is used instead.
 - State holds, per dataset, the release version, the offset reached and whether the release finished loading. A finished release is skipped; a partly loaded one resumes at its offset; a new release starts again at offset 0.
-- History, not replacement: the primary key includes `cms_release_version`, so a new release adds rows and never deletes the previous release's. To read current values, join to the latest `dataset_release` row per dataset. A release that CMS replaced while it was being paged is not recorded in `dataset_release`, and the next sync loads the new one.
+- History, not replacement: the primary key includes `cms_release_version`, so a new release adds rows and never deletes the previous release's. To read current values, join to the latest `dataset_release` row per dataset. A release that CMS replaced while it was being paged is not recorded in `dataset_release`, and the next sync loads the new one. The rows already written from that partial release stay in the raw tables, orphaned: no `dataset_release` row points to them, so a join to `dataset_release` leaves them out.
 - Values are written as text, exactly as the API returns them, including sentinel strings such as `Not Available`, `Not Applicable`, `Too Few to Report` and banded text (`very high`). Dates such as `start_date` stay in the API's `MM/DD/YYYY` form. Typing belongs in the warehouse.
 - Column names are the API's, lowercase, with two renames: `sample` becomes `sample_size` (a reserved word in several SQL engines) and `_condition` becomes `measure_condition`.
 - A record with a blank natural key value is skipped and counted; a natural key repeated within one release is counted and the last record kept. Both counts are logged and reported to the dashboard with `op.warning`.
@@ -83,7 +83,7 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 - HTTP 429 and 5xx, connection errors and timeouts are retried with exponential backoff, four attempts in all, then the sync fails naming the dataset and offset.
 - Any other non-success status, a body that is not a JSON object, or a page without a `results` list or a row count fails the sync immediately naming the dataset and offset.
 - Catalog metadata with neither a file version nor a modified timestamp fails the sync naming the dataset.
-- A dataset that keeps returning full pages past 2,000 pages fails the sync, as a guard against an API that ignores the offset.
+- A dataset that keeps returning full pages more than 10 pages past the row count its first page reported fails the sync, as a guard against an API that ignores the offset. The limit scales with `page_size`, so a small page size does not trip it.
 - Configuration errors are raised by `def validate_configuration(configuration)` before any API call, and reported at setup time by the setup test.
 
 ## Tables created
