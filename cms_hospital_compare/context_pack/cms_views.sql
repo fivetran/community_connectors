@@ -27,9 +27,10 @@
 -- Every release that loaded completely, one row per table per release. is_latest_release marks the release the
 -- plain views read.
 --
--- release_version is the data file's Unix epoch, or the catalog's %modified timestamp (2026-08-13T01:41:07-0400)
--- when CMS publishes no file version. Both are ranked as epoch seconds, and the latest load breaks a tie or ranks
--- a value that parses as neither.
+-- The connector only ever loads a dataset's current release, so the latest load is the latest release. Ties fall
+-- to release_version: the data file's Unix epoch, or the catalog's %modified timestamp
+-- (2026-08-13T01:41:07-0400) when CMS publishes no file version, both read as epoch seconds. The two are not one
+-- clock (hrrp's file version is 2026-02-03, its %modified 2026-08-13), so the version never outranks load order.
 create or replace view cms_release_history as
 with releases as (
   select
@@ -60,7 +61,7 @@ select
   loaded_at,
   row_number() over (
     partition by table_name
-    order by release_epoch desc nulls last, loaded_at desc nulls last
+    order by loaded_at desc nulls last, release_epoch desc nulls last
   ) = 1 as is_latest_release
 from releases;
 

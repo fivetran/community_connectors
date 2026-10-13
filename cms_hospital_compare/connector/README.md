@@ -83,7 +83,9 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 - HTTP 429 and 5xx, connection errors and timeouts are retried with exponential backoff, four attempts in all, then the sync fails naming the dataset and offset.
 - Any other non-success status, a body that is not a JSON object, or a page without a `results` list or a row count fails the sync immediately naming the dataset and offset.
 - Catalog metadata with neither a file version nor a modified timestamp fails the sync naming the dataset.
-- A dataset that keeps returning full pages more than 10 pages past the row count its first page reported fails the sync, as a guard against an API that ignores the offset. The limit scales with `page_size`, so a small page size does not trip it.
+- A page that repeats the page before it fails the sync: the API is not applying the offset, and the release would otherwise be recorded as complete with repeated rows.
+- A dataset that keeps returning full pages more than 10 pages past the row count its first page reported fails the sync, as a guard against a row count that keeps growing. The limit scales with `page_size`, so a small page size does not trip it.
+- A short page before the reported row count leaves the release incomplete, with a warning on the dashboard, and the next sync resumes at that offset. A truncated release is never recorded in `dataset_release`.
 - Configuration errors are raised by `def validate_configuration(configuration)` before any API call, and reported at setup time by the setup test.
 
 ## Tables created

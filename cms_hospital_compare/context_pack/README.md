@@ -72,7 +72,7 @@ select table_name, cms_released from cms_release order by table_name;
 
 ### An agent with a DuckDB or SQL tool
 
-Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its instructions, and a tool that runs DuckDB SQL. Have the agent run the three setup statements above as its first call. In a tool that does not support the CLI's `.read` command, pass the contents of `cms_views.sql` instead. Then ask a question, for example "Which states have the longest emergency department visits?". The agent should answer with the checked SQL from `AGENTS.md`.
+Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its instructions, and a tool that runs DuckDB SQL. Have the agent run the first three statements above as its first call; the fourth is a check you can skip. In a tool that does not support the CLI's `.read` command, pass the contents of `cms_views.sql` instead. Then ask a question, for example "Which states have the longest emergency department visits?". The agent should answer with the checked SQL from `AGENTS.md`.
 
 ### An MCP DuckDB server
 
