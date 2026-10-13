@@ -419,7 +419,8 @@ def sync_dataset(
     if saved.get("release_version") == release["release_version"] and saved.get("complete"):
         log.info(f"{table}: release {release['release_version']} already loaded, skipping")
         return
-    if saved.get("release_version") == release["release_version"]:
+    resuming = saved.get("release_version") == release["release_version"]
+    if resuming:
         offset = int(saved.get("offset") or 0)
         log.info(f"{table}: resuming release {release['release_version']} at offset {offset}")
     else:
@@ -434,14 +435,16 @@ def sync_dataset(
     while True:
         records, count = fetch_page(session, dataset, offset, page_size)
         pages += 1
+        rows = [
+            build_row(record, release) if isinstance(record, dict) else None for record in records
+        ]
+        page_keys = [natural_key(row, dataset) if row is not None else None for row in rows]
         # An API that does not apply the offset returns the same page again. The offset advances regardless, so
         # without this check the loop would end at the count and record a release of repeated rows as complete.
-        # Whole pages are compared: a natural key repeated in the data can start two pages, a whole page cannot.
-        page_keys = [
-            natural_key(build_row(record, release), dataset) if isinstance(record, dict) else None
-            for record in records
-        ]
-        if records and page_keys == previous_page_keys:
+        # Only a page with at least two distinct keys is compared: a page of one key can repeat in real data
+        # (page_size 1 with a duplicated key, or a run of rows with a blank key), a page of several cannot.
+        distinct_keys = {key for key in page_keys if key is not None}
+        if len(distinct_keys) > 1 and page_keys == previous_page_keys:
             raise RuntimeError(
                 f"{table}: the page at offset {offset} repeats the page before it; "
                 "the API is not applying the offset"
@@ -450,12 +453,10 @@ def sync_dataset(
         if max_pages is None:
             # Size the guard from the first page's count, so it scales with page_size and the release size.
             max_pages = math.ceil(max(count - offset, 0) / page_size) + __PAGE_LIMIT_SLACK
-        for record in records:
-            if not isinstance(record, dict):
+        for row, key in zip(rows, page_keys):
+            if row is None:
                 totals["skipped"] += 1
                 continue
-            row = build_row(record, release)
-            key = natural_key(row, dataset)
             if key is None:
                 totals["skipped"] += 1
                 continue
@@ -492,11 +493,19 @@ def sync_dataset(
     # A short page before the reported count means rows are missing. Leave the release incomplete so the next sync
     # resumes at this offset, instead of recording a truncated release as complete.
     if offset < count:
-        totals["incomplete"].append(f"{table}: {offset} of {count} rows")
-        log.warning(
-            f"{table}: paging stopped at {offset} of {count} rows; the next sync resumes here"
-        )
-        return
+        if resuming and pages == 1 and not records:
+            # The previous sync stopped short at this offset and the API still returns nothing past it, so the
+            # count is overstated rather than a page lost. Record the release with the rows CMS returned:
+            # otherwise it never completes and the views, which join on dataset_release, never show it.
+            # row_count below api_row_count keeps the gap visible in the ledger.
+            totals["short"].append(f"{table}: {offset} of {count} rows")
+            log.warning(f"{table}: CMS reported {count} rows but returned {offset} on two syncs")
+        else:
+            totals["incomplete"].append(f"{table}: {offset} of {count} rows")
+            log.warning(
+                f"{table}: paging stopped at {offset} of {count} rows; the next sync resumes here"
+            )
+            return
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
     # otherwise the next sync loads the new release from the start.
@@ -593,7 +602,14 @@ def update(configuration: dict, state: dict):
     datasets_state = dict(state.get("datasets") or {})
     log.info(f"Syncing {len(__DATASETS)} CMS datasets, {page_size} rows per page")
 
-    totals = {"upserted": 0, "skipped": 0, "duplicates": 0, "superseded": [], "incomplete": []}
+    totals = {
+        "upserted": 0,
+        "skipped": 0,
+        "duplicates": 0,
+        "superseded": [],
+        "incomplete": [],
+        "short": [],
+    }
     session = create_session()
     try:
         for dataset in __DATASETS:
@@ -620,6 +636,14 @@ def update(configuration: dict, state: dict):
         message = (
             f"CMS returned fewer rows than it reported for {'; '.join(totals['incomplete'])}; "
             "those releases stay incomplete and the next sync resumes them."
+        )
+        log.warning(message)
+        op.warning(message)
+    if totals["short"]:
+        message = (
+            f"CMS reported more rows than it returned on two syncs in a row for {'; '.join(totals['short'])}; "
+            "those releases are recorded with the rows returned, and dataset_release shows row_count below "
+            "api_row_count."
         )
         log.warning(message)
         op.warning(message)
