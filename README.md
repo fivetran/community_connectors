@@ -102,6 +102,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 
 ### SaaS & APIs
 
+- **ADP Workforce Now** ([adp_workforce_now](https://github.com/fivetran/community_connectors/tree/main/adp_workforce_now)) - Sync the departments validation table from the ADP Workforce Now HCM API
 - **Amazon Video Central** ([amazon_video_central](https://github.com/fivetran/community_connectors/tree/main/amazon_video_central)) - Sync report data from Amazon Video Central API
 - **Awardco** ([awardco](https://github.com/fivetran/community_connectors/tree/main/awardco)) - Sync data from Awardco rewards platform
 - **Beehiiv** ([beehiiv](https://github.com/fivetran/community_connectors/tree/main/beehiiv)) - Sync newsletter data from the beehiiv API, including publications, subscriptions, posts, email blasts, automations, and engagement metrics

@@ -93,6 +93,14 @@ def _safe_get(payload: Dict[str, Any], path: List[str]) -> Optional[Any]:
     return current
 
 
+def _first_truthy(*values: Any) -> Optional[Any]:
+    """Return the first truthy value among the arguments, or None if all are falsy."""
+    for value in values:
+        if value:
+            return value
+    return None
+
+
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     """Parse a Retry-After header as delay-seconds, capped at 60s.
 
@@ -417,34 +425,36 @@ def _flatten_department(record: Dict[str, Any]) -> Dict[str, Any]:
         A flat dict matching the departments table schema, plus the original record
         serialized in raw_json for fields not explicitly mapped above.
     """
-    department_code = (
-        _safe_get(record, ["departmentCode", "codeValue"])
-        or _safe_get(record, ["code"])
-        or _safe_get(record, ["nameCode", "code"])
-        or _safe_get(record, ["id"])
-        or _safe_get(record, ["itemID", "idValue"])
+    department_code = _first_truthy(
+        _safe_get(record, ["departmentCode", "codeValue"]),
+        _safe_get(record, ["code"]),
+        _safe_get(record, ["nameCode", "code"]),
+        _safe_get(record, ["id"]),
+        _safe_get(record, ["itemID", "idValue"]),
     )
-    short_name = (
-        _safe_get(record, ["nameCode", "shortName"])
-        or _safe_get(record, ["nameCode", "name"])
-        or record.get("shortName")
+    short_name = _first_truthy(
+        _safe_get(record, ["nameCode", "shortName"]),
+        _safe_get(record, ["nameCode", "name"]),
+        record.get("shortName"),
     )
-    long_name = (
-        _safe_get(record, ["nameCode", "longName"])
-        or _safe_get(record, ["nameCode", "name"])
-        or record.get("longName")
-        or record.get("description")
+    long_name = _first_truthy(
+        _safe_get(record, ["nameCode", "longName"]),
+        _safe_get(record, ["nameCode", "name"]),
+        record.get("longName"),
+        record.get("description"),
     )
-    status = (
-        record.get("status")
-        or _safe_get(record, ["statusCode", "codeValue"])
-        or ("INACTIVE" if record.get("inactiveIndicator") else "ACTIVE")
-        or record.get("statusCode")
+    # The inactiveIndicator-derived fallback always produces a truthy value, so it must come
+    # after statusCode to avoid permanently shadowing it.
+    status = _first_truthy(
+        record.get("status"),
+        _safe_get(record, ["statusCode", "codeValue"]),
+        record.get("statusCode"),
+        "INACTIVE" if record.get("inactiveIndicator") else "ACTIVE",
     )
-    updated_at = (
-        _safe_get(record, ["metadata", "lastUpdateDateTime"])
-        or record.get("lastUpdateDateTime")
-        or record.get("lastUpdated")
+    updated_at = _first_truthy(
+        _safe_get(record, ["metadata", "lastUpdateDateTime"]),
+        record.get("lastUpdateDateTime"),
+        record.get("lastUpdated"),
     )
     # payroll_group_code is part of the table's composite primary key alongside
     # department_code, since ADP scopes department codes per payroll group.
