@@ -119,6 +119,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Discord** ([discord](https://github.com/fivetran/community_connectors/tree/main/discord)) - Sync data from Discord
 - **Docusign eSignature** ([docusign](https://github.com/fivetran/community_connectors/tree/main/docusign)) - Sync data from Docusign eSignature API
 - **Elastic Email** ([elastic_email](https://github.com/fivetran/community_connectors/tree/main/elastic_email)) - Sync email marketing data from Elastic Email
+- **Emplifi** ([emplifi](https://github.com/fivetran/community_connectors/tree/main/emplifi)) - Sync social profiles, metrics, posts, and aggregated post metrics across nine networks from the Emplifi social media management API
 - **Federal Register** ([federal_register](https://github.com/fivetran/community_connectors/tree/main/federal_register)) - Sync rules, proposed rules, notices, and presidential documents from the Federal Register API
 - **Fleetio** ([fleetio](https://github.com/fivetran/community_connectors/tree/main/fleetio)) - Sync fleet management data from Fleetio
 - **FRED** ([fred](https://github.com/fivetran/community_connectors/tree/main/fred)) - Sync economic data from Federal Reserve Economic Data (FRED)
