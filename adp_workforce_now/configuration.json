@@ -1,0 +1,6 @@
+{
+  "client_id": "<YOUR_ADP_CLIENT_ID>",
+  "client_secret": "<YOUR_ADP_CLIENT_SECRET>",
+  "cert_string": "<YOUR_ADP_CLIENT_CERTIFICATE_PEM>",
+  "key_string": "<YOUR_ADP_CLIENT_PRIVATE_KEY_PEM>"
+}
