@@ -10,7 +10,7 @@ The connector and the NetSuite role that goes with it were built, tested, and pe
 
 ## Requirements
 
-- [Supported Python versions](https://github.com/fivetran/connector_sdk/blob/main/README.md#requirements)
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
 - Operating system:
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
@@ -20,7 +20,15 @@ The connector and the NetSuite role that goes with it were built, tested, and pe
 
 Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
 
-Before running the connector, complete the [NetSuite setup](#netsuite-setup) to obtain the credentials, and update `configuration.json` with them.
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```
+fivetran init --template netsuite_suitesql
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters. Complete the [NetSuite setup](#netsuite-setup) first to obtain the credentials.
 
 ## Features
 
@@ -266,7 +274,7 @@ Required permissions are not always obvious. SuiteQL row visibility depends on p
 
 The connector uses the following additional files:
 
-- **sdf/fivetran_netsuite_role/** - The SDF package that deploys the Fivetran Integration role. Its own `README.md` covers deploying the package only.
+- **`sdf/fivetran_netsuite_role/`** - The SDF package that deploys the Fivetran Integration role. Its own `README.md` covers deploying the package only.
 
 ## Additional considerations
 
