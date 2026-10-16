@@ -144,6 +144,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Microsoft Intune** ([microsoft_intune](https://github.com/fivetran/community_connectors/tree/main/microsoft_intune)) - Retrieve managed devices from Microsoft Intune
 - **n8n** ([n8n](https://github.com/fivetran/community_connectors/tree/main/n8n)) - Sync workflow automation data from n8n
 - **Netlify** ([netlify](https://github.com/fivetran/community_connectors/tree/main/netlify)) - Sync sites, deploys, and forms from Netlify API
+- **NetSuite (SuiteQL)** ([netsuite_suitesql](https://github.com/fivetran/community_connectors/tree/main/netsuite_suitesql)) - Sync General Ledger and Trial Balance data from NetSuite using SuiteQL over REST Web Services with Token-Based Authentication, without a SuiteAnalytics Connect subscription. Includes an SDF package that deploys a read-only, least-privilege role
 - **News API** ([newsapi](https://github.com/fivetran/community_connectors/tree/main/newsapi)) - Sync news articles from NewsAPI
 - **NOAA** ([noaa](https://github.com/fivetran/community_connectors/tree/main/noaa)) - Sync weather observations from National Weather Service
 - **NPPES NPI Registry** ([npi_registry](https://github.com/fivetran/community_connectors/tree/main/npi_registry)) - Sync healthcare provider data from NPPES NPI Registry
