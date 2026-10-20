@@ -80,4 +80,4 @@ For detailed rules, reference:
 Default to these instructions. Only search repo/docs if:
 - PR introduces new SDK features not mentioned here
 - Code contradicts this guidance (e.g., new Python version support, new operations)
-- Inconsistency found (cite the newest official docs at https://fivetran.com/docs/connectors/connector-sdk)
+- Inconsistency found (cite the newest official docs at https://fivetran.com/docs/connector-sdk)

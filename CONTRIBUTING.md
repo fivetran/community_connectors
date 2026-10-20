@@ -25,7 +25,7 @@ maintainer.
 
 1. Read the [Connector SDK documentation](https://fivetran.com/docs/connectors/connector-sdk).
 2. Review similar connectors in this repository.
-3. Install and configure the Connector SDK using the [setup guide](https://fivetran.com/docs/connector-sdk/setup-guide).
+3. Install and configure the Connector SDK using the [setup guide](https://fivetran.com/docs/connector-sdk/getting-started).
 4. Fork and clone the repository.
 
 Optionally, run `.github/scripts/setup-hooks.sh` from the repository root if you want staged Python files formatted automatically. The script configures a repository-local Git hook; the configured pre-commit hook runs Black on staged Python files and may install Black if it is not already available.
