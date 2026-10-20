@@ -322,7 +322,7 @@ op.upsert(table="table_name", data=record)
 # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
 # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
 # Learn more about how and where to checkpoint by reading our best practices documentation
-# (https://fivetran.com/docs/connector-sdk#connectordevelopmentbestpractices).
+# (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
 op.checkpoint(state)
 ```
 
