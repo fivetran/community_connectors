@@ -493,6 +493,9 @@ def _sync_profiles(profiles_by_network: dict):
     """Upsert every fetched profile into the profiles table."""
     for network, profiles in profiles_by_network.items():
         for p in profiles:
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 "profiles",
                 {
@@ -540,6 +543,9 @@ def _sync_profile_metrics(configuration, profiles_by_network, date_start, date_e
                     continue
 
                 for row in _parse_metrics_response(body, pid):
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
                     op.upsert(
                         "profile_metrics",
                         {
@@ -621,6 +627,9 @@ def _sync_posts(configuration, profiles_by_network, date_start, date_end):
                             row[k] = json.dumps(v)
                         else:
                             row[k] = str(v)
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
                     op.upsert("posts", row)
 
                 if not next_cursor:
@@ -742,6 +751,9 @@ def _upsert_aggregated_metrics_response(body, metric, batch):
                     (obj["platform"] for obj in batch if obj["id"] == pid_str),
                     "unknown",
                 )
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
                     "aggregated_post_metrics",
                     {
@@ -756,6 +768,9 @@ def _upsert_aggregated_metrics_response(body, metric, batch):
             raw = row_data[0] if isinstance(row_data, list) else row_data
             if isinstance(raw, list):
                 raw = raw[0] if raw else None
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
                 "aggregated_post_metrics",
                 {
@@ -778,6 +793,7 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
+    log.warning("Example: <CATEGORY> : <EXAMPLE_NAME>")
     validate_configuration(configuration=configuration)
 
     today = date.today()
@@ -813,20 +829,44 @@ def update(configuration: dict, state: dict):
     # Checkpoint the same (unfinalized) state after each step so upserts made so far are
     # durably committed sooner, bounding how much work is replayed on an interruption.
     # last_synced_date itself is only finalized once the full window has been synced below.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
     log.info("STEP 2 - Profile metrics ...")
     _sync_profile_metrics(configuration, profiles_by_network, sync_start, sync_end)
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
     log.info("STEP 3 - Posts ...")
     _sync_posts(configuration, profiles_by_network, sync_start, sync_end)
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
     log.info("STEP 4 - Aggregated post metrics ...")
     _sync_aggregated_post_metrics(configuration, profiles_by_network, sync_start, sync_end)
 
     state["last_synced_date"] = sync_end
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
     log.info(f"Done. Checkpointed last_synced_date={sync_end}")
 
