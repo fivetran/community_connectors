@@ -78,7 +78,7 @@ Include the following dependencies in your `requirements.txt` file:
 
 ```
 pytidb>=0.0.11
-certifi>=2025.8.3
+certifi>=2026.10.19
 ```
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
