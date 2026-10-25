@@ -98,6 +98,7 @@ The answers carry the CMS release they came from. After a newer release syncs, t
 - The data is published benchmarks, not patient records. The pack answers questions about hospitals and states, not about patients or costs.
 - CMS chooses what to publish in each release. In the release synced here it gave no "compared to the national rate" category for the `READM_30_*` measures, so the pack compares rates. A rate above the national rate is not the same as CMS's statistical finding that a hospital is worse.
 - Each measure has its own period, and it can be years before the release date. The answer format puts the period next to the number.
+- The hospital and national views each read their own latest release, so after a partial sync they can cover different periods. The checked comparison joins the national rate on the measurement period and reports the benchmark as unavailable when no period matches.
 - A state's ED time is the median of its hospitals' medians, not a median over patients.
 - Keep the pack beside the connector, not inside it. `fivetran deploy` packages every file in the connector directory.
 

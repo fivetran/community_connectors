@@ -17,10 +17,13 @@ See the Technical Reference documentation (https://fivetran.com/docs/connectors/
 and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
 
+# For fingerprinting the natural keys of a page, so the repeated-page guard survives a resume
+import hashlib
+
 # For reading configuration from a JSON file and serialising unexpected container values
 import json
 
-# For sizing the paging guard from the row count the API reports
+# For sizing the paging guard from the row count the API reports, and rejecting a non-finite delay
 import math
 
 # For time-based operations and rate limiting
@@ -58,12 +61,25 @@ __API_TIMEOUT_SECONDS = 60
 __MAX_RETRIES = 4
 __BASE_DELAY_SECONDS = 2
 __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
+# Request errors a retry can fix: a dropped connection, a timeout, or a body cut off mid-transfer
+__RETRYABLE_REQUEST_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
 __MAX_PAGE_SIZE = 1500  # the datastore API rejects a larger limit with HTTP 400
 __DEFAULT_DELAY_SECONDS = 0.2
 __MAX_DELAY_SECONDS = 10.0
 # Extra pages allowed beyond the count the first page reports, so a release that grows while it is paged still
 # finishes. Past that the API is not advancing, and the sync stops instead of paging forever.
 __PAGE_LIMIT_SLACK = 10
+# Distinct natural keys that fingerprint a page: two, so a page of one repeated key is never compared
+__SIGNATURE_KEY_COUNT = 2
+# Characters of an error response body kept in the error message
+__ERROR_BODY_PREVIEW_CHARS = 200
+# Rows the setup test reads, enough to prove the datastore query works
+__SETUP_TEST_PAGE_SIZE = 1
+__LOADED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 __RELEASE_TABLE = "dataset_release"
 __RELEASE_COLUMN = "cms_release_version"
 __RELEASED_COLUMN = "cms_released"
@@ -160,6 +176,10 @@ def _optional_delay_seconds(value) -> float:
         seconds = float(str(value).strip())
     except ValueError as e:
         raise ValueError(f"request_delay_seconds must be a number, got: {value!r}") from e
+    # float() accepts "nan" and "inf", and NaN fails every comparison, so it would pass the range check below
+    # and only fail later, at time.sleep, in the middle of a sync.
+    if not math.isfinite(seconds):
+        raise ValueError(f"request_delay_seconds must be a finite number, got: {value!r}")
     if seconds < 0 or seconds > __MAX_DELAY_SECONDS:
         raise ValueError(
             f"request_delay_seconds must be between 0 and {__MAX_DELAY_SECONDS}, got: {value!r}"
@@ -187,7 +207,7 @@ def validate_configuration(configuration: dict) -> tuple:
     return page_size, delay_seconds
 
 
-def _as_text(value):
+def _convert_to_text(value):
     """
     Keep an API value as text, the way the datastore API returns it.
 
@@ -204,7 +224,7 @@ def _as_text(value):
     return str(value)
 
 
-def column_name(source_name: str) -> str:
+def get_column_name(source_name: str) -> str:
     """
     The destination column name for one source column.
 
@@ -229,13 +249,13 @@ def build_row(record: dict, release: dict) -> dict:
     Returns:
         a flat dict of text values plus the release columns
     """
-    row = {column_name(key): _as_text(value) for key, value in record.items()}
+    row = {get_column_name(key): _convert_to_text(value) for key, value in record.items()}
     row[__RELEASE_COLUMN] = release["release_version"]
     row[__RELEASED_COLUMN] = release["released"]
     return row
 
 
-def natural_key(row: dict, dataset: dict):
+def get_natural_key(row: dict, dataset: dict):
     """
     The natural key of a row within one release.
 
@@ -252,6 +272,32 @@ def natural_key(row: dict, dataset: dict):
     return values
 
 
+def compute_page_signature(page_keys: list):
+    """
+    Fingerprint a page by its first two distinct natural keys, so a repeated page is recognised across syncs.
+
+    Rows are sorted on the full natural key, so no later page of the same release can start with the same two
+    distinct keys (as long as the API's sort treats two keys as equal only when the strings are equal, which holds
+    for CMS's numeric facility and measure codes); an API that ignores the offset returns them again. Using the
+    leading keys, not the whole page, keeps the fingerprint the same if page_size changes between a kill and the
+    resume.
+
+    Args:
+        page_keys: the natural key of each record on the page, None for a record without one
+
+    Returns:
+        a hex digest, or None when the page has fewer than two distinct keys (a page of one key can repeat in
+        real data: page_size 1 with a duplicated key, or a run of rows with a blank key)
+    """
+    distinct = []
+    for key in page_keys:
+        if key is not None and key not in distinct:
+            distinct.append(key)
+            if len(distinct) == __SIGNATURE_KEY_COUNT:
+                return hashlib.sha256(json.dumps(distinct).encode("utf-8")).hexdigest()
+    return None
+
+
 def create_session() -> requests.Session:
     """
     Create the HTTP session reused for every call in a sync.
@@ -262,6 +308,97 @@ def create_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({"Accept": "application/json"})
     return session
+
+
+def wait_before_retry(label: str, attempt: int, reason: str):
+    """
+    Log a failed attempt and sleep before the next one, doubling the delay after each attempt.
+
+    Args:
+        label: a short description of the request, used in the log message
+        attempt: the zero-based number of the attempt that failed
+        reason: why the attempt failed
+    """
+    retry_delay_seconds = __BASE_DELAY_SECONDS * (2**attempt)
+    # INFO, not WARNING: a retry that then succeeds needs no action; a request that never succeeds fails the sync
+    log.info(
+        f"{label}: {reason}; retrying in {retry_delay_seconds}s "
+        f"(attempt {attempt + 1} of {__MAX_RETRIES})"
+    )
+    time.sleep(retry_delay_seconds)
+
+
+def get_with_retries(
+    session: requests.Session, url: str, params: dict, label: str
+) -> requests.Response:
+    """
+    GET one API URL, retrying transient failures with exponential backoff.
+
+    A dropped connection, a timeout, a body cut off mid-transfer and a retryable status are retried. Any other
+    request error (an invalid URL, too many redirects) will not succeed on a retry, so it fails at once.
+
+    Args:
+        session: the shared HTTP session
+        url: the full request URL
+        params: query parameters
+        label: a short description of the request, used in error messages
+
+    Returns:
+        the response, with a status that is not retryable
+
+    Raises:
+        RuntimeError: when the request still fails after the retries, or fails with an error a retry cannot fix
+    """
+    for attempt in range(__MAX_RETRIES):
+        is_last_attempt = attempt == __MAX_RETRIES - 1
+        try:
+            response = session.get(url, params=params, timeout=__API_TIMEOUT_SECONDS)
+        except __RETRYABLE_REQUEST_ERRORS as e:
+            if is_last_attempt:
+                raise RuntimeError(
+                    f"{label}: request failed after {__MAX_RETRIES} attempts: {e}"
+                ) from e
+            wait_before_retry(label, attempt, f"request failed: {e}")
+            continue
+        except requests.exceptions.RequestException as e:
+            # Raised as RuntimeError like every other request failure, so update() and the setup test handle it
+            raise RuntimeError(f"{label}: request failed: {e}") from e
+        if response.status_code in __RETRYABLE_STATUS_CODES:
+            if is_last_attempt:
+                raise RuntimeError(
+                    f"{label}: HTTP {response.status_code} after {__MAX_RETRIES} attempts"
+                )
+            wait_before_retry(label, attempt, f"HTTP {response.status_code}")
+            continue
+        return response
+    raise RuntimeError(f"{label}: no response after {__MAX_RETRIES} attempts")
+
+
+def parse_json_object(response: requests.Response, label: str) -> dict:
+    """
+    Decode a response body that must be a JSON object.
+
+    Args:
+        response: the response from get_with_retries
+        label: a short description of the request, used in error messages
+
+    Returns:
+        the decoded JSON object
+
+    Raises:
+        RuntimeError: when the status is an error, or the body is not a JSON object
+    """
+    if not response.ok:
+        raise RuntimeError(
+            f"{label}: HTTP {response.status_code}: {response.text[:__ERROR_BODY_PREVIEW_CHARS]}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as e:
+        raise RuntimeError(f"{label}: response is not JSON") from e
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label}: expected a JSON object, got {type(payload).__name__}")
+    return payload
 
 
 def fetch_json(session: requests.Session, url: str, params: dict, label: str) -> dict:
@@ -278,37 +415,33 @@ def fetch_json(session: requests.Session, url: str, params: dict, label: str) ->
         the decoded JSON object
 
     Raises:
-        RuntimeError: when the request still fails after the retries, fails with a non-retryable status, or the
-            body is not a JSON object
+        RuntimeError: when the request still fails after the retries, fails with a non-retryable status or
+            request error, or the body is not a JSON object
     """
-    for attempt in range(__MAX_RETRIES):
-        is_last_attempt = attempt == __MAX_RETRIES - 1
-        try:
-            response = session.get(url, params=params, timeout=__API_TIMEOUT_SECONDS)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            if is_last_attempt:
-                raise RuntimeError(
-                    f"{label}: request failed after {__MAX_RETRIES} attempts: {e}"
-                ) from e
-            time.sleep(__BASE_DELAY_SECONDS * (2**attempt))
-            continue
-        if response.status_code in __RETRYABLE_STATUS_CODES:
-            if is_last_attempt:
-                raise RuntimeError(
-                    f"{label}: HTTP {response.status_code} after {__MAX_RETRIES} attempts"
-                )
-            time.sleep(__BASE_DELAY_SECONDS * (2**attempt))
-            continue
-        if not response.ok:
-            raise RuntimeError(f"{label}: HTTP {response.status_code}: {response.text[:200]}")
-        try:
-            payload = response.json()
-        except ValueError as e:
-            raise RuntimeError(f"{label}: response is not JSON") from e
-        if not isinstance(payload, dict):
-            raise RuntimeError(f"{label}: expected a JSON object, got {type(payload).__name__}")
-        return payload
-    raise RuntimeError(f"{label}: no response after {__MAX_RETRIES} attempts")
+    return parse_json_object(get_with_retries(session, url, params, label), label)
+
+
+def get_file_version(distribution) -> str:
+    """
+    The data file version of one catalog distribution.
+
+    Every level of the metadata is type-checked, so an entry of an unexpected shape is skipped instead of
+    raising mid-sync or in the setup test.
+
+    Args:
+        distribution: one element of the catalog metadata's `distribution` list
+
+    Returns:
+        the file version as text, or None when the distribution carries none
+    """
+    data = distribution.get("data") if isinstance(distribution, dict) else None
+    references = data.get("%Ref:downloadURL") if isinstance(data, dict) else None
+    for reference in references if isinstance(references, list) else []:
+        reference_data = reference.get("data") if isinstance(reference, dict) else None
+        candidate = reference_data.get("version") if isinstance(reference_data, dict) else None
+        if candidate:
+            return str(candidate)
+    return None
 
 
 def get_release(session: requests.Session, dataset_id: str) -> dict:
@@ -331,13 +464,9 @@ def get_release(session: requests.Session, dataset_id: str) -> dict:
     url = f"{__BASE_URL}/metastore/schemas/dataset/items/{quote(dataset_id, safe='')}"
     payload = fetch_json(session, url, {"show-reference-ids": "true"}, f"{dataset_id} metadata")
     version = None
-    for distribution in payload.get("distribution") or []:
-        references = ((distribution or {}).get("data") or {}).get("%Ref:downloadURL") or []
-        for reference in references:
-            candidate = ((reference or {}).get("data") or {}).get("version")
-            if candidate:
-                version = str(candidate)
-                break
+    distributions = payload.get("distribution")
+    for distribution in distributions if isinstance(distributions, list) else []:
+        version = get_file_version(distribution)
         if version:
             break
     modified = payload.get("%modified") or payload.get("modified")
@@ -345,8 +474,8 @@ def get_release(session: requests.Session, dataset_id: str) -> dict:
         raise RuntimeError(f"{dataset_id}: catalog metadata has no file version or modified date")
     return {
         "release_version": version or str(modified),
-        "released": _as_text(payload.get("released")),
-        "modified": _as_text(modified),
+        "released": _convert_to_text(payload.get("released")),
+        "modified": _convert_to_text(modified),
     }
 
 
@@ -362,6 +491,9 @@ def fetch_page(session: requests.Session, dataset: dict, offset: int, page_size:
 
     Returns:
         (list of records, total row count reported by the API)
+
+    Raises:
+        RuntimeError: when the request fails, or the response has no results list or row count
     """
     url = f"{__BASE_URL}/datastore/query/{quote(dataset['dataset_id'], safe='')}/0"
     params = {"limit": page_size, "offset": offset, "count": "true", "results": "true"}
@@ -385,12 +517,302 @@ def copy_datasets_state(datasets_state: dict) -> dict:
     Copy the per-dataset progress, so a checkpoint holds every dataset, not only the one being synced.
 
     Args:
-        datasets_state: dataset_id -> {"release_version", "offset", "complete"}
+        datasets_state: dataset_id -> {"release_version", "offset", "complete"}, plus the paging evidence
+            of a release in progress: "first_page_signature", "last_page_signature", "last_key" and, after a
+            short page, "short_page_offset"
 
     Returns:
         an independent copy of the progress dict
     """
     return {key: dict(value) for key, value in datasets_state.items()}
+
+
+def resolve_start(table: str, release: dict, saved: dict) -> tuple:
+    """
+    Decide whether a release resumes from its saved progress or loads from the start.
+
+    Args:
+        table: the destination table, used in log messages
+        release: the dataset's current release, from get_release
+        saved: the dataset's saved progress, or an empty dict
+
+    Returns:
+        (is_resuming, the progress to resume from, or an empty dict when the release loads from the start)
+    """
+    is_resuming = saved.get("release_version") == release["release_version"]
+    if is_resuming and "first_page_signature" not in saved:
+        # State saved before the paging evidence was persisted cannot show which pages it saw, so the guards
+        # could not check the resume. Rows are keyed on the release, so loading it again is idempotent.
+        log.info(
+            f"{table}: saved progress has no paging evidence; reloading the release from the start"
+        )
+        is_resuming = False
+    if is_resuming:
+        offset = int(saved.get("offset") or 0)
+        log.info(f"{table}: resuming release {release['release_version']} at offset {offset}")
+        return True, saved
+    log.info(f"{table}: loading release {release['release_version']} ({release['released']})")
+    return False, {}
+
+
+def check_page_signature(table: str, page_keys: list, paging: dict):
+    """
+    Stop the sync when a page repeats the release's first page or the page before it.
+
+    An API that does not apply the offset returns the same page again. The offset advances regardless, so without
+    this check the loop would end at the count and record a release of repeated rows as complete. Both signatures
+    are saved in state, so the first page after a resume is checked too.
+
+    Args:
+        table: the destination table, used in the error message
+        page_keys: the natural key of each record on the page, None for a record without one
+        paging: the release's paging progress; the signatures are updated in place
+
+    Raises:
+        RuntimeError: when the page repeats an earlier page
+    """
+    signature = compute_page_signature(page_keys)
+    if paging["offset"] == 0:
+        paging["first_page_signature"] = signature
+    elif signature is not None and signature in (
+        paging["first_page_signature"],
+        paging["last_page_signature"],
+    ):
+        raise RuntimeError(
+            f"{table}: the page at offset {paging['offset']} repeats an earlier page; "
+            "the API is not applying the offset"
+        )
+    if signature is not None:
+        # A page without a signature (empty, or one key) keeps the last one: no earlier page's leading keys can
+        # come back later in sorted data, so the older signature still catches a repeat.
+        paging["last_page_signature"] = signature
+
+
+def upsert_page_rows(table: str, rows: list, page_keys: list, paging: dict, totals: dict):
+    """
+    Upsert the rows of one page, skipping rows without a natural key and counting repeated keys.
+
+    Args:
+        table: the destination table
+        rows: the rows built from the page, None for a record that is not an object
+        page_keys: the natural key of each row, None for a row without one
+        paging: the release's paging progress; the last natural key is updated in place
+        totals: running counters for the sync summary; updated in place
+    """
+    for row, key in zip(rows, page_keys):
+        if row is None:
+            totals["skipped"] += 1
+            continue
+        if key is None:
+            totals["skipped"] += 1
+            continue
+        # Rows are sorted on the full natural key, so a repeated key is next to the row it repeats. Comparing
+        # with the previous key keeps memory flat however large the release is.
+        if key == paging["previous_key"]:
+            totals["duplicates"] += 1
+        paging["previous_key"] = key
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
+        op.upsert(table=table, data=row)
+        totals["upserted"] += 1
+
+
+def save_page_progress(
+    dataset_id: str, release: dict, paging: dict, page_size: int, datasets_state: dict
+):
+    """
+    Save a release's paging progress and evidence after a page, and checkpoint every dataset's progress.
+
+    Args:
+        dataset_id: the CMS dataset identifier
+        release: the release being paged
+        paging: the release's paging progress after the page
+        page_size: rows per page
+        datasets_state: dataset_id -> saved progress; updated in place
+    """
+    progress = {
+        "release_version": release["release_version"],
+        "offset": paging["offset"],
+        "complete": False,
+        "first_page_signature": paging["first_page_signature"],
+        "last_page_signature": paging["last_page_signature"],
+        "last_key": list(paging["previous_key"]) if paging["previous_key"] else None,
+    }
+    if paging["last_page_length"] < page_size and paging["offset"] < paging["count"]:
+        # Saved with the offset in one checkpoint, so the next sync knows the API itself stopped short here,
+        # not that a sync was killed after a full page.
+        progress["short_page_offset"] = paging["offset"]
+    datasets_state[dataset_id] = progress
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
+
+
+def page_release(
+    session: requests.Session,
+    dataset: dict,
+    release: dict,
+    paging: dict,
+    datasets_state: dict,
+    page_size: int,
+    delay_seconds: float,
+    totals: dict,
+):
+    """
+    Page a release from the saved offset until the API stops short or reaches the count it reports.
+
+    Args:
+        session: the shared HTTP session
+        dataset: the dataset entry
+        release: the release being paged
+        paging: the release's paging progress; updated in place after every page
+        datasets_state: dataset_id -> saved progress; updated in place and checkpointed after every page
+        page_size: rows per page
+        delay_seconds: pause between page requests
+        totals: running counters for the sync summary; updated in place
+
+    Raises:
+        RuntimeError: when a page repeats an earlier page, or the release needs more pages than the count allows
+    """
+    table = dataset["table"]
+    max_pages = None
+    while True:
+        records, paging["count"] = fetch_page(session, dataset, paging["offset"], page_size)
+        paging["pages"] += 1
+        paging["last_page_length"] = len(records)
+        rows = [
+            build_row(record, release) if isinstance(record, dict) else None for record in records
+        ]
+        page_keys = [get_natural_key(row, dataset) if row is not None else None for row in rows]
+        check_page_signature(table, page_keys, paging)
+        if max_pages is None:
+            # Size the guard from the first page's count, so it scales with page_size and the release size.
+            remaining = max(paging["count"] - paging["offset"], 0)
+            max_pages = math.ceil(remaining / page_size) + __PAGE_LIMIT_SLACK
+        upsert_page_rows(table, rows, page_keys, paging, totals)
+        # Every record on the page was consumed, so the offset advances by the page's length.
+        paging["offset"] += len(records)
+        save_page_progress(dataset["dataset_id"], release, paging, page_size, datasets_state)
+        if len(records) < page_size or paging["offset"] >= paging["count"]:
+            return
+        if paging["pages"] >= max_pages:
+            raise RuntimeError(
+                f"{table}: more than {max_pages} pages for about {paging['count']} rows; the reported row count kept growing"
+            )
+        time.sleep(delay_seconds)
+
+
+def accept_short_release(
+    table: str, paging: dict, is_resuming: bool, saved: dict, totals: dict
+) -> bool:
+    """
+    Decide whether a release that stopped short of the reported count can be recorded as loaded.
+
+    Args:
+        table: the destination table, used in log and summary messages
+        paging: the release's paging progress at the end of the sync
+        is_resuming: whether the sync resumed the release from saved progress
+        saved: the progress the sync resumed from, or an empty dict
+        totals: running counters for the sync summary; updated in place
+
+    Returns:
+        True when the count is overstated and the release is recorded with the rows returned, False when the
+        release stays incomplete for the next sync to resume
+    """
+    offset = paging["offset"]
+    count = paging["count"]
+    is_empty_again = is_resuming and paging["pages"] == 1 and paging["last_page_length"] == 0
+    if is_empty_again and offset > 0 and saved.get("short_page_offset") == offset:
+        # The previous sync saw the API stop short at this offset, and it still returns nothing past it, so
+        # the count is overstated rather than a page lost. Never at offset 0: a release recorded with no rows
+        # would become the latest release and empty its views. Record the release with the rows CMS returned:
+        # otherwise it never completes and the views, which join on dataset_release, never show it.
+        # row_count below api_row_count keeps the gap visible in the ledger.
+        totals["short"].append(f"{table}: {offset} of {count} rows")
+        log.warning(f"{table}: CMS reported {count} rows but returned {offset} on two syncs")
+        return True
+    totals["incomplete"].append(f"{table}: {offset} of {count} rows")
+    log.warning(f"{table}: paging stopped at {offset} of {count} rows; the next sync resumes here")
+    return False
+
+
+def finish_release(
+    session: requests.Session,
+    dataset: dict,
+    release: dict,
+    paging: dict,
+    is_resuming: bool,
+    saved: dict,
+    datasets_state: dict,
+    totals: dict,
+):
+    """
+    Record a paged release in dataset_release and mark it complete, unless it is short or was replaced.
+
+    Args:
+        session: the shared HTTP session
+        dataset: the dataset entry
+        release: the release that was paged
+        paging: the release's paging progress at the end of the sync
+        is_resuming: whether the sync resumed the release from saved progress
+        saved: the progress the sync resumed from, or an empty dict
+        datasets_state: dataset_id -> saved progress; updated in place and checkpointed when the release completes
+        totals: running counters for the sync summary; updated in place
+    """
+    dataset_id = dataset["dataset_id"]
+    table = dataset["table"]
+    offset = paging["offset"]
+    # A short page before the reported count means rows are missing. Leave the release incomplete so the next sync
+    # resumes at this offset, instead of recording a truncated release as complete.
+    if offset < paging["count"] and not accept_short_release(
+        table, paging, is_resuming, saved, totals
+    ):
+        return
+
+    # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
+    # otherwise the next sync loads the new release from the start.
+    current = get_release(session, dataset_id)
+    if current["release_version"] != release["release_version"]:
+        totals["superseded"].append(table)
+        log.warning(
+            f"{table}: release {release['release_version']} was replaced by {current['release_version']} during the sync"
+        )
+        return
+
+    # The 'upsert' operation is used to insert or update data in the destination table.
+    # The first argument is the name of the destination table.
+    # The second argument is a dictionary containing the record to be upserted.
+    op.upsert(
+        table=__RELEASE_TABLE,
+        data={
+            "dataset_id": dataset_id,
+            "release_version": release["release_version"],
+            "table_name": table,
+            "cms_released": release["released"],
+            "cms_modified": release["modified"],
+            "row_count": offset,
+            "api_row_count": paging["count"],
+            "loaded_at": datetime.now(timezone.utc).strftime(__LOADED_AT_FORMAT),
+        },
+    )
+    datasets_state[dataset_id] = {
+        "release_version": release["release_version"],
+        "offset": offset,
+        "complete": True,
+    }
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
+    log.info(f"{table}: release {release['release_version']} loaded, {offset} rows")
 
 
 def sync_dataset(
@@ -419,133 +841,23 @@ def sync_dataset(
     if saved.get("release_version") == release["release_version"] and saved.get("complete"):
         log.info(f"{table}: release {release['release_version']} already loaded, skipping")
         return
-    resuming = saved.get("release_version") == release["release_version"]
-    if resuming:
-        offset = int(saved.get("offset") or 0)
-        log.info(f"{table}: resuming release {release['release_version']} at offset {offset}")
-    else:
-        offset = 0
-        log.info(f"{table}: loading release {release['release_version']} ({release['released']})")
+    is_resuming, saved = resolve_start(table, release, saved)
 
-    seen_keys = set()
-    count = 0
-    pages = 0
-    max_pages = None
-    previous_page_keys = None
-    while True:
-        records, count = fetch_page(session, dataset, offset, page_size)
-        pages += 1
-        rows = [
-            build_row(record, release) if isinstance(record, dict) else None for record in records
-        ]
-        page_keys = [natural_key(row, dataset) if row is not None else None for row in rows]
-        # An API that does not apply the offset returns the same page again. The offset advances regardless, so
-        # without this check the loop would end at the count and record a release of repeated rows as complete.
-        # Only a page with at least two distinct keys is compared: a page of one key can repeat in real data
-        # (page_size 1 with a duplicated key, or a run of rows with a blank key), a page of several cannot.
-        distinct_keys = {key for key in page_keys if key is not None}
-        if len(distinct_keys) > 1 and page_keys == previous_page_keys:
-            raise RuntimeError(
-                f"{table}: the page at offset {offset} repeats the page before it; "
-                "the API is not applying the offset"
-            )
-        previous_page_keys = page_keys
-        if max_pages is None:
-            # Size the guard from the first page's count, so it scales with page_size and the release size.
-            max_pages = math.ceil(max(count - offset, 0) / page_size) + __PAGE_LIMIT_SLACK
-        for row, key in zip(rows, page_keys):
-            if row is None:
-                totals["skipped"] += 1
-                continue
-            if key is None:
-                totals["skipped"] += 1
-                continue
-            if key in seen_keys:
-                totals["duplicates"] += 1
-            seen_keys.add(key)
-            # The 'upsert' operation is used to insert or update data in the destination table.
-            # The first argument is the name of the destination table.
-            # The second argument is a dictionary containing the record to be upserted.
-            op.upsert(table=table, data=row)
-            totals["upserted"] += 1
-        # Every record on the page was consumed, so the offset advances by the page's length.
-        offset += len(records)
-        datasets_state[dataset_id] = {
-            "release_version": release["release_version"],
-            "offset": offset,
-            "complete": False,
-        }
-        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-        # from the correct position in case of next sync or interruptions.
-        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-        # Learn more about how and where to checkpoint by reading our best practices documentation
-        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-        op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
-        if len(records) < page_size or offset >= count:
-            break
-        if pages >= max_pages:
-            raise RuntimeError(
-                f"{table}: more than {max_pages} pages for about {count} rows; the reported row count kept growing"
-            )
-        time.sleep(delay_seconds)
-
-    # A short page before the reported count means rows are missing. Leave the release incomplete so the next sync
-    # resumes at this offset, instead of recording a truncated release as complete.
-    if offset < count:
-        if resuming and pages == 1 and not records:
-            # The previous sync stopped short at this offset and the API still returns nothing past it, so the
-            # count is overstated rather than a page lost. Record the release with the rows CMS returned:
-            # otherwise it never completes and the views, which join on dataset_release, never show it.
-            # row_count below api_row_count keeps the gap visible in the ledger.
-            totals["short"].append(f"{table}: {offset} of {count} rows")
-            log.warning(f"{table}: CMS reported {count} rows but returned {offset} on two syncs")
-        else:
-            totals["incomplete"].append(f"{table}: {offset} of {count} rows")
-            log.warning(
-                f"{table}: paging stopped at {offset} of {count} rows; the next sync resumes here"
-            )
-            return
-
-    # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
-    # otherwise the next sync loads the new release from the start.
-    current = get_release(session, dataset_id)
-    if current["release_version"] != release["release_version"]:
-        totals["superseded"].append(table)
-        log.warning(
-            f"{table}: release {release['release_version']} was replaced by {current['release_version']} during the sync"
-        )
-        return
-
-    # The 'upsert' operation is used to insert or update data in the destination table.
-    # The first argument is the name of the destination table.
-    # The second argument is a dictionary containing the record to be upserted.
-    op.upsert(
-        table=__RELEASE_TABLE,
-        data={
-            "dataset_id": dataset_id,
-            "release_version": release["release_version"],
-            "table_name": table,
-            "cms_released": release["released"],
-            "cms_modified": release["modified"],
-            "row_count": offset,
-            "api_row_count": count,
-            "loaded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        },
-    )
-    datasets_state[dataset_id] = {
-        "release_version": release["release_version"],
-        "offset": offset,
-        "complete": True,
+    # The paging guards live in state, not only in memory, so a resume is held to the same checks as a sync that
+    # was never interrupted.
+    paging = {
+        "offset": int(saved.get("offset") or 0),
+        "count": 0,
+        "pages": 0,
+        "last_page_length": 0,
+        "first_page_signature": saved.get("first_page_signature"),
+        "last_page_signature": saved.get("last_page_signature"),
+        "previous_key": tuple(saved["last_key"]) if saved.get("last_key") else None,
     }
-    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-    # from the correct position in case of next sync or interruptions.
-    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-    # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
-    log.info(f"{table}: release {release['release_version']} loaded, {offset} rows")
+    page_release(
+        session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals
+    )
+    finish_release(session, dataset, release, paging, is_resuming, saved, datasets_state, totals)
 
 
 def schema(configuration: dict):
@@ -674,7 +986,7 @@ def verify_api_access(configuration: dict):
         session = create_session()
         try:
             get_release(session, __DATASETS[0]["dataset_id"])
-            fetch_page(session, __DATASETS[0], 0, 1)
+            fetch_page(session, __DATASETS[0], 0, __SETUP_TEST_PAGE_SIZE)
         finally:
             session.close()
     except (ValueError, RuntimeError) as e:

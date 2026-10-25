@@ -229,7 +229,10 @@ from cms_unplanned_hospital_visit_national_history
 where is_latest_release;
 
 -- Hospital Readmissions Reduction Program (9n3s-kdb3): one row per hospital per condition per release.
--- excess_readmission_ratio above 1 means more readmissions than CMS predicts for that hospital's patients.
+-- excess_readmission_ratio, in CMS's words: "calculated by dividing a hospital's predicted rate of readmissions
+-- ... by the expected rate of readmissions, based on an average hospital with similar patients." Above 1, the
+-- predicted rate is above the expected rate. Source: https://data.cms.gov/provider-data/dataset/9n3s-kdb3 and
+-- https://data.cms.gov/provider-data/sites/default/files/data_dictionaries/hospital/HOSPITAL_Data_Dictionary.pdf
 -- condition is the short code inside measure_name: READM-30-HF-HRRP becomes HF.
 create or replace view cms_hrrp_history as
 select
