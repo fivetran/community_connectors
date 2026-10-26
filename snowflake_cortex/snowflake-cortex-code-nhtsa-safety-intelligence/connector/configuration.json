@@ -8,5 +8,9 @@
     "snowflake_account": "<YOUR_SNOWFLAKE_ACCOUNT_HOSTNAME>",
     "snowflake_pat_token": "<YOUR_SNOWFLAKE_PAT>",
     "cortex_model": "<CORTEX_MODEL_NAME>",
-    "max_enrichments": "<MAX_CORTEX_ENRICHMENTS>"
+    "max_enrichments": "<MAX_CORTEX_ENRICHMENTS>",
+    "models": "<MODELS_JSON_ARRAY_OR_EMPTY_FOR_SEED_MODE>",
+    "report_date_from": "<REPORT_DATE_FROM_YYYY_MM_DD>",
+    "report_date_to": "<REPORT_DATE_TO_YYYY_MM_DD>",
+    "request_pause_seconds": "<REQUEST_PAUSE_SECONDS>"
 }

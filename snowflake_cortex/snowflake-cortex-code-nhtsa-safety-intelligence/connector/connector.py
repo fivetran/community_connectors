@@ -9,6 +9,15 @@ deciding which vehicles to fetch next based on its analysis of safety patterns.
 
 Built entirely with Snowflake Cortex Code and the Fivetran Connector Builder Skill.
 
+The connector runs in one of two modes:
+- Seed mode (the default): one seed vehicle, optionally followed by Cortex Agent discovery.
+- Fixed-list mode (when `models` is set): every make x model x model year in a configured list, with no AI
+  calls. It keeps the campaigns whose report received date falls in a configured window, writes the configured
+  names to `make` and `model` and NHTSA's spelling to `nhtsa_make` and `nhtsa_model`, and records every
+  configured vehicle in `configured_vehicle`, so a vehicle with no recalls in the window is recorded as checked
+  rather than simply absent. It checkpoints after each model, deletes rows a later sync no longer returns, and
+  truncates both tables when a sync starts from an empty state, so the destination always equals the filter.
+
 APIs Used:
 1. NHTSA Recalls API - Vehicle recall campaigns
 2. NHTSA Complaints API - Consumer safety complaints
@@ -16,7 +25,7 @@ APIs Used:
 4. Snowflake Cortex Agent - Discovery analysis and cross-vehicle synthesis
 
 See the Technical Reference documentation (https://fivetran.com/docs/connector-sdk/technical-reference)
-and the Best Practices documentation (https://fivetran.com/docs/connector-sdk/best-practices) for details
+and the Best Practices documentation (https://fivetran.com/docs/connector-sdk#connectordevelopmentbestpractices) for details
 """
 
 # For reading configuration from a JSON file
@@ -31,6 +40,9 @@ import requests
 # For URL-encoding user-supplied path segments (vPIC GetModelsForMake/{make})
 import urllib.parse
 
+# For the fixed-list sync timestamp
+from datetime import datetime, timezone
+
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 
@@ -39,6 +51,23 @@ from fivetran_connector_sdk import Logging as log
 
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
+
+# Fixed-list mode configuration parsing, kept in its own module so the connector stays readable
+from models_config import (
+    KEY_SEPARATOR,
+    _optional_pause_seconds,
+    _parse_iso_date,
+    model_label,
+    parse_models,
+)
+
+# Fixed-list mode fetch, row shaping and state, kept in their own module for the same reason
+from fixed_list import (
+    build_state,
+    collect_model_rows,
+    create_list_session,
+    parse_report_date,
+)
 
 # API Configuration Constants
 __BASE_URL_NHTSA = "https://api.nhtsa.gov"
@@ -60,6 +89,11 @@ __DEFAULT_CORTEX_MODEL = "claude-sonnet-4-6"
 
 # Cortex Agent Configuration
 __CORTEX_AGENT_ENDPOINT = "/api/v2/cortex/inference:complete"
+__SNOWFLAKE_HOST_SUFFIX = ".snowflakecomputing.com"
+
+# Destination tables written in fixed-list mode
+__RECALLS_TABLE = "recalls"
+__VEHICLE_TABLE = "configured_vehicle"
 
 
 def _is_placeholder(value) -> bool:
@@ -118,6 +152,40 @@ def flatten_dict(d, parent_key="", sep="_"):
     return dict(items)
 
 
+def is_fixed_list_mode(configuration: dict) -> bool:
+    """
+    Fixed-list mode is on when `models` holds a value; unset, empty or a placeholder means seed mode.
+
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+
+    Returns:
+        True when the connector syncs the configured model list instead of a seed vehicle
+    """
+    models = configuration.get("models")
+    if models is None or _is_placeholder(models):
+        return False
+    return not (isinstance(models, str) and not models.strip())
+
+
+def validate_fixed_list_configuration(configuration: dict):
+    """
+    Validate the fixed-list mode parameters: the model list, the report-date window and the pause.
+
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+
+    Raises:
+        ValueError: if any fixed-list parameter is missing or invalid.
+    """
+    parse_models(configuration.get("models"))
+    date_from = _parse_iso_date(configuration.get("report_date_from"), "report_date_from")
+    date_to = _parse_iso_date(configuration.get("report_date_to"), "report_date_to")
+    if date_from > date_to:
+        raise ValueError("report_date_from must not be after report_date_to")
+    _optional_pause_seconds(configuration.get("request_pause_seconds"))
+
+
 def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure all required parameters are present and valid.
@@ -128,14 +196,18 @@ def validate_configuration(configuration: dict):
     Raises:
         ValueError: if any required configuration parameter is missing or invalid.
     """
+    if is_fixed_list_mode(configuration):
+        validate_fixed_list_configuration(configuration)
+        return
+
     required_configs = ["seed_make", "seed_model", "seed_year"]
     for key in required_configs:
-        if key not in configuration or not configuration[key]:
+        if not configuration.get(key) or _is_placeholder(configuration[key]):
             raise ValueError(f"Missing required configuration value: {key}")
 
-    # Validate numeric configuration values
+    # Validate numeric configuration values; an unset or placeholder value falls back to its default
     for key in ["discovery_depth", "max_discoveries", "max_enrichments"]:
-        if key in configuration:
+        if configuration.get(key) not in (None, "") and not _is_placeholder(configuration[key]):
             try:
                 value = int(configuration[key])
                 if value < 0:
@@ -159,22 +231,66 @@ def validate_configuration(configuration: dict):
             raise ValueError(
                 "snowflake_account must be a hostname (no scheme), " f"got: {snowflake_account}"
             )
-        if not snowflake_account.endswith("snowflakecomputing.com"):
-            raise ValueError("snowflake_account must end with 'snowflakecomputing.com'")
+        # Require the leading dot and a label before it, so a lookalike such as "evilsnowflakecomputing.com" fails
+        if snowflake_account == __SNOWFLAKE_HOST_SUFFIX[1:] or not snowflake_account.endswith(
+            __SNOWFLAKE_HOST_SUFFIX
+        ):
+            raise ValueError(
+                "snowflake_account must be a hostname ending in '.snowflakecomputing.com'"
+            )
 
 
 def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
+    if is_fixed_list_mode(configuration):
+        return [
+            {
+                "table": __RECALLS_TABLE,
+                "primary_key": ["nhtsa_campaign_number", "make", "model", "model_year"],
+                "columns": {
+                    "nhtsa_campaign_number": "STRING",
+                    "make": "STRING",
+                    "model": "STRING",
+                    "model_year": "INT",
+                    "nhtsa_make": "STRING",
+                    "nhtsa_model": "STRING",
+                    "manufacturer": "STRING",
+                    "component": "STRING",
+                    "summary": "STRING",
+                    "consequence": "STRING",
+                    "remedy": "STRING",
+                    "notes": "STRING",
+                    "report_received_date": "NAIVE_DATE",
+                    "park_it": "BOOLEAN",
+                    "park_outside": "BOOLEAN",
+                    "over_the_air_update": "BOOLEAN",
+                },
+            },
+            {
+                "table": __VEHICLE_TABLE,
+                "primary_key": ["make", "model", "model_year"],
+                "columns": {
+                    "make": "STRING",
+                    "model": "STRING",
+                    "model_year": "INT",
+                    "nhtsa_model": "STRING",
+                    "campaigns_returned": "INT",
+                    "last_synced_at": "UTC_DATETIME",
+                },
+            },
+        ]
+
     return [
         {
             "table": "recalls",
             "primary_key": ["nhtsa_campaign_number", "make", "model", "model_year"],
+            "columns": {"report_received_date": "NAIVE_DATE"},
         },
         {"table": "complaints", "primary_key": ["odi_number"]},
         {"table": "vehicle_specs", "primary_key": ["make_id", "model_id"]},
@@ -233,7 +349,7 @@ def fetch_data_with_retry(session, url, params=None, headers=None):
                 )
                 time.sleep(delay_seconds)
             else:
-                log.severe(f"Connection failed after {__MAX_RETRIES} attempts: {url}")
+                log.error(f"Connection failed after {__MAX_RETRIES} attempts: {url}")
                 raise RuntimeError(f"Connection failed after {__MAX_RETRIES} attempts: {e}") from e
 
         except requests.exceptions.Timeout as e:
@@ -245,7 +361,7 @@ def fetch_data_with_retry(session, url, params=None, headers=None):
                 )
                 time.sleep(delay_seconds)
             else:
-                log.severe(f"Timeout after {__MAX_RETRIES} attempts: {url}")
+                log.error(f"Timeout after {__MAX_RETRIES} attempts: {url}")
                 raise RuntimeError(f"Timeout after {__MAX_RETRIES} attempts: {e}") from e
 
         except requests.exceptions.RequestException as e:
@@ -261,7 +377,7 @@ def fetch_data_with_retry(session, url, params=None, headers=None):
                     f"HTTP {status_code}: Check your API credentials "
                     f"and permissions. URL: {url}"
                 )
-                log.severe(msg)
+                log.error(msg)
                 raise RuntimeError(msg) from e
 
             should_retry = status_code in __RETRYABLE_STATUS_CODES
@@ -276,7 +392,7 @@ def fetch_data_with_retry(session, url, params=None, headers=None):
                 time.sleep(delay_seconds)
             else:
                 attempts = attempt + 1
-                log.severe(
+                log.error(
                     f"Request failed after {attempts} attempt(s). "
                     f"URL: {url}, Status: {status_code or 'N/A'}, "
                     f"Error: {str(e)}"
@@ -377,6 +493,10 @@ def upsert_recalls(recalls, make, model, year, source_label):
             log.warning("Skipping recall record without NHTSACampaignNumber")
             continue
 
+        # The API sends ReportReceivedDate as DD/MM/YYYY; write it as an ISO date so the column is a NAIVE_DATE.
+        # An unparseable value is written as NULL rather than dropping the recall.
+        reported = parse_report_date(record.get("ReportReceivedDate"))
+
         # Normalize field names to snake_case for warehouse compatibility
         normalized = {
             "nhtsa_campaign_number": campaign_number,
@@ -389,7 +509,7 @@ def upsert_recalls(recalls, make, model, year, source_label):
             "consequence": record.get("Consequence"),
             "remedy": record.get("Remedy"),
             "notes": record.get("Notes"),
-            "report_received_date": record.get("ReportReceivedDate"),
+            "report_received_date": reported.isoformat() if reported else None,
             "park_it": record.get("parkIt"),
             "park_outside": record.get("parkOutSide"),
             "over_the_air_update": record.get("overTheAirUpdate"),
@@ -747,7 +867,7 @@ def call_cortex_agent(configuration, prompt, cortex_session=None):
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code if e.response is not None else None
             if status_code in (401, 403):
-                log.severe(f"Cortex Agent auth error {status_code}: check PAT token")
+                log.error(f"Cortex Agent auth error {status_code}: check PAT token")
                 return None
             if status_code in __RETRYABLE_STATUS_CODES and attempt < __MAX_RETRIES - 1:
                 delay = __BASE_DELAY_SECONDS * (2**attempt)
@@ -1071,11 +1191,196 @@ def run_synthesis_phase(
     )
 
 
+def _delete_recall_rows(label: str, row_keys) -> int:
+    """
+    Delete the recalls rows for one configured model whose keys a fixed-list sync no longer returns.
+
+    Args:
+        label: the model's "make|model" state key
+        row_keys: "campaign|model_year" keys to delete
+
+    Returns:
+        the number of rows deleted
+    """
+    make, model = label.split(KEY_SEPARATOR, 1)
+    deleted = 0
+    for key in sorted(row_keys):
+        campaign, model_year = key.rsplit(KEY_SEPARATOR, 1)
+        # The 'delete' operation is used to mark a row as deleted in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary holding the primary key values of the row to delete.
+        op.delete(
+            table=__RECALLS_TABLE,
+            keys={
+                "nhtsa_campaign_number": campaign,
+                "make": make,
+                "model": model,
+                "model_year": int(model_year),
+            },
+        )
+        deleted += 1
+    return deleted
+
+
+def upsert_vehicle_rows(model: dict, rows: dict, synced_at: str):
+    """
+    Write one configured_vehicle row per configured model year of one model.
+
+    Args:
+        model: a parsed model entry
+        rows: that model's recalls rows keyed by "campaign|model_year"
+        synced_at: UTC timestamp of this sync
+    """
+    campaigns_by_year = {}
+    for row in rows.values():
+        campaigns_by_year[row["model_year"]] = campaigns_by_year.get(row["model_year"], 0) + 1
+    for model_year in model["years"]:
+        # The 'upsert' operation is used to insert or update data in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary containing the record to be upserted.
+        op.upsert(
+            table=__VEHICLE_TABLE,
+            data={
+                "make": model["make"],
+                "model": model["model"],
+                "model_year": model_year,
+                "nhtsa_model": model["nhtsa_model"],
+                "campaigns_returned": campaigns_by_year.get(model_year, 0),
+                "last_synced_at": synced_at,
+            },
+        )
+
+
+def _delete_vehicle_rows(label: str, model_years) -> int:
+    """
+    Delete the configured_vehicle rows for model years of one model that are no longer configured.
+
+    Args:
+        label: the model's "make|model" state key
+        model_years: the model years to delete
+
+    Returns:
+        the number of rows deleted
+    """
+    make, model = label.split(KEY_SEPARATOR, 1)
+    for model_year in sorted(model_years):
+        # The 'delete' operation is used to mark a row as deleted in the destination table.
+        # The first argument is the name of the destination table.
+        # The second argument is a dictionary holding the primary key values of the row to delete.
+        op.delete(
+            table=__VEHICLE_TABLE,
+            keys={"make": make, "model": model, "model_year": int(model_year)},
+        )
+    return len(model_years)
+
+
+def sync_fixed_list(configuration: dict, state: dict):
+    """
+    Fixed-list mode: sync every configured make x model x model year, one checkpoint per model.
+
+    The recalls API has no pagination and no incremental filter, so every sync re-reads the configured vehicles.
+    An interrupted sync resumes at the next model, and rows a later sync no longer returns are deleted.
+
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: the state from the previous sync; empty for the first sync or a full re-sync
+    """
+    models = parse_models(configuration.get("models"))
+    date_from = _parse_iso_date(configuration.get("report_date_from"), "report_date_from")
+    date_to = _parse_iso_date(configuration.get("report_date_to"), "report_date_to")
+    pause_seconds = _optional_pause_seconds(configuration.get("request_pause_seconds"))
+
+    synced_keys = dict(state.get("synced_keys") or {})
+    synced_years = dict(state.get("synced_years") or {})
+    last_completed_sync = state.get("last_completed_sync")
+    labels = [model_label(m) for m in models]
+    resume_from = state.get("next_model")
+    start_index = labels.index(resume_from) if resume_from in labels else 0
+    log.info(
+        f"Fixed-list mode: {len(models)} models, report dates {date_from} to {date_to}, "
+        f"starting at model {start_index + 1} ({labels[start_index]})"
+    )
+
+    if not state:
+        # An empty state is the first sync or a full re-sync, and a re-sync keeps every destination row, so rows that
+        # left the filter earlier would never be deleted. Truncating marks every existing row deleted; the pass below
+        # upserts the rows that still match, so the destination ends equal to the filter.
+        log.info("Empty state: truncating both tables before the full pass")
+        op.truncate(table=__RECALLS_TABLE)
+        op.truncate(table=__VEHICLE_TABLE)
+
+    synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    totals = {"upserted": 0, "deleted": 0, "skipped": 0}
+    session = create_list_session()
+    try:
+        for index in range(start_index, len(models)):
+            model = models[index]
+            label = labels[index]
+            rows, skipped = collect_model_rows(session, model, date_from, date_to, pause_seconds)
+            for key in sorted(rows):
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
+                op.upsert(table=__RECALLS_TABLE, data=rows[key])
+            totals["deleted"] += _delete_recall_rows(
+                label, set(synced_keys.get(label, [])) - set(rows)
+            )
+            upsert_vehicle_rows(model, rows, synced_at)
+            totals["deleted"] += _delete_vehicle_rows(
+                label, set(synced_years.get(label, [])) - set(model["years"])
+            )
+            totals["upserted"] += len(rows)
+            totals["skipped"] += skipped
+            synced_keys[label] = sorted(rows)
+            synced_years[label] = list(model["years"])
+            next_model = labels[index + 1] if index + 1 < len(models) else None
+            log.debug(f"{label}: {len(rows)} rows across {len(model['years'])} model years")
+
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+            op.checkpoint(
+                state=build_state(
+                    next_model or labels[0],
+                    synced_keys,
+                    synced_years,
+                    last_completed_sync,
+                )
+            )
+    finally:
+        session.close()
+
+    # A full pass is complete: remove rows for models no longer in the configured list.
+    for label in sorted(set(synced_keys) - set(labels)):
+        totals["deleted"] += _delete_recall_rows(label, synced_keys.pop(label))
+    for label in sorted(set(synced_years) - set(labels)):
+        totals["deleted"] += _delete_vehicle_rows(label, synced_years.pop(label))
+    if totals["skipped"]:
+        message = f"Skipped {totals['skipped']} API results with no campaign number or an unparseable report date."
+        log.warning(message)
+        # Surface the skip count as a sync warning in the Fivetran dashboard, not only in the logs.
+        op.warning(message)
+    log.info(
+        f"Fixed-list sync complete: {totals['upserted']} rows upserted, {totals['deleted']} deleted"
+    )
+
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+    op.checkpoint(state=build_state(None, synced_keys, synced_years, synced_at))
+
+
 def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
@@ -1087,11 +1392,17 @@ def update(configuration: dict, state: dict):
 
     validate_configuration(configuration)
 
+    if is_fixed_list_mode(configuration):
+        sync_fixed_list(configuration, state)
+        return
+
     seed_make = configuration.get("seed_make")
     seed_model = configuration.get("seed_model")
     seed_year = configuration.get("seed_year")
     is_cortex_enabled = _parse_bool(configuration.get("enable_cortex"), default=False)
-    discovery_depth = int(configuration.get("discovery_depth", str(__DEFAULT_DISCOVERY_DEPTH)))
+    discovery_depth = _optional_int(
+        configuration.get("discovery_depth"), __DEFAULT_DISCOVERY_DEPTH
+    )
 
     session = create_session()
 
@@ -1189,8 +1500,7 @@ def update(configuration: dict, state: dict):
 connector = Connector(update=update, schema=schema)
 
 # Check if the script is being run as the main module.
-# This is Python's standard entry method allowing your script to be run directly from the command
-# line or IDE 'run' button.
+# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
 #
 # IMPORTANT: The recommended way to test your connector is using the Fivetran debug command:
 #   fivetran debug

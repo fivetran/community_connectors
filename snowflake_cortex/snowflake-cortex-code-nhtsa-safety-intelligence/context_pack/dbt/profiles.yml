@@ -1,0 +1,30 @@
+# Run dbt from this dbt/ directory with --profiles-dir ., so the relative paths below resolve from here.
+# On the dbt platform this file is not used: the project's connection and environments replace it.
+nhtsa_recalls_context:
+  target: local
+  outputs:
+    # The connector's local debug warehouse, attached read-only. `fivetran debug`, run in list mode from the sibling
+    # connector/ directory, writes it to connector/files/warehouse.db. Set NHTSA_WAREHOUSE to read a copy somewhere else.
+    # Sources: nhtsa_wh.tester.recalls and nhtsa_wh.tester.configured_vehicle. The models build into
+    # nhtsa_local.duckdb, or into NHTSA_LOCAL_DB when it is set.
+    local:
+      type: duckdb
+      path: "{{ env_var('NHTSA_LOCAL_DB', 'nhtsa_local.duckdb') }}"
+      schema: nhtsa
+      threads: 4
+      attach:
+        - path: "{{ env_var('NHTSA_WAREHOUSE', '../../connector/files/warehouse.db') }}"
+          alias: nhtsa_wh
+          read_only: true
+    # Snowflake with key-pair authentication. Every value comes from the environment; nothing secret lives here.
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'NHTSA') }}"
+      threads: 4

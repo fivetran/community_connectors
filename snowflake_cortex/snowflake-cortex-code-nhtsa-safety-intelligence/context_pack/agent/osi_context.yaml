@@ -1,0 +1,77 @@
+# AI context for the pack's OSI model, merged by scripts/publish_agents_schema.py osi into the model that
+# metricflow's MSI-to-OSI converter builds from the dbt Semantic Layer. Rules and synonyms only: no counts, which
+# change with every sync. Every metric and dataset named here must exist in the semantic manifest.
+model:
+  instructions: >-
+    Definitions only. Every count comes from the dbt Semantic Layer (query_metrics), never from running these
+    expressions yourself. A recall means a campaign: count campaigns with campaign_count, never rows. Name the
+    report-date window (first_report_date to last_report_date) in every answer. A null park_it, park_outside or
+    over_the_air_update flag is unknown, never false.
+
+datasets:
+  nhtsa_recall:
+    synonyms: [recall rows, campaign by vehicle, affected vehicles]
+    instructions: >-
+      One row per campaign per configured make, model and model year. Filter on model (the configured name), not
+      nhtsa_model. Group components on component_group, not component.
+  nhtsa_campaign:
+    synonyms: [campaigns, recalls, recall campaigns]
+    instructions: >-
+      One row per campaign. makes and models are comma-separated lists for reading; filter on make through
+      nhtsa_recall.
+  nhtsa_model_coverage:
+    synonyms: [configured models, model coverage]
+    instructions: >-
+      One row per configured make and model. The only dataset that proves a configured model had no campaigns.
+
+metrics:
+  campaign_count:
+    synonyms: [recalls, number of recalls, recall count, recall campaigns]
+    instructions: >-
+      The answer to every "how many recalls" question. Never add it across model years or models: a campaign
+      that covers several of them would count more than once.
+  affected_vehicle_rows:
+    synonyms: [affected vehicles, vehicle rows, covered vehicles]
+    instructions: >-
+      Not a recall count. Use it only when the question asks how many configured vehicles (make, model, model
+      year) the campaigns cover.
+  park_it_campaigns:
+    synonyms: [do not drive, park it, do-not-drive recalls]
+    instructions: Campaigns where NHTSA advises not driving the vehicle. Group by campaign to list them.
+  park_outside_campaigns:
+    synonyms: [park outside, fire risk recalls, park-outside recalls]
+    instructions: >-
+      Campaigns where NHTSA advises parking outside, usually a fire risk. For fire risk in general, also search
+      the campaign text.
+  over_the_air_campaigns:
+    synonyms: [OTA, over the air, over-the-air recalls, software update recalls]
+    instructions: >-
+      Counts only campaigns NHTSA flagged as over the air. The flag is narrower than the text: some remedies
+      delivered over the air carry the flag false. Say it is NHTSA's flag, and search the campaign text for
+      over-the-air remedies in general.
+  multi_model_campaigns:
+    synonyms: [campaigns covering several models, shared recalls]
+    instructions: >-
+      Campaigns that cover more than one configured model. Summing per-model campaign counts double-counts each
+      of these.
+  first_report_date:
+    synonyms: [window start, earliest report date]
+    instructions: >-
+      Query it on its own with last_report_date (the report_window saved query). It has no join path to the
+      recall_row dimensions.
+  last_report_date:
+    synonyms: [window end, latest report date]
+    instructions: >-
+      Query it on its own with first_report_date (the report_window saved query). It has no join path to the
+      recall_row dimensions.
+  configured_models:
+    synonyms: [models configured, vehicles configured]
+    instructions: Make and model pairs the connector is configured to query, across all their model years.
+  models_with_campaigns:
+    synonyms: [models with recalls]
+    instructions: Configured models with at least one campaign in the window.
+  models_without_campaigns:
+    synonyms: [models with no recalls, recall-free models]
+    instructions: >-
+      Configured models with no campaign in the window. The only proof of absence: a model missing from another
+      result is not evidence that it had none.
