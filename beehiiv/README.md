@@ -1,3 +1,9 @@
+---
+name: Beehiiv
+description: Sync newsletter data from the beehiiv API, including publications, subscriptions, posts, email blasts, automations, and engagement metrics
+category: SaaS & APIs
+---
+
 # Beehiiv Connector Example
 
 ## Connector overview

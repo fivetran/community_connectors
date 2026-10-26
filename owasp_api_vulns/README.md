@@ -1,3 +1,9 @@
+---
+name: OWASP API Vulnerabilities
+description: Sync OWASP API vulnerability data from NVD 2.0
+category: SaaS & APIs
+---
+
 # OWASP API Vulnerabilities Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: S3 CSV File Reader with Data Validation
+description: Read and validate CSV files from Amazon S3
+category: SaaS & APIs
+---
+
 # S3 CSV File Reader with Data Validation Connector Example
 
 ## Connector overview

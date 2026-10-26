@@ -1,3 +1,9 @@
+---
+name: IBM Informix (ibm_db)
+description: Sync data from IBM Informix using the `ibm_db` library.
+category: Databases
+---
+
 # IBM Informix using ibm_db Connector Example
 
 ## Connector overview

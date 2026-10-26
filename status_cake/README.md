@@ -1,3 +1,9 @@
+---
+name: StatusCake
+description: Sync uptime monitoring from StatusCake
+category: SaaS & APIs
+---
+
 # StatusCake Uptime Monitoring Connector Example
 
 ## Connector overview

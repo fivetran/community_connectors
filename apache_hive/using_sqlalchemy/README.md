@@ -1,3 +1,9 @@
+---
+name: Apache Hive (SQLAlchemy)
+description: Sync data from Apache Hive using SQLAlchemy with PyHive
+category: Databases
+---
+
 # Apache Hive Connector Example
 
 ## Connector overview

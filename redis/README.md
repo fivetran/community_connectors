@@ -1,3 +1,9 @@
+---
+name: Redis
+description: Sync gaming leaderboards and player statistics from Redis
+category: Databases
+---
+
 # Redis Connector Example
 
 ## Connector overview

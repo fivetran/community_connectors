@@ -1,3 +1,9 @@
+---
+name: Weights & Biases
+description: Sync machine learning experiment tracking data from Weights & Biases, including projects, runs, and artifacts.
+category: SaaS & APIs
+---
+
 # Weights & Biases Connector Example
 
 ## Connector overview

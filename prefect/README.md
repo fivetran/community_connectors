@@ -1,3 +1,9 @@
+---
+name: Prefect Cloud
+description: Sync workflow orchestration data from Prefect Cloud
+category: SaaS & APIs
+---
+
 # Prefect Cloud Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Fleetio
+description: Sync fleet management data from Fleetio
+category: SaaS & APIs
+---
+
 # Fleetio Connector Example
 
 ## Connector overview

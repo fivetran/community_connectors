@@ -1,3 +1,9 @@
+---
+name: Docusign eSignature
+description: Sync data from Docusign eSignature API
+category: SaaS & APIs
+---
+
 # Docusign eSignature Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Apache Pulsar
+description: Fetch data from Apache Pulsar topics with Reader API
+category: Message Queues & Streaming
+---
+
 # Apache Pulsar Connector Example
 
 ## Connector overview

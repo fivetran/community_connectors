@@ -1,3 +1,9 @@
+---
+name: Awardco
+description: Sync data from Awardco rewards platform
+category: SaaS & APIs
+---
+
 # Awardco Users Connector Example
 
 Awardco is an employee recognition platform. The Awardco API typically exposes RESTful JSON endpoints to manage resources such as users and recognition-related entities.

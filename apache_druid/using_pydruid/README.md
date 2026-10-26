@@ -1,3 +1,9 @@
+---
+name: Apache Druid (PyDruid)
+description: Sync data from Apache Druid using the PyDruid library with native query capabilities, retry logic, and optimized data retrieval.
+category: Databases
+---
+
 # Apache Druid Connector Example
 
 ## Connector overview

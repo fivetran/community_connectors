@@ -1,3 +1,9 @@
+---
+name: Databricks Best Buy Retail Intelligence
+description: Sync Best Buy product catalog data and enrich it with Databricks `ai_query()` retail intelligence for pricing, positioning, and sentiment analysis.
+category: AI and Connector SDK
+---
+
 # Databricks Best Buy Retail Intelligence Connector Example
 
 ## Connector overview

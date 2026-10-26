@@ -1,3 +1,9 @@
+---
+name: BAI2 SFTP
+description: Fetch BAI2-format cash management files from an SFTP server and load all transactions into a single destination table with incremental sync and structured ACH field parsing
+category: SaaS & APIs
+---
+
 # BAI2 SFTP Connector Example
 
 Fivetran custom connector that fetches BAI2-format cash management files from an SFTP server and loads all transactions into a single `bai2_transactions` table in your destination.

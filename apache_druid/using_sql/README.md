@@ -1,3 +1,9 @@
+---
+name: Apache Druid (SQL API)
+description: Sync data from Apache Druid using Druid's SQL API with time-based pagination and incremental sync.
+category: Databases
+---
+
 # Apache Druid Connector Example
 
 ## Connector overview

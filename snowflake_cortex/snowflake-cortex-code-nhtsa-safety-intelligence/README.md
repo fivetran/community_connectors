@@ -1,3 +1,9 @@
+---
+name: Snowflake Cortex NHTSA Safety Intelligence
+description: Sync NHTSA recalls, complaints, and vehicle specs, then use Snowflake Cortex Agent for vehicle safety discovery and analysis.
+category: AI and Connector SDK
+---
+
 # Snowflake Cortex Code NHTSA Safety Intelligence Connector Example
 
 ## Connector overview

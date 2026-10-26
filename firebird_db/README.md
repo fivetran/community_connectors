@@ -1,3 +1,9 @@
+---
+name: Firebird
+description: Sync data from Firebird DB
+category: Databases
+---
+
 # Firebird Database Connector
 
 ## Connector overview

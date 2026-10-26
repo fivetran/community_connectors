@@ -1,3 +1,9 @@
+---
+name: Redshift (Using UNLOAD)
+description: Sync data from Redshift using UNLOAD to S3
+category: Cloud Data Warehouses
+---
+
 # Redshift Using UNLOAD Connector Example
 
 ## Connector overview

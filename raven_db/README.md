@@ -1,3 +1,9 @@
+---
+name: RavenDB
+description: Sync document data from RavenDB NoSQL database
+category: Databases
+---
+
 # RavenDB Connector Example
 
 ## Connector overview

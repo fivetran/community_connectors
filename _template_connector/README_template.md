@@ -1,6 +1,14 @@
+---
+name: <Source name, for example GitHub>
+description: <One-sentence description of what the connector syncs>
+category: <One of: Databases, Cloud Data Warehouses, Message Queues & Streaming, AI and Connector SDK, SaaS & APIs>
+---
+
 # Connector SDK Individual Example README.md Structure Template
 
 *Instructions: Every example added to the repository should have a comprehensive README.md to make it easy for users landing directly on the README to understand what the example does, how to configure it for their own use, and how to find more information about working with Connector SDK.*
+
+*The README.md must start with the frontmatter block above. The Fivetran docs community connectors catalog is generated from it, and the README frontmatter check validates it. Use the same name, description, and category as the connector's entry in the root `README.md`.*
 
 *For source examples, the top-level (H1) heading must be in the following format: "# <source-name> Connector Example" (e.g. "# GitHub Connector Example").*
 

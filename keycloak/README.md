@@ -1,3 +1,9 @@
+---
+name: Keycloak
+description: Sync IAM data from Keycloak Admin API
+category: SaaS & APIs
+---
+
 # Keycloak Connector Example
 
 ## Connector overview

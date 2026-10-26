@@ -1,3 +1,9 @@
+---
+name: Customer Thermometer
+description: Sync customer feedback from Customer Thermometer
+category: SaaS & APIs
+---
+
 # Customer Thermometer API Connector Example
 
 ## Connector overview

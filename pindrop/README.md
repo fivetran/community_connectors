@@ -1,3 +1,9 @@
+---
+name: Pindrop
+description: Sync nightly report data from Pindrop
+category: SaaS & APIs
+---
+
 # Pindrop Connector SDK Example
 
 ## Connector overview

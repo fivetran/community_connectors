@@ -1,3 +1,9 @@
+---
+name: Delta Sharing
+description: 'Connect and sync data from Databricks Delta Sharing (now OpenSharing): An Open Protocol for Secure Data Sharing'
+category: Cloud Data Warehouses
+---
+
 # Delta Sharing Connector Example
 
 A Fivetran Connector SDK connector that syncs data from any [Delta Sharing](https://delta.io/sharing)-compatible server into your Fivetran destination.

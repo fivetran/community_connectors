@@ -1,3 +1,9 @@
+---
+name: DataCamp
+description: Sync course catalog from DataCamp LMS
+category: SaaS & APIs
+---
+
 # DataCamp LMS Catalog API Connector Example
 
 ## Connector overview

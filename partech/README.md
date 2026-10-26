@@ -1,3 +1,9 @@
+---
+name: Partech (Punchh)
+description: Sync POS data from Partech (formerly Punchh)
+category: SaaS & APIs
+---
+
 # Partech (Punchh) POS API Connector Example
 
 ## Connector overview

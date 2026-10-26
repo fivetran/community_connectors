@@ -1,3 +1,9 @@
+---
+name: SharePoint Multi-Site
+description: Sync CSV and Excel file data from multiple SharePoint Online sites using the Microsoft Graph API, with support for multi-sheet workbooks, recursive folder traversal, and deletion handling.
+category: SaaS & APIs
+---
+
 # SharePoint Multi-Site Connector Example
 
 ## Connector overview

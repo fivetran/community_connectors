@@ -1,3 +1,9 @@
+---
+name: MailerLite
+description: Sync email marketing data from MailerLite
+category: SaaS & APIs
+---
+
 # MailerLite Connector Example
 
 ## Connector overview

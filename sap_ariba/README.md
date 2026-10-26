@@ -1,3 +1,9 @@
+---
+name: SAP Ariba
+description: Sync procurement data from SAP Ariba
+category: SaaS & APIs
+---
+
 # SAP Ariba Purchase Orders Connector Example
 
 ## Connector overview

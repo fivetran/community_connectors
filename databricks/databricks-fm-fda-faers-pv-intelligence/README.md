@@ -1,3 +1,9 @@
+---
+name: Databricks FDA FAERS Pharmacovigilance Intelligence
+description: Sync FDA FAERS adverse event reports and enrich serious events with Databricks `ai_query()` pharmacovigilance debate analysis.
+category: AI and Connector SDK
+---
+
 # Databricks FDA FAERS Pharmacovigilance Intelligence Connector Example
 
 ## Connector overview

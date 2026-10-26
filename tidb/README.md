@@ -1,3 +1,9 @@
+---
+name: TiDB
+description: Sync data incrementally from TiDB databases
+category: Databases
+---
+
 # TiDB Connector Example
 
 ## Connector overview

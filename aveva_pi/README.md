@@ -1,3 +1,9 @@
+---
+name: AVEVA PI
+description: Sync asset hierarchy and time-series data from AVEVA PI (formerly OSIsoft PI) via PI Web API
+category: Databases
+---
+
 # AVEVA PI Connector SDK Connector Example
 
 ## Connector overview

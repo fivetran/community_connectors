@@ -1,3 +1,9 @@
+---
+name: Microsoft Intune
+description: Retrieve managed devices from Microsoft Intune
+category: SaaS & APIs
+---
+
 # Microsoft Intune Connector Example
 
 ## Connector overview

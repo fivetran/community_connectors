@@ -1,3 +1,9 @@
+---
+name: YugabyteDB
+description: Sync data from YugabyteDB distributed SQL database
+category: Databases
+---
+
 # YugabyteDB Connector Example
 
 ## Connector overview

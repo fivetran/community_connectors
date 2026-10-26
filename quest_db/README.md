@@ -1,3 +1,9 @@
+---
+name: QuestDB
+description: Sync high-performance time series data from QuestDB
+category: Databases
+---
+
 # QuestDB Connector Example
 
 ## Connector overview

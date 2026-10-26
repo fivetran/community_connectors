@@ -1,3 +1,9 @@
+---
+name: Accelo
+description: Sync data from Accelo API with OAuth 2.0 and multithreading
+category: SaaS & APIs
+---
+
 # Accelo API Connector Example
 
 ## Connector overview

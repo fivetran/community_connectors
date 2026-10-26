@@ -1,3 +1,9 @@
+---
+name: EHI (Simple)
+description: Sync EHI tables such as Caboodle from Microsoft SQL Server.
+category: Databases
+---
+
 # Simple EHI Connector Example
 
 ## Connector overview
