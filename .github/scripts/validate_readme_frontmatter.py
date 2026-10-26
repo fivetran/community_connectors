@@ -39,6 +39,12 @@ EXCLUDED_DIRS = {
     "odata_api/odata_version_4_using_python_odata",
 }
 
+# Parent directories without connector.py that are listed in the catalog. Their README.md is
+# required even without frontmatter, so removing it cannot drop the entry unnoticed.
+PARENT_ENTRY_DIRS = {
+    "odata_api",
+}
+
 FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 
 
@@ -83,12 +89,13 @@ def main() -> int:
         for path in root.rglob("connector.py")
         if ".git" not in path.parts and path.parent.as_posix() not in EXCLUDED_DIRS
     }
+    parent_readmes = {root / parent_dir / "README.md" for parent_dir in PARENT_ENTRY_DIRS}
     readmes_with_frontmatter = {
         path
         for path in root.rglob("README.md")
         if ".git" not in path.parts and path.read_text(encoding="utf-8").startswith("---")
     }
-    readmes = sorted(connector_readmes | readmes_with_frontmatter)
+    readmes = sorted(connector_readmes | parent_readmes | readmes_with_frontmatter)
 
     failed = False
     for readme in readmes:
