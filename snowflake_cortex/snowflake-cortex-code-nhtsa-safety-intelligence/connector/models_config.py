@@ -125,6 +125,19 @@ def _parse_model_entry(entry, index: int, max_model_year: int) -> dict:
     return parsed
 
 
+def _folded(text: str) -> str:
+    """
+    Fold a configured name for comparison: case-insensitive, with runs of whitespace read as one space.
+
+    Args:
+        text: a make, a model label, or a make and model joined by a space
+
+    Returns:
+        the folded text
+    """
+    return " ".join(text.split()).casefold()
+
+
 def parse_models(raw) -> list:
     """
     Decode and validate the `models` configuration value.
@@ -151,14 +164,14 @@ def parse_models(raw) -> list:
     max_model_year = datetime.now(timezone.utc).year + __MAX_MODEL_YEAR_AHEAD
     models = [_parse_model_entry(entry, i, max_model_year) for i, entry in enumerate(decoded)]
     # The API matches make and model case-insensitively, so "Toyota|Camry" and "TOYOTA|CAMRY" are the same vehicle
-    labels = [model_label(m).casefold() for m in models]
+    labels = [_folded(model_label(m)) for m in models]
     duplicates = sorted({label for label in labels if labels.count(label) > 1})
     if duplicates:
         raise ValueError(f"models lists the same make and model more than once: {duplicates}")
     # The make is a group-by and filter value downstream, where "Toyota" and "toyota" would be two makes
     spellings = {}
     for m in models:
-        spellings.setdefault(m["make"].casefold(), set()).add(m["make"])
+        spellings.setdefault(_folded(m["make"]), set()).add(m["make"])
     conflicts = sorted(sorted(names) for names in spellings.values() if len(names) > 1)
     if conflicts:
         raise ValueError(
@@ -166,7 +179,7 @@ def parse_models(raw) -> list:
         )
     # The context pack labels a model "<make> <model>", so "Alfa" + "Romeo Giulia" and "Alfa Romeo" + "Giulia" would
     # be one label for two configured models
-    joined = [f"{m['make']} {m['model']}".casefold() for m in models]
+    joined = [_folded(f"{m['make']} {m['model']}") for m in models]
     collisions = sorted({label for label in joined if joined.count(label) > 1})
     if collisions:
         raise ValueError(

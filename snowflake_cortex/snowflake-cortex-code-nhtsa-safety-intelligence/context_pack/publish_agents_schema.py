@@ -203,10 +203,10 @@ def fetch(args: argparse.Namespace) -> None:
     semantic = admin_api(env, f"/runs/{args.run_id}/artifacts/semantic_manifest.json")
     # publish replaces every DBT_* and OSI_* table, so an artifact that describes nothing would empty them.
     nodes = manifest.get("nodes") if isinstance(manifest, dict) else None
+    if not isinstance(nodes, dict):
+        nodes = {}
     models = [
-        n
-        for n in (nodes or {}).values()
-        if isinstance(n, dict) and n.get("resource_type") == "model"
+        n for n in nodes.values() if isinstance(n, dict) and n.get("resource_type") == "model"
     ]
     if not models:
         sys.exit(f"run {args.run_id}: manifest.json has no models; nothing was written")
@@ -407,10 +407,14 @@ def compile_metric_sql(env: dict[str, str], metric_names: list[str]) -> dict[str
             sys.exit(f"compileSql {name}: the response is not JSON ({url})")
         if not isinstance(payload, dict):
             sys.exit(f"compileSql {name}: the response is not a JSON object")
-        if payload.get("errors"):
-            sys.exit(f"compileSql {name}: {payload['errors'][0].get('message')}")
-        result = (payload.get("data") or {}).get("compileSql") or {}
-        if not isinstance(result.get("sql"), str):
+        errors = payload.get("errors")
+        if errors:
+            first = errors[0] if isinstance(errors, list) else errors
+            message = first.get("message") if isinstance(first, dict) else first
+            sys.exit(f"compileSql {name}: {message}")
+        data = payload.get("data")
+        result = data.get("compileSql") if isinstance(data, dict) else None
+        if not isinstance(result, dict) or not isinstance(result.get("sql"), str):
             sys.exit(f"compileSql {name}: the response has no compiled SQL")
         compiled[name] = result["sql"]
     return compiled

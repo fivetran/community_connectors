@@ -1,6 +1,8 @@
 -- One row: the report dates the answers come from and the sync that produced them. Every answer names this window.
 -- first_report_date and last_report_date are the dates observed in the data, which sit inside the connector's
--- configured report_date_from and report_date_to and are usually narrower. An absence answer ("no campaigns") holds
+-- configured report_date_from and report_date_to and are usually narrower. The exception is a tracked campaign the
+-- connector kept because NHTSA's record for it could not be read: its last readable date may fall outside a window
+-- that has since changed. An absence answer ("no campaigns") holds
 -- for the configured window, which this model does not carry (README, Limitations).
 
 with campaign_window as (

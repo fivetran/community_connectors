@@ -23,9 +23,8 @@ __API_TIMEOUT_SECONDS = 30
 __MAX_RETRIES = 3
 __BASE_DELAY_SECONDS = 2
 __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
-__UNKNOWN_VEHICLE_STATUS_CODE = (
-    400  # the API answers 400, not an empty list, for a vehicle it does not know
-)
+# The API answers 400, not an empty list, for a vehicle year it lists no recalls for, known or not
+__UNKNOWN_VEHICLE_STATUS_CODE = 400
 # A protected-key campaign placeholder meaning "every campaign of this model year"
 __YEAR_MARKER = "*"
 __REPORT_DATE_FORMAT = "%d/%m/%Y"
@@ -145,13 +144,15 @@ def create_list_session() -> requests.Session:
 
 
 class UnknownVehicle(list):
-    """The empty result of a call NHTSA answered with its unknown-vehicle body, so a caller can tell it from a
-    vehicle NHTSA knows and lists no campaigns for (a misspelled nhtsa_model looks like this)."""
+    """The empty result of a call NHTSA answered with its 400 no-recalls body. NHTSA sends that body both for a
+    vehicle year it lists no recalls for and for a vehicle it does not know, such as a misspelled nhtsa_model, so
+    the two cannot be told apart; a caller can still tell this answer from a 200 with an empty list.
+    """
 
 
 def _is_unknown_vehicle_body(response: requests.Response) -> bool:
     """
-    Check that a 400 carries the body NHTSA sends for a vehicle it does not know.
+    Check that a 400 carries the body NHTSA sends for a vehicle year with no recalls, or a vehicle it does not know.
 
     Args:
         response: the HTTP 400 response
@@ -184,11 +185,11 @@ def fetch_vehicle_recalls(
         model_year: the model year
 
     Returns:
-        the API's `results` list; an empty UnknownVehicle when the API does not know the vehicle
+        the API's `results` list; an empty UnknownVehicle when the API answered with its 400 no-recalls body
 
     Raises:
         RuntimeError: when the request still fails after the retries, fails with a non-retryable status, answers
-            400 without NHTSA's unknown-vehicle body, or returns a body that is not a JSON object with a list
+            400 without NHTSA's no-recalls body, or returns a body that is not a JSON object with a list
             `results` (a missing or null `results` passes only with a Count of 0)
     """
     params = {"make": make, "model": nhtsa_model, "modelYear": model_year}
@@ -217,7 +218,7 @@ def fetch_vehicle_recalls(
             # Any other 400 (an edge or WAF page, a changed API) is not proof the vehicle has no campaigns, and an
             # empty result here would make reconciliation delete the vehicle's tracked campaigns.
             raise RuntimeError(
-                f"{make} {nhtsa_model} {model_year}: HTTP 400 without NHTSA's unknown-vehicle body: "
+                f"{make} {nhtsa_model} {model_year}: HTTP 400 without NHTSA's no-recalls body: "
                 f"{response.text[:200]}"
             )
         if response.status_code in __RETRYABLE_STATUS_CODES:
@@ -240,8 +241,9 @@ def fetch_vehicle_recalls(
             payload = response.json()
         except ValueError as e:
             raise RuntimeError(f"{make} {nhtsa_model} {model_year}: response is not JSON") from e
-        # A missing or null `results` means no campaigns. Any other shape is refused before a write, because an
-        # empty result here makes reconciliation delete the vehicle's tracked campaigns.
+        # A missing or null `results` with a zero Count means no campaigns, and a list must hold Count records. Any
+        # other shape is refused before a write, because an empty result here makes reconciliation delete the
+        # vehicle's tracked campaigns.
         if not isinstance(payload, dict):
             raise RuntimeError(
                 f"{make} {nhtsa_model} {model_year}: expected a JSON object, got {type(payload).__name__}"
@@ -259,6 +261,13 @@ def fetch_vehicle_recalls(
         if not isinstance(results, list):
             raise RuntimeError(
                 f"{make} {nhtsa_model} {model_year}: expected `results` to be a list, got {type(results).__name__}"
+            )
+        # NHTSA's Count is the length of `results`. A list that disagrees with it, or has no integer Count beside it
+        # (a proxy's object with an empty list), is not a complete answer, and reconciling it would delete campaigns.
+        count = payload.get("Count")
+        if not isinstance(count, int) or isinstance(count, bool) or count != len(results):
+            raise RuntimeError(
+                f"{make} {nhtsa_model} {model_year}: `results` holds {len(results)} records but Count is {count!r}"
             )
         return results
     raise RuntimeError(f"{make} {nhtsa_model} {model_year}: no request was attempted")

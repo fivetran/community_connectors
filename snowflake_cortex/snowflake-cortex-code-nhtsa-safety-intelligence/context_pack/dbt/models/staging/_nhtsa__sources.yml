@@ -25,5 +25,6 @@ sources:
           rows, not recalls. Deleted rows carry _fivetran_deleted = true.
       - name: configured_vehicle
         description: >
-          One row per make x model x model year the connector was configured to query, with how many campaigns the
-          API returned for it. The only place that proves a vehicle had no recalls in the window.
+          One row per make x model x model year the connector was configured to query, with the number of campaign
+          rows the connector kept for it (campaigns_returned). The only place that proves a vehicle had no recalls in
+          the window.

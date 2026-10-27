@@ -1,4 +1,5 @@
--- 99_teardown.sql: drop everything 00_dbt_mcp.sql to 04_agent.sql created, and the views the dbt Prod job built.
+-- 99_teardown.sql: drop everything 00_dbt_mcp.sql to 04_agent.sql created except the API integration, and the views
+-- the dbt Prod job built.
 -- The Agents Schema tables in <pack database>.AGENTS stay: other agents may read them, and the next publish
 -- replaces them. Drop that schema yourself if nothing else uses it.
 --
@@ -13,6 +14,9 @@
 -- dropping it would stop them working. When show external mcp servers lists no other server on it, drop it yourself
 -- after this file runs (comment lines are not rendered, so put in your name):
 -- drop api integration if exists <api_integration>;
+-- 00_dbt_mcp.sql creates the integration only if it does not exist, so before reinstalling against a different dbt
+-- host, drop it this way or use a new --api-integration name: otherwise the new MCP server reuses the old allowed
+-- prefix and fails.
 -- The dbt platform project is not touched here: remove it in dbt platform.
 --
 -- If 05_reader_grants.sql ran, run 98_reader_revoke.sql first. The drops below take the grants on the agent, the

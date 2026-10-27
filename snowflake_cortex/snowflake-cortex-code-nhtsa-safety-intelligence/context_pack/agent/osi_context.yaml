@@ -84,4 +84,5 @@ metrics:
     synonyms: [models with no recalls, recall-free models]
     instructions: >-
       Configured models with no campaign in the window. The only proof of absence: a model missing from another
-      result is not evidence that it had none.
+      result is not evidence that it had none. NHTSA answers a misspelled nhtsa_model the same as a model with no
+      recalls, so the count is what NHTSA returned for the configured spelling.

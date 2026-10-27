@@ -1367,14 +1367,16 @@ def sync_fixed_list(configuration: dict, state: dict):
                 session, model, date_from, date_to, pause_seconds
             )
             if unknown_years == len(model["years"]):
-                # NHTSA knows none of the model's years, which is what a misspelled nhtsa_model looks like. The
-                # model is synced as having no campaigns, as the filter says, but it should not pass unnoticed.
+                # NHTSA sends the same 400 for a year with no recalls and for a vehicle it does not know, so a
+                # misspelled nhtsa_model looks like a model with no recalls in any configured year. The model is
+                # synced as having no campaigns, as the filter says, but it should not pass unnoticed.
                 message = (
-                    f"{label}: NHTSA does not know {model['make']} {model['nhtsa_model']} for any configured model "
-                    "year; check nhtsa_model. The model is recorded with no campaigns."
+                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any configured "
+                    "model year. A misspelled nhtsa_model gives the same answer, so check it if this model should "
+                    "have recalls. The model is recorded with no campaigns."
                 )
                 log.warning(message)
-                # Surface the unknown model as a sync warning in the Fivetran dashboard, not only in the logs.
+                # Surface the model as a sync warning in the Fivetran dashboard, not only in the logs.
                 op.warning(message)
             for key in sorted(rows):
                 # The 'upsert' operation is used to insert or update data in the destination table.

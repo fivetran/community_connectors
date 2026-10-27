@@ -2,7 +2,8 @@
 -- campaign_count is 0 when the API returned no campaign in the window for that vehicle, so "no recalls" is a
 -- value here, not a missing row. A vehicle that was never configured has no row: its recall history is unknown.
 -- campaigns_returned is the connector's count of the campaign rows it kept for the same vehicle (inside the report-date
--- window, after its own filtering), not what the API returned. It is kept for reconciliation.
+-- window, after its own filtering, plus any tracked campaign kept because its result was skipped), not what the API
+-- returned. It is kept for reconciliation.
 
 with configured as (
   select * from {{ ref('stg_nhtsa__configured_vehicle') }}
