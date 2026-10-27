@@ -8,7 +8,7 @@ CMS publishes each dataset as a full-replacement snapshot on a release cycle, an
 cursor. The connector reads each dataset's release version from the catalog metadata, skips a dataset whose release
 it has already loaded, and pages a new release in full. Rows are keyed on the natural key plus the release version,
 so each release lands beside the previous ones, and the `dataset_release` table records every release that loaded
-completely. Read the latest complete release for current values, or compare releases for a trend.
+to the end. Read the latest recorded release for current values, or compare releases for a trend.
 
 Every value is written as the API returns it, as text. Typing (for example "Not Available" in a numeric score) is
 left to the warehouse.
@@ -545,7 +545,7 @@ def build_state(datasets_state: dict, totals: dict | None = None) -> dict:
     """
     state = {"datasets": copy_datasets_state(datasets_state)}
     if totals is not None:
-        pending = {key: totals[key] for key in __CARRIED_COUNTS if totals[key]}
+        pending = {key: dict(totals[key]) for key in __CARRIED_COUNTS if totals[key]}
         pending.update({key: list(totals[key]) for key in __CARRIED_LISTS if totals[key]})
         if pending:
             state[__PENDING_WARNINGS_KEY] = pending
@@ -564,19 +564,24 @@ def restore_totals(state: dict) -> dict:
     """
     totals = {
         "upserted": 0,
-        "skipped": 0,
-        "duplicates": 0,
+        "skipped": {},
+        "duplicates": {},
         "superseded": [],
         "incomplete": [],
         "short": [],
+        "empty": [],
     }
     pending = state.get(__PENDING_WARNINGS_KEY)
     if not isinstance(pending, dict):
         return totals
     for key in __CARRIED_COUNTS:
         value = pending.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-            totals[key] = value
+        if isinstance(value, dict):
+            totals[key] = {
+                release_key: count
+                for release_key, count in value.items()
+                if isinstance(release_key, str) and is_positive_count(count)
+            }
     for key in __CARRIED_LISTS:
         value = pending.get(key)
         if isinstance(value, list):
@@ -584,6 +589,54 @@ def restore_totals(state: dict) -> dict:
     if any(totals[key] for key in __CARRIED_COUNTS + __CARRIED_LISTS):
         log.info("Carrying summary counts from an earlier sync that did not finish")
     return totals
+
+
+def is_positive_count(value) -> bool:
+    """
+    Check that a carried count read back from state is a positive integer.
+
+    Args:
+        value: the value read from state
+
+    Returns:
+        True for an int above zero, False for anything else, a bool included
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def release_count_key(dataset_id: str, release_version: str) -> str:
+    """
+    Name the bucket that holds one release's skipped and repeated record counts.
+
+    Args:
+        dataset_id: the CMS dataset identifier
+        release_version: the release being paged
+
+    Returns:
+        the key under which the release's counts are kept and carried in state
+    """
+    return f"{dataset_id}:{release_version}"
+
+
+def drop_restarted_counts(totals: dict, dataset_id: str, saved: dict, release: dict):
+    """
+    Forget the counts of a release that is paged again from offset 0, so its records are not counted twice.
+
+    The counts of a release that loaded completely stay: that release is not paged again, so its counts are reported
+    once, by whichever sync reaches the summary.
+
+    Args:
+        totals: running counters for the sync summary; updated in place
+        dataset_id: the CMS dataset identifier
+        saved: the dataset's saved progress before this sync, or an empty dict
+        release: the release that now loads from offset 0
+    """
+    restarted = [release["release_version"]]
+    if saved.get("release_version") and not saved.get("complete"):
+        restarted.append(saved["release_version"])
+    for version in restarted:
+        for key in __CARRIED_COUNTS:
+            totals[key].pop(release_count_key(dataset_id, version), None)
 
 
 def resolve_start(table: str, release: dict, saved: dict) -> tuple:
@@ -647,7 +700,9 @@ def check_page_signature(table: str, page_keys: list, paging: dict):
         paging["last_page_signature"] = signature
 
 
-def upsert_page_rows(table: str, rows: list, page_keys: list, paging: dict, totals: dict):
+def upsert_page_rows(
+    table: str, rows: list, page_keys: list, paging: dict, totals: dict, count_key: str
+):
     """
     Upsert the rows of one page, skipping rows without a natural key and counting repeated keys.
 
@@ -657,18 +712,16 @@ def upsert_page_rows(table: str, rows: list, page_keys: list, paging: dict, tota
         page_keys: the natural key of each row, None for a row without one
         paging: the release's paging progress; the last natural key is updated in place
         totals: running counters for the sync summary; updated in place
+        count_key: the release's bucket for skipped and repeated record counts
     """
     for row, key in zip(rows, page_keys):
-        if row is None:
-            totals["skipped"] += 1
-            continue
-        if key is None:
-            totals["skipped"] += 1
+        if row is None or key is None:
+            totals["skipped"][count_key] = totals["skipped"].get(count_key, 0) + 1
             continue
         # Rows are sorted on the full natural key, so a repeated key is next to the row it repeats. Comparing
         # with the previous key keeps memory flat however large the release is.
         if key == paging["previous_key"]:
-            totals["duplicates"] += 1
+            totals["duplicates"][count_key] = totals["duplicates"].get(count_key, 0) + 1
         paging["previous_key"] = key
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
@@ -759,7 +812,14 @@ def page_release(
             # Size the guard from the first page's count, so it scales with page_size and the release size.
             remaining = max(paging["count"] - paging["offset"], 0)
             max_pages = math.ceil(remaining / page_size) + __PAGE_LIMIT_SLACK
-        upsert_page_rows(table, rows, page_keys, paging, totals)
+        upsert_page_rows(
+            table,
+            rows,
+            page_keys,
+            paging,
+            totals,
+            release_count_key(dataset["dataset_id"], release["release_version"]),
+        )
         # Every record on the page was consumed, so the offset advances by the page's length.
         paging["offset"] += len(records)
         save_page_progress(
@@ -799,7 +859,8 @@ def accept_short_release(
         # the count is overstated rather than a page lost. Never at offset 0: a release recorded with no rows
         # would become the latest release and empty its views. Record the release with the rows CMS returned:
         # otherwise it never completes and the views, which join on dataset_release, never show it.
-        # row_count below api_row_count keeps the gap visible in the ledger.
+        # row_count below api_row_count keeps the gap between the count and the records returned visible in the
+        # ledger. Records skipped for a missing key are inside row_count and reported by their own warning.
         entry = f"{table}: {offset} of {count} rows"
         if entry not in totals["short"]:
             totals["short"].append(entry)
@@ -841,6 +902,12 @@ def finish_release(
     if offset < paging["count"] and not accept_short_release(
         table, paging, is_resuming, saved, totals
     ):
+        return
+    if offset == 0:
+        # CMS reported no rows for this release. Recording it would make it the latest release and empty every view
+        # that reads it, so it stays incomplete and the earlier release stays the latest. The next sync tries again.
+        totals["empty"].append(f"{table}: release {release['release_version']}")
+        log.warning(f"{table}: CMS returned no rows for release {release['release_version']}")
         return
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
@@ -919,7 +986,10 @@ def sync_dataset(
     if saved.get("release_version") == release["release_version"] and saved.get("complete"):
         log.info(f"{table}: release {release['release_version']} already loaded, skipping")
         return
-    is_resuming, saved = resolve_start(table, release, saved)
+    is_resuming, start = resolve_start(table, release, saved)
+    if not is_resuming:
+        drop_restarted_counts(totals, dataset_id, saved, release)
+    saved = start
 
     # The paging guards live in state, not only in memory, so a resume is held to the same checks as a sync that
     # was never interrupted.
@@ -1000,18 +1070,20 @@ def update(configuration: dict, state: dict):
     finally:
         session.close()
 
-    if totals["skipped"]:
-        message = f"Skipped {totals['skipped']} CMS records with a missing natural key value."
+    skipped = sum(totals["skipped"].values())
+    duplicates = sum(totals["duplicates"].values())
+    if skipped:
+        message = f"Skipped {skipped} CMS records with a missing natural key value."
         log.warning(message)
         op.warning(message)
-    if totals["duplicates"]:
-        message = f"{totals['duplicates']} CMS records repeated a natural key within one release; the last one was kept."
+    if duplicates:
+        message = f"{duplicates} CMS records repeated a natural key within one release; the last one was kept."
         log.warning(message)
         op.warning(message)
     if totals["superseded"]:
         message = (
             f"CMS replaced a release during the sync for {', '.join(totals['superseded'])}; "
-            "the next sync loads the new release."
+            "the partial release was not recorded, and the new release is loaded from offset 0 by the sync after it."
         )
         log.warning(message)
         op.warning(message)
@@ -1019,6 +1091,13 @@ def update(configuration: dict, state: dict):
         message = (
             f"CMS returned fewer rows than it reported for {'; '.join(totals['incomplete'])}; "
             "those releases stay incomplete and the next sync resumes them."
+        )
+        log.warning(message)
+        op.warning(message)
+    if totals["empty"]:
+        message = (
+            f"CMS returned no rows for {'; '.join(totals['empty'])}; those releases were not recorded, so the views "
+            "keep the earlier release, and the next sync tries them again."
         )
         log.warning(message)
         op.warning(message)

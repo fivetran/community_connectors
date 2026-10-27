@@ -2,7 +2,7 @@
 
 The `cms_hospital_compare` connector lands CMS Care Compare data: star ratings, emergency department times and readmission measures for every Medicare-certified hospital. This pack is the context an AI agent needs to answer questions from that data correctly. It has two files and no code:
 
-- `cms_views.sql`: DuckDB views that read only the latest complete CMS release, turn CMS's text values into numbers and dates, and set every "Not Available" to NULL.
+- `cms_views.sql`: DuckDB views that read only the latest CMS release the connector recorded, turn CMS's text values into numbers and dates, and set every "Not Available" to NULL.
 - `agent/AGENTS.md`: instructions for the agent. They say which views to use, the rules each query follows, four checked questions with their SQL and answers, and the answer format.
 
 The pack sits beside the connector directory, `cms_hospital_compare/connector/`, not inside it, so `fivetran debug` and `fivetran deploy` never package it. The connector does not use it. It makes no LLM call and needs no API key. Any agent that can run DuckDB SQL can use it.
@@ -27,24 +27,24 @@ The same text problem breaks other questions. The longest median ED time (`OP_18
 Two more mistakes have no number yet, because this sync holds one release per dataset:
 
 - After the next CMS release, the raw tables hold both releases. A count over them counts most hospitals twice. The views read the latest release only.
-- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row.
+- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row. When CMS reports more records than it returns on two syncs in a row, the connector records the release with the records CMS returned, and `row_count` is below `api_row_count` in `cms_release`; `agent/AGENTS.md` has the agent say so. A release with no rows is never recorded.
 
 ## What the views do
 
-`cms_views.sql` creates one view per table, plus a `_history` view for each that keeps every complete release:
+`cms_views.sql` creates one view per table, plus a `_history` view for each that keeps every recorded release:
 
 | View | Reads | What changes |
 |---|---|---|
-| `cms_release`, `cms_release_history` | `dataset_release` | `cms_released` becomes a DATE; `is_latest_release` marks the release the other views read |
+| `cms_release`, `cms_release_history` | `dataset_release` | `cms_released` becomes a DATE; `is_latest_release` marks the release the other views read; `row_count` is the records paged, including any skipped for a missing key, and `api_row_count` the count CMS reported |
 | `cms_hospital` | `hospital` | `hospital_overall_rating` and the measure-group counts become integers; `emergency_services` becomes `has_emergency_services` |
 | `cms_timely_effective_care` | `timely_effective_care` | `score` becomes a number and `score_text` keeps what CMS sent (the `EDV` band) |
-| `cms_unplanned_hospital_visit` | `unplanned_hospital_visit` | Scores, estimates and counts become numbers; `comparison` folds the case variants of `compared_to_national` into five values |
+| `cms_unplanned_hospital_visit` | `unplanned_hospital_visit` | Scores, estimates and counts become numbers; `comparison` folds the labels of `compared_to_national` into five values (on `OP_36`, CMS compares with the expected rate, not the national rate) |
 | `cms_unplanned_hospital_visit_national` | `unplanned_hospital_visit_national` | `national_rate` and the hospital counts become numbers |
 | `cms_hrrp` | `hrrp` | Ratios, rates and counts become numbers; `condition` is the short code (`HF`) |
 
 Every view drops rows with `_fivetran_deleted = true` and turns `start_date` and `end_date` from `MM/DD/YYYY` into DATE. Column names match the connector's tables, so a query moves from one to the other without a rename map.
 
-The views name the tables without a schema. The session puts the schema that holds them on the DuckDB search path, so the same file runs over the local warehouse or a deployed copy.
+The views name the tables without a schema. The session puts the schema that holds them on the DuckDB search path, so the same file runs over the local warehouse or a deployed copy. The names are resolved each time a view is queried, so create nothing in the session's own database named like a raw table (`hospital`, `hrrp` and the others): it would hide the warehouse table from every view.
 
 ## Requirements
 
@@ -76,7 +76,7 @@ Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its in
 
 ### An MCP DuckDB server
 
-Point a DuckDB MCP server at an in-memory database, or at a scratch DuckDB file of your own, not at `warehouse.db`. Run the setup statements through the server's query tool, then load `agent/AGENTS.md` into the client as the system prompt or project instructions.
+Point a DuckDB MCP server at an in-memory database (`:memory:`), not at `warehouse.db`. With a scratch DuckDB file instead, the session's own catalog is named after the file, and `memory.main` does not exist: replace `memory.main` in the search path with `<file name>.main` (for `scratch.duckdb`, `scratch.main`). Run the setup statements through the server's query tool, then load `agent/AGENTS.md` into the client as the system prompt or project instructions.
 
 ### A Fivetran Managed Data Lake
 

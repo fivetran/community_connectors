@@ -2,15 +2,17 @@
 --
 -- The connector lands every CMS value as text, exactly as the API sends it, and keeps every release it loads.
 -- These views give an agent one typed, current answer per question:
---   1. Each <table>_history view reads only releases that dataset_release lists as completely loaded, so a release
---      that is still loading is never read. It drops rows with _fivetran_deleted = true.
---   2. Each plain view (cms_hospital, cms_hrrp, ...) keeps only the latest complete release of its table.
+--   1. Each <table>_history view reads only releases the connector recorded in dataset_release, so a release that
+--      is still loading is never read. A release CMS overstated the count of is recorded with the records CMS
+--      returned, and its row_count is below api_row_count. It drops rows with _fivetran_deleted = true.
+--   2. Each plain view (cms_hospital, cms_hrrp, ...) keeps only the latest recorded release of its table.
 --   3. Numbers are cast with try_cast, so every CMS sentinel ("Not Available", "Not Applicable", "N/A",
 --      "Too Few to Report", an empty string) becomes NULL instead of a string that sorts or averages wrongly.
 --   4. Dates become DATE: cms_released from YYYY-MM-DD, start_date and end_date from MM/DD/YYYY.
 --
--- Column names match the connector's tables. Where a cast changes what a column holds, the text CMS sent is kept
--- beside it with a _text suffix.
+-- Column names match the connector's tables. Two cast columns keep the text CMS sent beside them: score_text in
+-- cms_timely_effective_care (the EDV volume band) and number_of_readmissions_text in cms_hrrp ("Too Few to
+-- Report"). For every other cast column the text is in the raw table only.
 --
 -- The views name the connector's tables without a schema, so the same file runs over any copy of them. Put the
 -- schema that holds the tables on the search path after memory.main, then read this file:
@@ -24,7 +26,8 @@
 -- connection; on a Fivetran Managed Data Lake, attach the catalog and use <lake_catalog_alias>.<connection_schema>.
 -- The views are created in the in-memory database, so the warehouse stays read-only.
 
--- Every release that loaded completely, one row per table per release. is_latest_release marks the release the
+-- Every release the connector recorded, one row per table per release. row_count is the number of records paged,
+-- including records skipped for a missing natural key; api_row_count is the count CMS reported. is_latest_release marks the release the
 -- plain views read.
 --
 -- The connector only ever loads a dataset's current release, so the latest load is the latest release. Ties fall
@@ -157,7 +160,9 @@ where is_latest_release;
 
 -- Unplanned Hospital Visits (632h-zaca): one row per hospital per measure per release. score is a rate in percent
 -- for READM_30_*, days per 100 discharges for EDAC_30_*, and a rate or ratio for the OP_* measures.
--- comparison folds the case variants CMS uses in compared_to_national into five values.
+-- comparison folds the labels CMS uses in compared_to_national into five values. Most measures compare with the
+-- national rate ("Worse Than the National Rate"); OP_36 compares with the expected rate ("Worse than expected").
+-- Both become worse, so on OP_36 worse means worse than expected, not worse than the national rate.
 create or replace view cms_unplanned_hospital_visit_history as
 select
   u.facility_id,
@@ -196,8 +201,10 @@ select * exclude (is_latest_release)
 from cms_unplanned_hospital_visit_history
 where is_latest_release;
 
--- National rates for the same measures (cvcs-xecj): one row per measure per release. The READM_30_* and OP_32/35
--- measures use the better/same/worse/too_few counts; OP_36 and EDAC_30_* use the fewer/average/more/too_small counts.
+-- National rates for the same measures (cvcs-xecj): one row per measure per release. READM_30_*, OP_32 and OP_35_*
+-- carry national_rate. OP_32, OP_35_* and OP_36 carry the better/same/worse/too_few counts. EDAC_30_* and Hybrid_HWR
+-- carry neither. CMS defines the fewer/average/more/too_small columns; they were empty for every measure in the
+-- 2026-09-30 release.
 create or replace view cms_unplanned_hospital_visit_national_history as
 select
   n.measure_id,
