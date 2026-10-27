@@ -27,8 +27,8 @@
 -- The views are created in the in-memory database, so the warehouse stays read-only.
 
 -- Every release the connector recorded, one row per table per release. row_count is the number of records paged,
--- including records skipped for a missing natural key; api_row_count is the count CMS reported. is_latest_release marks the release the
--- plain views read.
+-- including records skipped for a missing natural key and repeated keys, so it can exceed the rows in the view;
+-- api_row_count is the count CMS reported. is_latest_release marks the release the plain views read.
 --
 -- The connector only ever loads a dataset's current release, so the latest load is the latest release. Ties fall
 -- to release_version: the data file's Unix epoch, or the catalog's %modified timestamp
@@ -202,9 +202,10 @@ from cms_unplanned_hospital_visit_history
 where is_latest_release;
 
 -- National rates for the same measures (cvcs-xecj): one row per measure per release. READM_30_*, OP_32 and OP_35_*
--- carry national_rate. OP_32, OP_35_* and OP_36 carry the better/same/worse/too_few counts. EDAC_30_* and Hybrid_HWR
--- carry neither. CMS defines the fewer/average/more/too_small columns; they were empty for every measure in the
--- 2026-09-30 release.
+-- carry national_rate. OP_32, OP_35_* and OP_36 carry the better/same/worse/too_few counts. In the 2026-09-30
+-- release EDAC_30_* had a 'Not Applicable' national_rate, and its fewer/average/more/too_small counts were
+-- 'Not Available' (withheld); those four columns are 'Not Applicable' for every other measure. Hybrid_HWR's
+-- national_rate was 'Not Available' (footnote 4).
 create or replace view cms_unplanned_hospital_visit_national_history as
 select
   n.measure_id,

@@ -514,6 +514,11 @@ def fetch_page(session: requests.Session, dataset: dict, offset: int, page_size:
         )
     if isinstance(count, bool) or not isinstance(count, int):
         raise RuntimeError(f"{dataset['dataset_id']} offset {offset}: response has no row count")
+    if count == 0 and results:
+        # Paging ends at the reported count, so a count of 0 with records would record a one-page release as loaded
+        raise RuntimeError(
+            f"{dataset['dataset_id']} offset {offset}: response reports 0 rows but returned {len(results)}"
+        )
     return results, count
 
 
@@ -710,7 +715,7 @@ def upsert_page_rows(
         table: the destination table
         rows: the rows built from the page, None for a record that is not an object
         page_keys: the natural key of each row, None for a row without one
-        paging: the release's paging progress; the last natural key is updated in place
+        paging: the release's paging progress; the last natural key and the rows written are updated in place
         totals: running counters for the sync summary; updated in place
         count_key: the release's bucket for skipped and repeated record counts
     """
@@ -728,6 +733,7 @@ def upsert_page_rows(
         # The second argument is a dictionary containing the record to be upserted.
         op.upsert(table=table, data=row)
         totals["upserted"] += 1
+        paging["rows_written"] += 1
 
 
 def save_page_progress(
@@ -756,6 +762,7 @@ def save_page_progress(
         "first_page_signature": paging["first_page_signature"],
         "last_page_signature": paging["last_page_signature"],
         "last_key": list(paging["previous_key"]) if paging["previous_key"] else None,
+        "rows_written": paging["rows_written"],
     }
     if paging["last_page_length"] < page_size and paging["offset"] < paging["count"]:
         # Saved with the offset in one checkpoint, so the next sync knows the API itself stopped short here,
@@ -903,11 +910,18 @@ def finish_release(
         table, paging, is_resuming, saved, totals
     ):
         return
-    if offset == 0:
-        # CMS reported no rows for this release. Recording it would make it the latest release and empty every view
-        # that reads it, so it stays incomplete and the earlier release stays the latest. The next sync tries again.
-        totals["empty"].append(f"{table}: release {release['release_version']}")
-        log.warning(f"{table}: CMS returned no rows for release {release['release_version']}")
+    if paging["rows_written"] == 0:
+        # No row of this release reached the table: CMS returned none, or every record was skipped for a missing
+        # natural key (a renamed key column). Recording it would make it the latest release and empty every view
+        # that reads it, with row_count equal to api_row_count, so no gap would show. It stays incomplete, the
+        # earlier release stays the latest, and the next sync tries again.
+        entry = f"{table}: release {release['release_version']}"
+        if offset > 0:
+            entry += f" ({offset} records, none with a natural key)"
+        totals["empty"].append(entry)
+        log.warning(
+            f"{table}: no rows written for release {release['release_version']} from {offset} records"
+        )
         return
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
@@ -1001,6 +1015,8 @@ def sync_dataset(
         "first_page_signature": saved.get("first_page_signature"),
         "last_page_signature": saved.get("last_page_signature"),
         "previous_key": tuple(saved["last_key"]) if saved.get("last_key") else None,
+        # Progress saved before rows_written was persisted counted only records, so its offset stands in for it
+        "rows_written": int(saved.get("rows_written", saved.get("offset") or 0)),
     }
     page_release(
         session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals
@@ -1096,8 +1112,8 @@ def update(configuration: dict, state: dict):
         op.warning(message)
     if totals["empty"]:
         message = (
-            f"CMS returned no rows for {'; '.join(totals['empty'])}; those releases were not recorded, so the views "
-            "keep the earlier release, and the next sync tries them again."
+            f"CMS returned no rows that could be loaded for {'; '.join(totals['empty'])}; those releases were not "
+            "recorded, so the views keep the earlier release if there is one, and the next sync tries them again."
         )
         log.warning(message)
         op.warning(message)

@@ -27,7 +27,7 @@ The same text problem breaks other questions. The longest median ED time (`OP_18
 Two more mistakes have no number yet, because this sync holds one release per dataset:
 
 - After the next CMS release, the raw tables hold both releases. A count over them counts most hospitals twice. The views read the latest release only.
-- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row. When CMS reports more records than it returns on two syncs in a row, the connector records the release with the records CMS returned, and `row_count` is below `api_row_count` in `cms_release`; `agent/AGENTS.md` has the agent say so. A release with no rows is never recorded.
+- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row. When CMS reports more records than it returns on two syncs in a row, the connector records the release with the records CMS returned, and `row_count` is below `api_row_count` in `cms_release`; `agent/AGENTS.md` has the agent say so. A release that writes no rows, because CMS returned none or every record lacked its natural key, is never recorded, so a table can have no row in `cms_release` until its first release loads.
 
 ## What the views do
 
@@ -76,7 +76,7 @@ Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its in
 
 ### An MCP DuckDB server
 
-Point a DuckDB MCP server at an in-memory database (`:memory:`), not at `warehouse.db`. With a scratch DuckDB file instead, the session's own catalog is named after the file, and `memory.main` does not exist: replace `memory.main` in the search path with `<file name>.main` (for `scratch.duckdb`, `scratch.main`). Run the setup statements through the server's query tool, then load `agent/AGENTS.md` into the client as the system prompt or project instructions.
+Point a DuckDB MCP server at an in-memory database (`:memory:`), not at `warehouse.db`. With a scratch DuckDB file instead, the session's own catalog is named after the file, and `memory.main` does not exist: replace `memory.main` in the search path with `<file name>.main` (for `scratch.duckdb`, `scratch.main`). The views stay in that file and look their tables up by name when they are queried, so every new connection attaches the warehouse and sets the search path again before it queries them. Run the setup statements through the server's query tool, then load `agent/AGENTS.md` into the client as the system prompt or project instructions.
 
 ### A Fivetran Managed Data Lake
 
