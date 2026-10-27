@@ -27,10 +27,16 @@ Environment (or KEY=VALUE lines in a file passed with --env-file; values are nev
 
     fetch    DBT_HOST, DBT_ACCOUNT_ID, DBT_TOKEN       a dbt platform token that can read the run's artifacts
     osi      DBT_HOST, DBT_PROD_ENV_ID, DBT_TOKEN      a Semantic Layer token, for compiled SQL; optional
-    publish  WAREHOUSE_CREDENTIALS                     the agents-schema CLI's Snowflake credentials (JSON)
+    publish  WAREHOUSE_CREDENTIALS                     the agents-schema CLI's Snowflake credentials, a JSON object
 
 `fetch` and `osi` only read. `publish` writes to Snowflake: the CLI creates <database>.AGENTS if needed, merges
-the dbt and skill rows, and replaces the AGENTS.OSI_* tables when `osi` has written <work-dir>/osi/*.osi.yaml.
+the skill rows into AGENTS.ROOT, and replaces the AGENTS.DBT_* tables, the AGENTS.SKILL_USE table and, when `osi`
+has written <work-dir>/osi/*.osi.yaml, the AGENTS.OSI_* tables. Replacing them drops what another project published
+there and every grant on those tables, so give the pack a database of its own and keep reader access with
+sql/05_reader_grants.sql.
+
+`fetch` removes <work-dir>/osi, and `publish` refuses OSI files converted from any semantic manifest other than the
+fetched one, so the DBT_* and OSI_* tables always come from the same run.
 
 Needs agents-schema 0.0.11 and metricflow 0.213.0, which bring PyYAML and jsonschema. Tested on Python 3.12.
 """
@@ -39,6 +45,9 @@ from __future__ import annotations
 
 # For the fetch, osi, skills and publish subcommands
 import argparse
+
+# For stamping the OSI output with the semantic manifest it came from
+import hashlib
 
 # For the dbt artifacts, the API request bodies and the OSI round trip
 import json
@@ -77,6 +86,8 @@ COMPILE_SQL = (
     "{ compileSql(environmentId: $env, metrics: $metrics) { sql } }"
 )
 HTTP_TIMEOUT_SECONDS = 60
+# Written next to the OSI files: the sha256 of the semantic_manifest.json they were converted from
+OSI_SOURCE_STAMP = "source.sha256"
 # dbt platform endpoints, filled in from DBT_HOST and DBT_ACCOUNT_ID
 ADMIN_API_URL = "https://{host}/api/v2/accounts/{account_id}{path}"
 # A multicell host <prefix>.<region>.dbt.com serves the Semantic Layer at <prefix>.semantic-layer.<region>.dbt.com
@@ -85,13 +96,25 @@ SEMANTIC_LAYER_MULTICELL_URL = "https://{prefix}.semantic-layer.{rest}/api/graph
 SEMANTIC_LAYER_SINGLE_CELL_URL = "https://semantic-layer.{host}/api/graphql"
 
 
+def _env_value(raw: str) -> str:
+    """A shell env-file value. A value wrapped in one matching pair of quotes loses that pair and anything after
+    it; an unquoted value loses an inline ` # comment`. A quote that is part of the value (a token ending in `"`)
+    and a `#` with no space before it stay.
+    """
+    raw = raw.strip()
+    quoted = re.match(r"""(['"])(.*)\1\s*(?:#.*)?$""", raw)
+    if quoted:
+        return quoted.group(2)
+    return re.sub(r"\s+#.*$", "", raw)
+
+
 def read_env_file(path: str) -> dict[str, str]:
     """KEY=VALUE pairs from a shell env file (optionally `export`ed). Values are never printed."""
     env = {}
     for line in Path(path).expanduser().read_text().splitlines():
         match = re.match(r"\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)", line)
         if match:
-            env[match.group(1)] = match.group(2).strip().strip("'\"")
+            env[match.group(1)] = _env_value(match.group(2))
     return env
 
 
@@ -107,6 +130,33 @@ def require(env: dict[str, str], *names: str) -> None:
         sys.exit(
             f"missing {', '.join(missing)}: set them in the environment or in a file passed with --env-file"
         )
+
+
+def require_json_credentials(raw: str) -> None:
+    """Exit unless WAREHOUSE_CREDENTIALS is a JSON object, naming no part of it.
+
+    The agents-schema CLI falls back to YAML when the value is not JSON, and its YAML error quotes the text
+    around the fault, which is part of the secret. Checking here first means the CLI only ever sees an object.
+    """
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        sys.exit("WAREHOUSE_CREDENTIALS is not valid JSON (value not shown)")
+    if not isinstance(parsed, dict):
+        sys.exit("WAREHOUSE_CREDENTIALS must be a JSON object (value not shown)")
+
+
+def require_int(env: dict[str, str], name: str) -> int:
+    """A setting that must be an integer, such as a dbt environment ID. Exits naming the setting, not its value."""
+    try:
+        return int(env[name])
+    except ValueError:
+        sys.exit(f"{name} must be an integer")
+
+
+def sha256_of(path: Path) -> str:
+    """Hex sha256 of a file's bytes."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def host_of(dbt_host: str) -> str:
@@ -141,7 +191,13 @@ def fetch(args: argparse.Namespace) -> None:
     manifest = admin_api(env, f"/runs/{args.run_id}/artifacts/manifest.json")
     semantic = admin_api(env, f"/runs/{args.run_id}/artifacts/semantic_manifest.json")
 
-    target = Path(args.work_dir) / "dbt" / "target"
+    work = Path(args.work_dir)
+    # OSI files converted from an earlier run's semantic manifest must not be published with this run's manifest.
+    stale_osi = work / "osi"
+    if stale_osi.exists():
+        shutil.rmtree(stale_osi)
+        print(f"removed {stale_osi}: run osi again for this run")
+    target = work / "dbt" / "target"
     target.mkdir(parents=True, exist_ok=True)
     (target / "manifest.json").write_text(json.dumps(manifest))
     (target / "semantic_manifest.json").write_text(json.dumps(semantic))
@@ -305,12 +361,13 @@ def semantic_layer_url(dbt_host: str) -> str:
 def compile_metric_sql(env: dict[str, str], metric_names: list[str]) -> dict[str, str]:
     """The SQL the dbt Semantic Layer compiles for each metric on its own (compileSql runs nothing)."""
     url = semantic_layer_url(env["DBT_HOST"])
+    env_id = require_int(env, "DBT_PROD_ENV_ID")
     compiled = {}
     for name in metric_names:
         body = json.dumps(
             {
                 "query": COMPILE_SQL,
-                "variables": {"env": int(env["DBT_PROD_ENV_ID"]), "metrics": [{"name": name}]},
+                "variables": {"env": env_id, "metrics": [{"name": name}]},
             }
         ).encode()
         request = urllib.request.Request(
@@ -357,6 +414,7 @@ def osi(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True)
     out = out_dir / f"{args.model_name}.osi.yaml"
     out.write_text(yaml.safe_dump(doc, sort_keys=False, width=120, allow_unicode=True))
+    (out_dir / OSI_SOURCE_STAMP).write_text(sha256_of(source) + "\n")
     (model,) = doc["semantic_model"]
     print(
         f"osi: {len(model['datasets'])} datasets, "
@@ -387,6 +445,22 @@ def stage_skills(skills: list[str], uses_schemas: list[str], skills_dir: Path) -
         print(f"skill/{key} <- {src}")
 
 
+def require_osi_matches_manifest(work: Path) -> None:
+    """Exit unless <work>/osi was converted from the semantic_manifest.json now in <work>/dbt/target.
+
+    `publish` writes AGENTS.DBT_* from the manifest and AGENTS.OSI_* from the OSI files. Without this check a
+    fetch of run B followed by a publish would pair run B's models with run A's metrics.
+    """
+    stamp = work / "osi" / OSI_SOURCE_STAMP
+    semantic = work / "dbt" / "target" / "semantic_manifest.json"
+    if not stamp.exists() or not semantic.exists():
+        sys.exit(f"{work / 'osi'} has no {OSI_SOURCE_STAMP} for the fetched run; run osi again")
+    if stamp.read_text().strip() != sha256_of(semantic):
+        sys.exit(
+            f"{work / 'osi'} was converted from another run's semantic manifest; run osi again"
+        )
+
+
 def publish(args: argparse.Namespace) -> None:
     """Run `agents-schema dbt`, `osi` (when OSI files exist) and `skills` against <database>.AGENTS."""
     work = Path(args.work_dir)
@@ -394,6 +468,7 @@ def publish(args: argparse.Namespace) -> None:
         sys.exit(f"no manifest under {work}/dbt/target; run fetch first")
     env = settings(args.env_file)
     require(env, "WAREHOUSE_CREDENTIALS")
+    require_json_credentials(env["WAREHOUSE_CREDENTIALS"])
     cli = shutil.which(args.cli)
     if not cli:
         sys.exit(
@@ -402,6 +477,7 @@ def publish(args: argparse.Namespace) -> None:
 
     steps = [[cli, "dbt", "--project-dir", str(work / "dbt")]]
     if list((work / "osi").glob("*.osi.yaml")):
+        require_osi_matches_manifest(work)
         steps.append([cli, "osi", "--osi-dir", str(work / "osi")])
     if args.skill:
         stage_skills(args.skill, args.uses_schema, work / "skills")

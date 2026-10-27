@@ -65,14 +65,15 @@ The dbt project `nhtsa_recalls_context` builds every model as a view in the pack
 
 The semantic models, metrics and dimensions are declared on the models themselves (`semantic_model:`, `dimension:` and `metrics:` in `_marts.yml`). The remote dbt MCP server was tested with this style. The USGS Earthquake pack declares them in a separate `semantic_models:` block.
 
-The project has 29 data tests. Two reconcile the models against each other: every campaign's rows add up, and `nhtsa_coverage` matches the connector's own `campaigns_returned`. Another checks that every campaign has exactly one component group.
+The project has 29 data tests. Two reconcile the models against each other: every campaign's rows add up, and `nhtsa_coverage` matches `campaigns_returned`, the connector's count of the campaign rows it kept for each vehicle (not what the API returned) and has one vehicle with campaigns for each vehicle `affected_vehicles` counts. Another checks that every campaign has exactly one component group.
 
 ### The metrics
 
 | Metric | What it counts |
 |---|---|
 | `campaign_count` | Distinct campaigns. The answer to every "how many recalls" question |
-| `affected_vehicle_rows` | Campaign x configured vehicle rows. Not a recall count |
+| `affected_vehicle_rows` | Campaign x configured vehicle rows. Not a recall count, and not a vehicle count: a vehicle covered by two campaigns counts twice |
+| `affected_vehicles` | Distinct configured vehicles (make, model, model year) that at least one campaign covers |
 | `park_it_campaigns`, `park_outside_campaigns`, `over_the_air_campaigns` | Campaigns NHTSA flagged: do not drive, park outside, remedy delivered over the air |
 | `multi_model_campaigns` | Campaigns that cover more than one configured model |
 | `first_report_date`, `last_report_date` | The report-date window |
@@ -89,8 +90,10 @@ Render each template with `render_sql.py`, then run it. The order matters:
 | `sql/00_dbt_mcp.sql` | An API integration (`EXTERNAL_MCP`, OAuth) and an external MCP server pointing at `https://<dbt_host>/api/ai/v1/mcp` | First. Then each Snowflake user who will run the agent connects once: Snowflake Intelligence > Settings > MCP Connectors > the server > Connect |
 | `sql/02_agents_context.sql` | `agents_context`, a read-only procedure over Agents Schema (`<pack_database>.AGENTS`) that returns a model's or column's dbt description, data type and lineage, or a metric's definition, looked up by its name or a synonym | After the dbt Production job and the Agents Schema publish (below) |
 | `sql/03_search_service.sql` | `nhtsa_campaign_search_service`, one document per campaign, filterable on `makes`, `models` and `component_group` | After the dbt Production job has built `nhtsa_campaign_search` |
-| `sql/04_agent.sql` | `nhtsa_recalls_agent`, with the dbt MCP server, `campaign_search` and `agents_context` as its tools, the rules from `AGENTS.md` and the seven checked questions as sample questions | Last |
-| `sql/99_teardown.sql` | Drops the agent, the search service, `agents_context`, the MCP server, the integration and the dbt views. The `AGENTS` tables stay, because other agents may read them | To remove the pack. Dropping the integration or the MCP server removes every user's consent. The integration is account-level: if another MCP server uses it, delete that line before you run the script |
+| `sql/04_agent.sql` | `nhtsa_recalls_agent`, with the dbt MCP server, `campaign_search` and `agents_context` as its tools, the rules from `AGENTS.md` and the seven checked questions as sample questions | After `02` and `03` |
+| `sql/05_reader_grants.sql` | Grants a reader role what asking the agent needs: `USAGE` on the pack database and schema, the agent, the search service, `agents_context`, the warehouse, the MCP server and its integration, the `SNOWFLAKE.CORTEX_AGENT_USER` database role, and `SELECT` on the current and future `AGENTS` tables, so the table grants survive each publish, which recreates the tables | When a role that owns none of the pack's objects asks the agent, after `04`. Again after re-running `02` or `03`, which drop the grants on the procedure and the search service. `04` keeps the agent's grants (`COPY GRANTS`) |
+| `sql/98_reader_revoke.sql` | Revokes every grant `05` made | Before `99`, when `05` ran. Leave out the grants the role needs for other work, such as the warehouse |
+| `sql/99_teardown.sql` | Drops the agent, the search service, `agents_context`, the MCP server, the integration and the dbt views. The `AGENTS` tables stay, because other agents may read them. Drop `<pack_database>.AGENTS` yourself when nothing else reads it | To remove the pack. Dropping the integration or the MCP server removes every user's consent. The integration is account-level: if another MCP server uses it, delete that line before you run the script |
 
 From this directory:
 
@@ -98,6 +101,11 @@ From this directory:
 python render_sql.py --pack-database <pack_database> --pack-schema <pack_schema> --warehouse <warehouse> \
     --dbt-host <dbt_host> --project-id <dbt_project_id> --output rendered/pack.sql \
     sql/00_dbt_mcp.sql sql/02_agents_context.sql sql/03_search_service.sql sql/04_agent.sql
+
+# Only when a role that owns none of the pack's objects asks the agent; run it with MANAGE GRANTS.
+# The same flags render sql/98_reader_revoke.sql, which undoes it.
+python render_sql.py --pack-database <pack_database> --pack-schema <pack_schema> --warehouse <warehouse> \
+    --reader-role <reader_role> --output rendered/reader_grants.sql sql/05_reader_grants.sql
 ```
 
 `rendered/` is in the pack's `.gitignore`, because the rendered SQL holds your real names.
@@ -126,7 +134,7 @@ python publish_agents_schema.py publish --work-dir agents_schema_work \
 |---|---|---|
 | `fetch` | Downloads `manifest.json` and `semantic_manifest.json` of the run through the dbt Admin API, and refuses a run that did not succeed | `DBT_HOST`, `DBT_ACCOUNT_ID`, and a `DBT_TOKEN` that can read the run's artifacts |
 | `osi` | Writes `agents_schema_work/osi/nhtsa_recalls_context.osi.yaml`. Writes nothing remote | `DBT_HOST`, `DBT_PROD_ENV_ID` and a Semantic Layer `DBT_TOKEN`, for the compiled SQL. `--no-compiled-sql` skips it |
-| `publish` | Runs `agents-schema dbt`, `agents-schema osi` and `agents-schema skills`. The CLI creates `AGENTS` in the database of the credentials if it does not exist, merges the dbt and skill rows, and replaces the `OSI_*` tables | `WAREHOUSE_CREDENTIALS`: the CLI's Snowflake credentials as JSON, with `type` `snowflake`, `account`, `user`, `warehouse`, `database` (the pack database), an optional `role`, and `private_key_path`, `private_key_pem` or `password` |
+| `publish` | Runs `agents-schema dbt`, `agents-schema osi` and `agents-schema skills`. The CLI creates `AGENTS` in the database of the credentials if it does not exist, merges the skill rows into `ROOT`, and replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables. Replacing a table drops the rows another project published in it and every grant on it | `WAREHOUSE_CREDENTIALS`: the CLI's Snowflake credentials as JSON, with `type` `snowflake`, `account`, `user`, `warehouse`, `database` (the pack database), an optional `role`, and `private_key_path`, `private_key_pem` or `password` |
 
 Each step reads its settings from the environment, or from a file of `KEY=VALUE` lines passed with `--env-file`, so no token goes on the command line, and the script prints none of the values it reads. `agents_schema_work/` is in the pack's `.gitignore`.
 
@@ -153,14 +161,15 @@ A publish from a dbt Production run on 2026-10-25 wrote these rows:
   - `CREATE INTEGRATION` on the account;
   - `CREATE EXTERNAL MCP SERVER`, `CREATE CORTEX SEARCH SERVICE`, `CREATE PROCEDURE` and `CREATE AGENT` on the pack schema;
   - `USAGE` on the warehouse;
-  - `SELECT` on the dbt views and on the `AGENTS` tables;
+  - `SELECT` on the dbt views and on the `AGENTS` tables (`05_reader_grants.sql` grants a reader role everything it needs to ask the agent, but not to build the pack);
   - the `SNOWFLAKE.CORTEX_USER` database role.
 
   Each template lists what it needs in its header. The test runs used an administrator role, so this list comes from the templates, not from a least-privilege run.
 - For the Agents Schema publish:
   - Python with `agents-schema` 0.0.11 and `metricflow` 0.213.0 (tested on Python 3.12);
   - a dbt platform token that can read the Production run's artifacts, and, optionally, a Semantic Layer token for the compiled SQL;
-  - for the credentials in `WAREHOUSE_CREDENTIALS`, a role that can create a schema in the pack database (the CLI creates `AGENTS` on its first run) and create and replace tables in it.
+  - for the credentials in `WAREHOUSE_CREDENTIALS`, a role that can create a schema in the pack database (the CLI creates `AGENTS` on its first run) and create and replace tables in it;
+  - a pack database whose `AGENTS` schema no other dbt project publishes to. The publish replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables, so a second project publishing into the same schema would replace the pack's model, column, lineage and metric rows, and the pack's publish would replace that project's.
 - For local testing only: the dbt CLI with DuckDB, and a local sync of the connector, so that `../connector/files/warehouse.db` exists. The project uses dbt v2 settings (`info_schema` in `dbt_project.yml`) that dbt-core 1.x rejects, so the pack has no `requirements.txt`: use the dbt v2 CLI, which ran the local build (dbt 2.0.9), or the dbt platform. `render_sql.py` needs only the Python standard library. `publish_agents_schema.py` needs only the two packages above.
 
 ## Connect your AI to this data
@@ -174,7 +183,7 @@ This is the path the pack was built and tested on.
 3. Run the Production job.
 4. Publish the run to Agents Schema with `publish_agents_schema.py` ([The Agents Schema publish](#the-agents-schema-publish)).
 5. Render and run `00_dbt_mcp.sql`, then connect once in Snowflake Intelligence.
-6. Render and run `02_agents_context.sql`, `03_search_service.sql` and `04_agent.sql`.
+6. Render and run `02_agents_context.sql`, `03_search_service.sql` and `04_agent.sql`. If a role that owns none of the pack's objects will ask the agent, also render `05_reader_grants.sql` with `--reader-role <role>` and run it with `MANAGE GRANTS`. Its future grant on the `AGENTS` tables is schema-level, and Snowflake then ignores database-level future grants on tables for that schema: repeat any you rely on at schema level (the file's header has the statement). Each reader still connects to the MCP server once in Snowflake Intelligence.
 7. Ask the agent in Snowflake Intelligence, or from SQL:
 
 ```sql
@@ -219,11 +228,13 @@ The answers carry the report-date window they came from. When NHTSA publishes ne
 
 - The data is NHTSA's campaign records for the configured vehicles. It holds no VINs, owner complaints or investigations, and nothing about a make or model the connector was not configured to query.
 - Cortex Search returns a ranked list, not a complete one. A `fire risk` search with 15 results returned 11 of the 15 campaigns whose consequence names fire, and NHTSA's own wording returned 12. The agent counts what Search returns and says the list may be partial.
-- NHTSA's over-the-air flag is narrower than the campaign text. One campaign carries the flag on this sync, while 37 mention an over-the-air update in their text. `over_the_air_campaigns` counts the flag.
+- NHTSA's over-the-air flag is narrower than the campaign text. On the sync of 2026-10-21, one campaign carried the flag, while 37 mentioned an over-the-air update in their text. `over_the_air_campaigns` counts the flag.
+- The report-date window every answer names (`first_report_date` to `last_report_date`) is the earliest and latest report date among the campaigns synced, not the window the connector queried (`report_date_from` to `report_date_to`). The two differ whenever no campaign was reported on the first or last day of the configured window. An answer that a model had no campaigns holds for the configured window, which is usually wider than the dates the answer names. The pack does not carry the configured window, so quote it from the connector's configuration when an absence answer needs it.
 - Snowflake supports only OAuth for external MCP servers, so each Snowflake user who runs the agent connects to the dbt MCP server once. Recreating the integration or the MCP server means connecting again.
 - At the time of writing, the remote dbt MCP server's OAuth connection was in beta, and it needs a Starter or Enterprise plan and a static subdomain.
 - The agent sometimes writes a short working note between tool calls, apart from its final answer. This happened on one question in each of three test runs, and the instructions do not stop it. An application that displays the answer should display only the text after the last tool result.
 - The Agents Schema publish is a step you run after a Production run, not part of the dbt job. Until you run it again, the `AGENTS` tables describe the last run you published, even if a later run changed a model, column or metric.
+- `agents-schema` 0.0.11 replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables on every publish instead of merging rows into them. The pack therefore needs an `AGENTS` schema of its own, and a grant on one of those tables lasts only until the next publish, which is why `05_reader_grants.sql` grants on future tables.
 - The `osi` step was tested with one pair of versions: MetricFlow 0.213.0, whose converter writes OSI 0.1.1, and `agents-schema` 0.0.11, which validates OSI 0.2.0.dev0. If a later CLI expects a different OSI version, the step stops and prints the schema errors instead of writing.
 - Keep the pack beside the connector, not inside it. `fivetran deploy` packages every file in the connector directory.
 

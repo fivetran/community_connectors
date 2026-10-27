@@ -14,15 +14,17 @@ If your agent has no dbt MCP server, query the dbt models in the pack schema wit
 
 ## Rules every answer follows
 
-1. **A recall means a campaign.** Count campaigns with `campaign_count`, never rows. Use `affected_vehicle_rows` only when the question asks how many configured vehicles (make, model, model year) the campaigns cover.
+The numbers in these rules are examples from the sync of 2026-10-21. Answer from the tool results, never from these examples.
+
+1. **A recall means a campaign.** Count campaigns with `campaign_count`, never rows. For how many configured vehicles (make, model, model year) the campaigns cover, use `affected_vehicles`, which counts each vehicle once. `affected_vehicle_rows` counts campaign x vehicle rows, so a vehicle covered by two campaigns counts twice: use it only when the question asks for rows.
 2. **Name the report-date window** every answer covers, including an answer from Search alone: `first_report_date` to `last_report_date`. Query those two metrics on their own, with no group-by and no filter (the `report_window` saved query). They have no join path to the `recall_row__` dimensions, so grouping or filtering them by `recall_row__make` fails.
-3. **Filter on the configured model name** (`recall_row__model`, `model` in SQL), never `nhtsa_model`. NHTSA spells some models differently from the configuration, and 48 rows differ.
-4. **Group components on `component_group`**, never `component`. NHTSA joins several components into one colon-delimited string, as in `BACK OVER PREVENTION:SOFTWARE`.
+3. **Filter on the configured model name** (`recall_row__model`, `model` in SQL), never `nhtsa_model`. NHTSA spells some models differently from the configuration: 48 rows differed on the sync of 2026-10-21.
+4. **Group components on `component_group`**, never `component`. NHTSA writes a component as a colon-delimited path, system first, as in `BACK OVER PREVENTION:SOFTWARE`, so the same system appears under many `component` values. `component_group` is the system, the part before the first colon.
 5. **A null `park_it`, `park_outside` or `over_the_air_update` is unknown**, never false.
 6. **Only `nhtsa_model_coverage` proves a configured model had no campaigns** (`models_without_campaigns`, `has_campaigns`). A model missing from a result is not evidence that it had none.
 7. **Never add campaign counts across model years or models.** A campaign that covers several years or models would count more than once. Query `campaign_count` filtered on the model with no year, or on the make with no model.
-8. **The over-the-air flag is narrower than the text.** `over_the_air_campaigns` counts campaigns NHTSA flagged as over the air (`over_the_air_update` true). On this sync that is 1 campaign, while 37 mention an over-the-air update in their text, and some of those remedies are delivered over the air with the flag false (25V315000, 25V540000, 26V165000, 26V283000). Answer "how many are flagged over the air" with the metric and say it is NHTSA's flag. When a question mentions over-the-air remedies, also run `campaign_search` for them, and say the list may be partial.
-9. **State how numbers relate only when the tool results show it.** Say that counts sum to a total, overlap or make up a share only after adding up every row of a result that no row limit cut short. Every campaign has one component group (a dbt test checks it), so a make's counts per component group add up to its campaign total: the 15 Ford groups sum to exactly 66. In test runs agents claimed both that they add up to more than 66 and that they don't add up to 66.
+8. **The over-the-air flag is narrower than the text.** `over_the_air_campaigns` counts campaigns NHTSA flagged as over the air (`over_the_air_update` true). On the sync of 2026-10-21 that was 1 campaign, while 37 mentioned an over-the-air update in their text, and some of those remedies are delivered over the air with the flag false (25V315000, 25V540000, 26V165000, 26V283000). Answer "how many are flagged over the air" with the metric and say it is NHTSA's flag. When a question mentions over-the-air remedies, also run `campaign_search` for them, and say the list may be partial.
+9. **State how numbers relate only when the tool results show it.** Say that counts sum to a total, overlap or make up a share only after adding up every row of a result that no row limit cut short. Every campaign has one component group (a dbt test checks it), so a make's counts per component group add up to its campaign total: on the sync of 2026-10-21, the 15 Ford groups summed to exactly 66. In test runs agents claimed both that they add up to more than 66 and that they don't add up to 66.
    Do not state an overlap or a union between a `campaign_search` list and a metric result unless you compared the campaign numbers. Prefer giving the two lists and their counts separately. In a test run an agent said 25V092000 was in both the park-outside list and the over-the-air search list and gave 12 campaigns in all; it is not a park-outside campaign, and the union was 13.
 10. **Use dbt project `<project_id>` only**, on every dbt tool call.
 
@@ -30,7 +32,7 @@ If your agent has no dbt MCP server, query the dbt models in the pack schema wit
 
 | Tool | Use it for |
 |---|---|
-| `list_saved_queries` | Run first. When a saved query fits the question, pass its metrics, group-by and where to `query_metrics`, and add the make or model the question names. The dbt MCP server lists saved queries but has no tool that runs one |
+| `list_saved_queries` | Run first. When a saved query fits the question, pass its metrics, group-by and where to `query_metrics`, and add the make or model the question names. Its description starts with the order: pass that as `order_by` too, so the top row comes first and a row limit drops the smallest rows, never the widest. The dbt MCP server lists saved queries but has no tool that runs one |
 | `query_metrics` | Every count. Never compute a count yourself and never write SQL when this tool is available |
 | `list_metrics`, `get_dimensions` | The metrics and dimensions below, when a question needs one the saved queries do not use |
 | `campaign_search` | What a campaign is about: fire risk, a part, a remedy, a symptom. Filter one make with `{ "@contains": { "makes": "<Make>" } }`. Results are ranked, not complete: say the list may be partial, and count the campaigns it returns with `campaign_count` |
@@ -43,7 +45,8 @@ If your agent has no dbt MCP server, query the dbt models in the pack schema wit
 | Metric | Entity (dbt model) | What it counts |
 |---|---|---|
 | `campaign_count` | `recall_row` (`nhtsa_recall`) | Distinct campaigns. The answer to every "how many recalls" question |
-| `affected_vehicle_rows` | `recall_row` | Campaign x configured vehicle rows. Not a recall count |
+| `affected_vehicle_rows` | `recall_row` | Campaign x configured vehicle rows. Not a recall count and not a vehicle count |
+| `affected_vehicles` | `recall_row` | Distinct configured vehicles (make, model, model year) at least one campaign covers |
 | `park_it_campaigns` | `recall_row` | Campaigns where NHTSA advises not driving the vehicle |
 | `park_outside_campaigns` | `recall_row` | Campaigns where NHTSA advises parking outside, usually a fire risk |
 | `over_the_air_campaigns` | `recall_row` | Campaigns NHTSA flagged as over the air. Not every over-the-air remedy (rule 8) |
@@ -53,7 +56,16 @@ If your agent has no dbt MCP server, query the dbt models in the pack schema wit
 | `models_with_campaigns` | `configured_model` | Configured models with at least one campaign |
 | `models_without_campaigns` | `configured_model` | Configured models with none. The only proof of absence |
 
-Group and filter the `recall_row` metrics by `recall_row__make`, `recall_row__model`, `recall_row__model_year` and `recall_row__component_group`. Group any of them by `Entity('campaign')` to list campaigns.
+Each metric takes the dimensions of its own entity. There is no join path between the three entities' dimensions, except that `recall_row` metrics can also use the `campaign__` ones, so a dimension from the wrong entity fails the query.
+
+| Metrics | Group and filter by | List them by |
+|---|---|---|
+| `recall_row` metrics | `recall_row__make`, `recall_row__model`, `recall_row__model_year`, `recall_row__component_group` | `Entity('campaign')` |
+| `configured_models`, `models_with_campaigns`, `models_without_campaigns` | `configured_model__make`, `configured_model__model`, `configured_model__has_campaigns`. Never `recall_row__make` | `Entity('configured_model')` |
+| `multi_model_campaigns` | `campaign__configured_models`, `campaign__makes`, `campaign__models` | `Entity('campaign')` |
+| `first_report_date`, `last_report_date` | Nothing: query them on their own (rule 2) | |
+
+For one make's configured models, filter on `configured_model__make`, as in `where {{ Dimension('configured_model__make') }} = 'Ford'`.
 
 ## Saved queries
 
@@ -74,7 +86,7 @@ Each question has the metric query, the SQL behind it over the dbt models, and t
 
 "How many recall campaigns did Ford have in the window, and which component group comes up most?"
 
-Metric queries: `campaign_count` with `where {{ Dimension('recall_row__make') }} = 'Ford'` for the total, then `campaign_count` grouped by `recall_row__component_group` with the same filter, descending (the `campaigns_by_make_component` saved query). Then `report_window` on its own.
+Metric queries: `campaign_count` with `where {{ Dimension('recall_row__make') }} = 'Ford'` for the total, then `campaign_count` grouped by `recall_row__component_group` with the same filter, which is the `campaigns_by_make_component` saved query. Pass `query_metrics` an `order_by` of `campaign_count` descending, as that saved query's description says. Then `report_window` on its own.
 
 ```sql
 with ford as (
@@ -119,7 +131,7 @@ Checked answer: **163** campaigns over 477 vehicle rows, touching **32** of the 
 
 "Which Ford Explorer model years have the most recall campaigns?"
 
-Metric query: `campaign_count` grouped by `recall_row__model_year`, with `where {{ Dimension('recall_row__make') }} = 'Ford' and {{ Dimension('recall_row__model') }} = 'Explorer'`, descending (the `campaigns_by_model_year` saved query).
+Metric query: `campaign_count` grouped by `recall_row__model_year`, with `where {{ Dimension('recall_row__make') }} = 'Ford' and {{ Dimension('recall_row__model') }} = 'Explorer'`, which is the `campaigns_by_model_year` saved query. Pass `query_metrics` an `order_by` of `campaign_count` descending, then `recall_row__model_year` descending, as that saved query's description says.
 
 ```sql
 select

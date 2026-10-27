@@ -150,8 +150,18 @@ models:
         expr: recall_row_key
         label: Affected vehicle rows
         description: >
-          Campaign x configured vehicle rows. Not a recall count: use campaign_count for recalls. Only for "how many
-          configured vehicles (make, model, model year) do the campaigns cover".
+          Campaign x configured vehicle rows: a vehicle covered by two campaigns counts twice. Not a recall count
+          (use campaign_count) and not a vehicle count (use affected_vehicles). Only for "how many campaign x vehicle
+          rows".
+      - name: affected_vehicles
+        type: simple
+        agg: count_distinct
+        expr: make || '|' || model || '|' || cast(model_year as varchar)
+        label: Affected configured vehicles
+        description: >
+          Distinct configured vehicles (make, model, model year) that at least one campaign in the window covers. A
+          vehicle covered by several campaigns counts once. The answer to "how many configured vehicles do the
+          campaigns cover". Never add it across makes or models: query it filtered or grouped instead.
       - name: park_it_campaigns
         type: simple
         agg: count_distinct
@@ -409,7 +419,8 @@ models:
   - name: nhtsa_coverage
     description: >
       One row per configured make x model x model year. campaign_count is 0 when the API returned no campaign in the
-      window for that vehicle. campaigns_returned is the connector's own count, kept for reconciliation.
+      window for that vehicle. campaigns_returned is the connector's count of the campaign rows it kept, kept for
+      reconciliation.
     columns:
       - name: make
         description: Configured make.
@@ -432,7 +443,9 @@ models:
       - name: has_campaigns
         description: campaign_count > 0.
       - name: campaigns_returned
-        description: The connector's own count of campaigns the API returned for this vehicle.
+        description: >
+          The connector's count of the campaign rows it kept for this vehicle on its last sync: the campaigns inside
+          the report-date window, after its own filtering. Not the number the API returned, which can be larger.
       - name: last_synced_at
         description: When the connector last queried this vehicle.
 

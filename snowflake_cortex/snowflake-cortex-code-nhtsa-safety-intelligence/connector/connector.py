@@ -16,7 +16,8 @@ The connector runs in one of two modes:
   names to `make` and `model` and NHTSA's spelling to `nhtsa_make` and `nhtsa_model`, and records every
   configured vehicle in `configured_vehicle`, so a vehicle with no recalls in the window is recorded as checked
   rather than simply absent. It checkpoints after each model, deletes rows a later sync no longer returns, and
-  truncates both tables when a sync starts from an empty state, so the destination always equals the filter.
+  truncates both tables when a sync starts with no fixed-list state, so the recalls and configured_vehicle
+  tables end equal to the filter.
 
 APIs Used:
 1. NHTSA Recalls API - Vehicle recall campaigns
@@ -66,6 +67,8 @@ from fixed_list import (
     build_state,
     collect_model_rows,
     create_list_session,
+    is_protected,
+    model_fingerprint,
     parse_report_date,
 )
 
@@ -1274,12 +1277,38 @@ def _delete_vehicle_rows(label: str, model_years) -> int:
     return len(model_years)
 
 
+def _models_to_sync(models: list, labels: list, fingerprints: list, state: dict) -> list:
+    """
+    Pick the indexes of the models a sync still has to do in the current pass.
+
+    A model is done only when this pass synced it with the same fingerprint, so a model inserted into the list
+    or changed between an interruption and the resume is synced, not skipped. A state written before pass_done
+    existed falls back to resuming at next_model.
+
+    Args:
+        models: the parsed model list
+        labels: "make|model" per model
+        fingerprints: model_fingerprint per model
+        state: the state from the previous sync
+
+    Returns:
+        the model indexes to sync, in configured order
+    """
+    pass_done = state.get("pass_done")
+    if isinstance(pass_done, dict):
+        return [i for i in range(len(models)) if pass_done.get(labels[i]) != fingerprints[i]]
+    resume_from = state.get("next_model")
+    start_index = labels.index(resume_from) if resume_from in labels else 0
+    return list(range(start_index, len(models)))
+
+
 def sync_fixed_list(configuration: dict, state: dict):
     """
     Fixed-list mode: sync every configured make x model x model year, one checkpoint per model.
 
     The recalls API has no pagination and no incremental filter, so every sync re-reads the configured vehicles.
-    An interrupted sync resumes at the next model, and rows a later sync no longer returns are deleted.
+    An interrupted sync resumes with the models the pass has not finished, and rows a later sync no longer returns
+    are deleted.
 
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
@@ -1290,22 +1319,28 @@ def sync_fixed_list(configuration: dict, state: dict):
     date_to = _parse_iso_date(configuration.get("report_date_to"), "report_date_to")
     pause_seconds = _optional_pause_seconds(configuration.get("request_pause_seconds"))
 
+    # synced_keys is written by every fixed-list checkpoint, so a state without it is empty (the first sync or a
+    # full re-sync) or was written by seed mode before the configuration switched to fixed-list mode.
+    is_fixed_list_state = isinstance(state.get("synced_keys"), dict)
+    if not is_fixed_list_state:
+        state = {}
     synced_keys = dict(state.get("synced_keys") or {})
     synced_years = dict(state.get("synced_years") or {})
     last_completed_sync = state.get("last_completed_sync")
     labels = [model_label(m) for m in models]
-    resume_from = state.get("next_model")
-    start_index = labels.index(resume_from) if resume_from in labels else 0
+    fingerprints = [model_fingerprint(m, date_from, date_to) for m in models]
+    pass_done = dict(state.get("pass_done") or {})
+    to_sync = _models_to_sync(models, labels, fingerprints, state)
     log.info(
         f"Fixed-list mode: {len(models)} models, report dates {date_from} to {date_to}, "
-        f"starting at model {start_index + 1} ({labels[start_index]})"
+        f"{len(to_sync)} left in this pass"
     )
 
-    if not state:
-        # An empty state is the first sync or a full re-sync, and a re-sync keeps every destination row, so rows that
-        # left the filter earlier would never be deleted. Truncating marks every existing row deleted; the pass below
-        # upserts the rows that still match, so the destination ends equal to the filter.
-        log.info("Empty state: truncating both tables before the full pass")
+    if not is_fixed_list_state:
+        # A re-sync keeps every destination row, and seed mode leaves its own recalls rows, so rows outside the
+        # filter would never be deleted. Truncating marks every existing row deleted; the pass below upserts the
+        # rows that still match, so the destination ends equal to the filter.
+        log.info("No fixed-list state: truncating both tables before the full pass")
         op.truncate(table=__RECALLS_TABLE)
         op.truncate(table=__VEHICLE_TABLE)
 
@@ -1313,27 +1348,41 @@ def sync_fixed_list(configuration: dict, state: dict):
     totals = {"upserted": 0, "deleted": 0, "skipped": 0}
     session = create_list_session()
     try:
-        for index in range(start_index, len(models)):
+        for position, index in enumerate(to_sync):
             model = models[index]
             label = labels[index]
-            rows, skipped = collect_model_rows(session, model, date_from, date_to, pause_seconds)
+            rows, skipped, protected = collect_model_rows(
+                session, model, date_from, date_to, pause_seconds
+            )
             for key in sorted(rows):
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
                 # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table=__RECALLS_TABLE, data=rows[key])
-            totals["deleted"] += _delete_recall_rows(
-                label, set(synced_keys.get(label, [])) - set(rows)
-            )
+            # A tracked row the API no longer returns is deleted, unless a skipped result could stand for it.
+            missing = set(synced_keys.get(label, [])) - set(rows)
+            kept = {key for key in missing if is_protected(key, protected)}
+            totals["deleted"] += _delete_recall_rows(label, missing - kept)
             upsert_vehicle_rows(model, rows, synced_at)
             totals["deleted"] += _delete_vehicle_rows(
                 label, set(synced_years.get(label, [])) - set(model["years"])
             )
             totals["upserted"] += len(rows)
             totals["skipped"] += skipped
-            synced_keys[label] = sorted(rows)
+            if skipped:
+                # Warn before this model's checkpoint, not after the pass: a sync interrupted after the checkpoint
+                # resumes past this model, and a count held in memory until the end would never be reported.
+                message = (
+                    f"{label}: skipped {skipped} API results with no campaign number or an unparseable report "
+                    "date; the tracked rows they could stand for were kept."
+                )
+                log.warning(message)
+                # Surface the skip count as a sync warning in the Fivetran dashboard, not only in the logs.
+                op.warning(message)
+            synced_keys[label] = sorted(set(rows) | kept)
             synced_years[label] = list(model["years"])
-            next_model = labels[index + 1] if index + 1 < len(models) else None
+            pass_done[label] = fingerprints[index]
+            next_model = labels[to_sync[position + 1]] if position + 1 < len(to_sync) else None
             log.debug(f"{label}: {len(rows)} rows across {len(model['years'])} model years")
 
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -1344,10 +1393,11 @@ def sync_fixed_list(configuration: dict, state: dict):
             # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(
                 state=build_state(
-                    next_model or labels[0],
+                    next_model,
                     synced_keys,
                     synced_years,
                     last_completed_sync,
+                    pass_done,
                 )
             )
     finally:
@@ -1358,13 +1408,9 @@ def sync_fixed_list(configuration: dict, state: dict):
         totals["deleted"] += _delete_recall_rows(label, synced_keys.pop(label))
     for label in sorted(set(synced_years) - set(labels)):
         totals["deleted"] += _delete_vehicle_rows(label, synced_years.pop(label))
-    if totals["skipped"]:
-        message = f"Skipped {totals['skipped']} API results with no campaign number or an unparseable report date."
-        log.warning(message)
-        # Surface the skip count as a sync warning in the Fivetran dashboard, not only in the logs.
-        op.warning(message)
     log.info(
-        f"Fixed-list sync complete: {totals['upserted']} rows upserted, {totals['deleted']} deleted"
+        f"Fixed-list sync complete: {totals['upserted']} rows upserted, {totals['deleted']} deleted, "
+        f"{totals['skipped']} API results skipped"
     )
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -1373,7 +1419,7 @@ def sync_fixed_list(configuration: dict, state: dict):
     # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
     # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state=build_state(None, synced_keys, synced_years, synced_at))
+    op.checkpoint(state=build_state(None, synced_keys, synced_years, synced_at, {}))
 
 
 def update(configuration: dict, state: dict):

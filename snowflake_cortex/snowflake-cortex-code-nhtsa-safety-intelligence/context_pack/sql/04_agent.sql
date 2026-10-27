@@ -7,14 +7,18 @@
 -- consented to every dbt project would otherwise let the agent pick a project on its own. The rules are the ones in
 -- agent/AGENTS.md; change them there first, then here.
 --
--- Snowflake accepts a specification without checking its tools, so test the agent after creating it:
--- select snowflake.cortex.data_agent_run('{{pack}}.nhtsa_recalls_agent',
+-- Snowflake accepts a specification without checking its tools, so test the agent after creating it (comment lines are
+-- not rendered, so put in your pack database and schema):
+-- select snowflake.cortex.data_agent_run('<pack_database>.<pack_schema>.nhtsa_recalls_agent',
 --   $${"messages": [{"role": "user", "content": [{"type": "text", "text": "How many recall campaigns are in the window?"}]}]}$$);
+--
+-- COPY GRANTS keeps the grants 05_reader_grants.sql made on the agent when this file runs again.
 --
 -- Needs: CREATE AGENT on the pack schema, USAGE on the MCP server, its API integration, the search service, the
 -- agents_context procedure and the warehouse, and the SNOWFLAKE.CORTEX_USER database role.
 
 create or replace agent {{pack}}.nhtsa_recalls_agent
+  copy grants
   comment = 'NHTSA Recalls context pack: dbt Semantic Layer counts, Cortex Search over campaign text, Agents Schema definitions'
   from specification
 $$
@@ -30,7 +34,8 @@ instructions:
     - The dbt MCP tools query the dbt Semantic Layer. Use dbt project {{project_id}} and no other project, on every
       dbt tool call. Every count comes from query_metrics; never compute a count yourself and never write SQL.
       Run list_saved_queries first: when a saved query fits the question, pass its metrics, group_by and where to
-      query_metrics and add the make or model the question names.
+      query_metrics and add the make or model the question names. Its description starts with the order: pass that
+      as order_by too, so the top row comes first and a row limit drops the smallest rows, never the widest.
     - campaign_search searches the campaign text (component, summary, consequence, remedy). Use it for questions
       about what a recall is about, such as fire risk, a part or a remedy. Filter one make with
       { "@contains": { "makes": "<Make>" } }.
@@ -46,9 +51,13 @@ instructions:
       call it once for each.
 
     Rules:
-    - A recall means a campaign. Count campaigns with campaign_count, never rows. Use affected_vehicle_rows only when
-      the question asks for vehicle rows.
-    - Filter on the configured model name (dimension model), never nhtsa_model.
+    - A recall means a campaign. Count campaigns with campaign_count, never rows. For how many configured vehicles
+      the campaigns cover, use affected_vehicles, which counts each vehicle once. Use affected_vehicle_rows only when
+      the question asks for campaign x vehicle rows: a vehicle covered by two campaigns counts twice there.
+    - Filter on the configured model name (recall_row__model), never nhtsa_model.
+    - configured_models, models_with_campaigns and models_without_campaigns take only configured_model__make,
+      configured_model__model and configured_model__has_campaigns. They have no join path to the recall_row
+      dimensions, so recall_row__make fails on them: filter one make's models on configured_model__make.
     - Group components on component_group.
     - A null park_it, park_outside or over_the_air_update means NHTSA sent no usable value: unknown, never false.
     - Only nhtsa_model_coverage proves a configured model had no recalls (models_without_campaigns, has_campaigns).

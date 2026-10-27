@@ -26,6 +26,8 @@ __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 __UNKNOWN_VEHICLE_STATUS_CODE = (
     400  # the API answers 400, not an empty list, for a vehicle it does not know
 )
+# A protected-key campaign placeholder meaning "every campaign of this model year"
+__YEAR_MARKER = "*"
 __REPORT_DATE_FORMAT = "%d/%m/%Y"
 
 
@@ -142,6 +144,28 @@ def create_list_session() -> requests.Session:
     return session
 
 
+def _is_unknown_vehicle_body(response: requests.Response) -> bool:
+    """
+    Check that a 400 carries the body NHTSA sends for a vehicle it does not know.
+
+    Args:
+        response: the HTTP 400 response
+
+    Returns:
+        True only for a JSON object whose `Count` is 0 and whose `results` is an empty list
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    count = payload.get("Count")
+    # bool is a subclass of int, so False would otherwise pass as a zero count
+    is_zero_count = isinstance(count, int) and not isinstance(count, bool) and count == 0
+    return is_zero_count and payload.get("results") == []
+
+
 def fetch_vehicle_recalls(
     session: requests.Session, make: str, nhtsa_model: str, model_year: int
 ) -> list:
@@ -158,7 +182,9 @@ def fetch_vehicle_recalls(
         the API's `results` list; empty when the API does not know the vehicle
 
     Raises:
-        RuntimeError: when the request still fails after the retries, or fails with a non-retryable status
+        RuntimeError: when the request still fails after the retries, fails with a non-retryable status, answers
+            400 without NHTSA's unknown-vehicle body, or returns a body that is not a JSON object with a list (or
+            missing or null) `results`
     """
     params = {"make": make, "model": nhtsa_model, "modelYear": model_year}
     for attempt in range(__MAX_RETRIES):
@@ -181,7 +207,14 @@ def fetch_vehicle_recalls(
             # Any other request error (an invalid URL, too many redirects) will not succeed on retry
             raise RuntimeError(f"{make} {nhtsa_model} {model_year}: request failed: {e}") from e
         if response.status_code == __UNKNOWN_VEHICLE_STATUS_CODE:
-            return []
+            if _is_unknown_vehicle_body(response):
+                return []
+            # Any other 400 (an edge or WAF page, a changed API) is not proof the vehicle has no campaigns, and an
+            # empty result here would make reconciliation delete the vehicle's tracked campaigns.
+            raise RuntimeError(
+                f"{make} {nhtsa_model} {model_year}: HTTP 400 without NHTSA's unknown-vehicle body: "
+                f"{response.text[:200]}"
+            )
         if response.status_code in __RETRYABLE_STATUS_CODES:
             if is_last_attempt:
                 raise RuntimeError(
@@ -202,8 +235,20 @@ def fetch_vehicle_recalls(
             payload = response.json()
         except ValueError as e:
             raise RuntimeError(f"{make} {nhtsa_model} {model_year}: response is not JSON") from e
-        results = (payload or {}).get("results") if isinstance(payload, dict) else None
-        return results if isinstance(results, list) else []
+        # A missing or null `results` means no campaigns. Any other shape is refused before a write, because an
+        # empty result here makes reconciliation delete the vehicle's tracked campaigns.
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"{make} {nhtsa_model} {model_year}: expected a JSON object, got {type(payload).__name__}"
+            )
+        results = payload.get("results")
+        if results is None:
+            return []
+        if not isinstance(results, list):
+            raise RuntimeError(
+                f"{make} {nhtsa_model} {model_year}: expected `results` to be a list, got {type(results).__name__}"
+            )
+        return results
     raise RuntimeError(f"{make} {nhtsa_model} {model_year}: no request was attempted")
 
 
@@ -218,6 +263,8 @@ def collect_model_rows(
     Fetch every configured model year for one model and keep the campaigns in the report-date window.
 
     The API can list one campaign more than once for a vehicle, so rows are de-duplicated on the primary key.
+    A result that is skipped is unknown, not absent, so it protects the tracked rows it could stand for from the
+    reconciliation delete: the one campaign when its number is readable, otherwise every campaign of that year.
 
     Args:
         session: the shared HTTP session
@@ -227,46 +274,90 @@ def collect_model_rows(
         pause_seconds: pause after each API call
 
     Returns:
-        (rows keyed by row_key, count of results skipped for a missing campaign number or report date)
+        (rows keyed by row_key, count of results skipped for a missing campaign number or report date,
+        protected row keys, where a campaign of "*" covers the whole model year; see is_protected)
     """
     rows = {}
     skipped = 0
+    protected = set()
     for model_year in model["years"]:
         for record in fetch_vehicle_recalls(
             session, model["make"], model["nhtsa_model"], model_year
         ):
             if not isinstance(record, dict):
                 skipped += 1
+                protected.add(f"{__YEAR_MARKER}{KEY_SEPARATOR}{model_year}")
                 continue
             reported = parse_report_date(record.get("ReportReceivedDate"))
-            if reported is None or not _as_text(record.get("NHTSACampaignNumber")):
+            campaign = _as_text(record.get("NHTSACampaignNumber"))
+            if reported is None or not campaign:
                 skipped += 1
+                marker = campaign or __YEAR_MARKER
+                protected.add(f"{marker}{KEY_SEPARATOR}{model_year}")
                 continue
             if not (date_from <= reported <= date_to):
                 continue
             row = build_recall_row(record, model, model_year, reported)
             rows[row_key(row)] = row
         time.sleep(pause_seconds)
-    return rows, skipped
+    return rows, skipped, protected
+
+
+def is_protected(key: str, protected: set) -> bool:
+    """
+    Check whether a tracked row key is covered by a skipped result and so must not be deleted.
+
+    Args:
+        key: a tracked "campaign|model_year" key
+        protected: the protected keys returned by collect_model_rows
+
+    Returns:
+        True when the key itself, or its whole model year, is protected
+    """
+    model_year = key.rsplit(KEY_SEPARATOR, 1)[1]
+    return key in protected or f"{__YEAR_MARKER}{KEY_SEPARATOR}{model_year}" in protected
+
+
+def model_fingerprint(model: dict, date_from: date, date_to: date) -> str:
+    """
+    Describe everything that decides one model's rows, so a resumed sync can tell a finished model from a changed one.
+
+    Args:
+        model: a parsed model entry
+        date_from: first report received date kept
+        date_to: last report received date kept
+
+    Returns:
+        "nhtsa_model|first_year-last_year|date_from|date_to"
+    """
+    years = model["years"]
+    return f"{model['nhtsa_model']}{KEY_SEPARATOR}{years[0]}-{years[-1]}{KEY_SEPARATOR}{date_from}{KEY_SEPARATOR}{date_to}"
 
 
 def build_state(
-    next_model: str, synced_keys: dict, synced_years: dict, last_completed_sync
+    next_model: str,
+    synced_keys: dict,
+    synced_years: dict,
+    last_completed_sync,
+    pass_done: dict,
 ) -> dict:
     """
     Assemble the full state written at every checkpoint, so no checkpoint drops a key.
 
     Args:
-        next_model: "make|model" of the model a resumed sync starts at; None when a full pass completed
+        next_model: "make|model" of the next model the pass will sync; None when a full pass completed
         synced_keys: "make|model" -> sorted "campaign|model_year" keys currently in the recalls table
         synced_years: "make|model" -> sorted model years currently in the configured_vehicle table
         last_completed_sync: UTC timestamp of the last completed pass, or None
+        pass_done: "make|model" -> model_fingerprint of each model finished in the current pass; empty after a
+            completed pass
 
     Returns:
         the state dict
     """
     return {
         "next_model": next_model,
+        "pass_done": dict(pass_done),
         "synced_keys": {label: list(keys) for label, keys in synced_keys.items()},
         "synced_years": {label: list(years) for label, years in synced_years.items()},
         "last_completed_sync": last_completed_sync,

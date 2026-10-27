@@ -12,6 +12,10 @@
 -- The integration is account-level. If another external MCP server uses it (show external mcp servers lists each
 -- server's integration), delete the drop api integration line before you run this, or that server stops working.
 -- The dbt platform project is not touched here: remove it in dbt platform.
+--
+-- If 05_reader_grants.sql ran, run 98_reader_revoke.sql first. The drops below take the grants on the agent, the
+-- search service, the procedure and the MCP server with them, but not the reader's grants on the database, the pack
+-- schema, the warehouse, the integration, the AGENTS schema and its future tables, or the Cortex database role.
 
 drop agent if exists {{pack}}.nhtsa_recalls_agent;
 

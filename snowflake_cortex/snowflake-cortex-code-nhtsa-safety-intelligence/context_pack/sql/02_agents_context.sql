@@ -18,7 +18,8 @@
 --   metrics  name, description, the aggregation it computes, the SQL the dbt Semantic Layer compiles for it, its
 --            dbt definition (label, semantic model, saved queries that use it), synonyms and usage instructions
 --   skills   the AGENTS.ROOT skill keys published for this schema
--- object_name is a model name, a column name, model.column, or a metric name or synonym. An empty string or *
+-- object_name is a model name, a column name, model.column, or a metric name or synonym. A fully qualified
+-- database.schema.model or database.schema.model.column is read without its database and schema. An empty string or *
 -- lists every model and metric. Counts never come from here: the dbt Semantic Layer gives every count.
 --
 -- Needs: CREATE PROCEDURE on the pack schema; whoever runs the agent needs USAGE on the procedure and SELECT on
@@ -37,6 +38,10 @@ declare
   column_part varchar;
   list_all boolean;
 begin
+  -- database.schema.model and database.schema.model.column: keep model or model.column. Two parts stay model.column.
+  if (array_size(split(name, '.')) >= 3) then
+    name := array_to_string(array_slice(split(name, '.'), 2, array_size(split(name, '.'))), '.');
+  end if;
   list_all := (name in ('', '*'));
   model_part := iff(contains(name, '.'), split_part(name, '.', 1), name);
   column_part := iff(contains(name, '.'), split_part(name, '.', 2), name);
@@ -45,8 +50,10 @@ begin
     with pack_models as (
       select unique_id, name as model_name, materialization, description
       from {{agents}}.DBT_MODEL
-      where database_name = split_part('{{pack}}', '.', 1)
-        and schema_name = split_part('{{pack}}', '.', 2)
+      -- Unquoted Snowflake identifiers are case-insensitive, and the manifest keeps whatever case the dbt profile
+      -- used, so both sides are upper-cased.
+      where upper(database_name) = upper(split_part('{{pack}}', '.', 1))
+        and upper(schema_name) = upper(split_part('{{pack}}', '.', 2))
     ),
 
     upstream as (
@@ -105,7 +112,8 @@ begin
     pack_osi_models as (
       select distinct model_name
       from {{agents}}.OSI_DATASET
-      where upper(source) like upper('{{pack}}.%')
+      -- startswith, not like: _ in a database or schema name is a like wildcard.
+      where startswith(upper(source), upper('{{pack}}.'))
     ),
 
     matched_metrics as (

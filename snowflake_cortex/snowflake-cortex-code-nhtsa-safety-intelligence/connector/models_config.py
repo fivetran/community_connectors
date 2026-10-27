@@ -136,7 +136,7 @@ def parse_models(raw) -> list:
         the list of model entries, in configured order
 
     Raises:
-        ValueError: when the value is missing, not a JSON array, empty, too long, or holds a duplicate make and model
+        ValueError: when the value is missing, not a JSON array, empty, too long, or holds a duplicate make and model, compared case-insensitively
     """
     if _is_placeholder(raw):
         raise ValueError("Missing required configuration value: models")
@@ -150,7 +150,8 @@ def parse_models(raw) -> list:
         raise ValueError(f"models holds {len(decoded)} entries; the maximum is {__MAX_MODELS}")
     max_model_year = datetime.now(timezone.utc).year + __MAX_MODEL_YEAR_AHEAD
     models = [_parse_model_entry(entry, i, max_model_year) for i, entry in enumerate(decoded)]
-    labels = [model_label(m) for m in models]
+    # The API matches make and model case-insensitively, so "Toyota|Camry" and "TOYOTA|CAMRY" are the same vehicle
+    labels = [model_label(m).casefold() for m in models]
     duplicates = sorted({label for label in labels if labels.count(label) > 1})
     if duplicates:
         raise ValueError(f"models lists the same make and model more than once: {duplicates}")

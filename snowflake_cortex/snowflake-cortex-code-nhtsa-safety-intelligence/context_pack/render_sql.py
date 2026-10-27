@@ -5,6 +5,7 @@ Search service and the Cortex Agent, plus the teardown. They name no account, da
 CREATE AGENT ... FROM SPECIFICATION embeds names and the dbt project_id inside $$ ... $$, where Snowflake substitutes
 no variables. So this script fills them in:
 
+    {{database}}         <pack database>, the database that holds the pack schema and AGENTS
     {{pack}}             <pack database>.<pack schema>, where dbt built the models and the pack's objects go
     {{agents}}           <pack database>.AGENTS, where the Agents Schema publish writes the dbt manifest and skills
     {{warehouse}}        the warehouse the search service refreshes on
@@ -13,11 +14,16 @@ no variables. So this script fills them in:
     {{mcp_server}}       <pack>.<MCP server name>, the external MCP server object
     {{dbt_host}}         the dbt platform host with its static subdomain, for example abc123.us1.dbt.com
     {{project_id}}       the dbt platform project the agent must query, and no other
+    {{reader_role}}      a role that asks the agent without owning its objects (05_reader_grants.sql and
+                         98_reader_revoke.sql only)
 
 Usage, from this directory:
     python render_sql.py --pack-database <pack_database> --pack-schema <pack_schema> --warehouse <warehouse> \
         --dbt-host <dbt_host> --project-id <project_id> --output rendered/pack.sql \
         sql/00_dbt_mcp.sql sql/02_agents_context.sql sql/03_search_service.sql sql/04_agent.sql
+
+    python render_sql.py --pack-database <pack_database> --pack-schema <pack_schema> --warehouse <warehouse> \
+        --reader-role <reader_role> --output rendered/reader_grants.sql sql/05_reader_grants.sql
 
 Only the values the given templates use are required. The rendered SQL goes to standard output, or to --output.
 """
@@ -40,8 +46,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 # Plain identifiers only. Anything else is refused, so a value passed on the command line can never inject SQL or
-# close the $$ ... $$ around an agent specification.
-IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+# close the $$ ... $$ around an agent specification. Snowflake allows $ in an unquoted identifier, but two of them
+# end a dollar-quoted string, so $ is refused too.
+IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # A bare host name: lowercase labels joined by dots, no scheme, port, path or user info.
 HOST = re.compile(
@@ -59,14 +66,17 @@ PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 # The command-line flag that supplies each placeholder, so a missing value names its fix.
 FLAGS = {
+    "database": "--pack-database and --pack-schema",
     "pack": "--pack-database and --pack-schema",
     "agents": "--pack-database and --pack-schema",
     "warehouse": "--warehouse",
     "target_lag": "--target-lag",
     "api_integration": "--api-integration",
-    "mcp_server": "--mcp-server",
+    # The server lives in the pack schema, so its name needs the pack too; --mcp-server has a default.
+    "mcp_server": "--pack-database and --pack-schema (and --mcp-server, if it is not the default)",
     "dbt_host": "--dbt-host",
     "project_id": "--project-id",
+    "reader_role": "--reader-role",
 }
 
 DEFAULT_TARGET_LAG = "1 day"
@@ -88,7 +98,7 @@ def check(value: str, pattern: re.Pattern[str], what: str, expected: str) -> str
 
 def check_identifier(value: str, what: str) -> str:
     """Return value when it is a plain SQL identifier."""
-    return check(value, IDENTIFIER, what, "a plain identifier (letters, digits, _ or $)")
+    return check(value, IDENTIFIER, what, "a plain identifier (letters, digits or _)")
 
 
 def build_values(
@@ -100,6 +110,7 @@ def build_values(
     mcp_server: str | None = DEFAULT_MCP_SERVER,
     dbt_host: str | None = None,
     project_id: str | None = None,
+    reader_role: str | None = None,
 ) -> dict[str, str]:
     """Return the value of every placeholder that can be filled from the arguments, after validating each one.
 
@@ -110,6 +121,7 @@ def build_values(
     values: dict[str, str] = {}
     if pack_database is not None and pack_schema is not None:
         pack = f"{check_identifier(pack_database, '--pack-database')}.{check_identifier(pack_schema, '--pack-schema')}"
+        values["database"] = pack_database
         values["pack"] = pack
         # Agents Schema always publishes into a schema named AGENTS, in the database it connects to.
         values["agents"] = f"{pack_database}.{AGENTS_SCHEMA}"
@@ -129,6 +141,8 @@ def build_values(
         )
     if project_id is not None:
         values["project_id"] = check(project_id, PROJECT_ID, "--project-id", "a positive integer")
+    if reader_role is not None:
+        values["reader_role"] = check_identifier(reader_role, "--reader-role")
     return values
 
 
@@ -185,6 +199,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mcp-server", default=DEFAULT_MCP_SERVER, help="default: %(default)s")
     parser.add_argument("--dbt-host", help="dbt platform host with its static subdomain")
     parser.add_argument("--project-id", help="dbt platform project the agent queries")
+    parser.add_argument(
+        "--reader-role",
+        help="role granted read access to the AGENTS tables (05_reader_grants.sql)",
+    )
     parser.add_argument("--output", type=Path, help="file to write instead of standard output")
     parser.add_argument(
         "templates", nargs="+", type=Path, help="template files, rendered in the order given"
@@ -201,6 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             mcp_server=args.mcp_server,
             dbt_host=args.dbt_host,
             project_id=args.project_id,
+            reader_role=args.reader_role,
         )
         sql = render_files(args.templates, values)
         if args.output is None:

@@ -1,6 +1,7 @@
 -- One row: the report dates the answers come from and the sync that produced them. Every answer names this window.
 -- first_report_date and last_report_date are the dates observed in the data, which sit inside the connector's
--- configured report_date_from and report_date_to.
+-- configured report_date_from and report_date_to and are usually narrower. An absence answer ("no campaigns") holds
+-- for the configured window, which this model does not carry (README, Limitations).
 
 with campaign_window as (
   select

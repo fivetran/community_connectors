@@ -1,6 +1,6 @@
 ---
 name: Snowflake Cortex NHTSA Safety Intelligence
-description: Sync NHTSA recalls, complaints, and vehicle specs, then use Snowflake Cortex Agent for vehicle safety discovery and analysis.
+description: Sync NHTSA recalls, complaints, and vehicle specs, then use Snowflake Cortex Agent for vehicle safety discovery and analysis. A fixed-list mode feeds a context pack ([snowflake_cortex/snowflake-cortex-code-nhtsa-safety-intelligence/context_pack](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-code-nhtsa-safety-intelligence/context_pack)) with dbt Semantic Layer metrics over the recalls, a publish of the dbt project's model, column and metric definitions into Snowflake with [Agents Schema](https://github.com/dbt-labs/agents_schema), and a Cortex Agent that reads both.
 category: AI and Connector SDK
 ---
 
@@ -34,7 +34,7 @@ Key capabilities:
 - Component failure pattern analysis across vehicle platforms
 - Cost control with configurable discovery and enrichment limits
 - Graceful degradation: works without Cortex (data-only mode) when AI is disabled
-- Fixed-list mode: a configured model list and report-date window, with deletes so the destination always equals the filter
+- Fixed-list mode: a configured model list and report-date window, with deletes so the `recalls` and `configured_vehicle` tables always equal the filter
 
 The context pack in `../context_pack/` is built on the fixed-list tables. It has a dbt project with dbt Semantic Layer metrics over `recalls` and `configured_vehicle`, and a script that publishes the project's model, column, lineage and metric definitions into an `AGENTS` schema in Snowflake with [Agents Schema](https://github.com/dbt-labs/agents_schema). Its Cortex Agent gets every count from those metrics through the dbt MCP server, and reads what a model, column or metric means from the `AGENTS` tables. See the [context pack README](../context_pack/README.md).
 
@@ -110,7 +110,7 @@ Seed mode parameters:
 - `max_enrichments` (optional) - Maximum Cortex API calls per sync for cost control. Defaults to "10"
 
 Fixed-list mode parameters:
-- `models` (required for fixed-list mode) - A JSON array, encoded as a string, of objects with `make`, `model`, `nhtsa_model`, `year_from` and `year_to`. `make` and `model` are the names written to the tables. `nhtsa_model` is the spelling the API matches, because some marketing names return nothing (a Lexus ES 350 is `ES`, a Mercedes-Benz C-Class is `C 300`, a Ford Mustang Mach-E is `MUSTANG MACH E`). Model years run from `year_from` to `year_to` inclusive. At most 200 models, and each make and model pair appears once.
+- `models` (required for fixed-list mode) - A JSON array, encoded as a string, of objects with `make`, `model`, `nhtsa_model`, `year_from` and `year_to`. `make` and `model` are the names written to the tables. `nhtsa_model` is the spelling the API matches, because some marketing names return nothing (a Lexus ES 350 is `ES`, a Mercedes-Benz C-Class is `C 300`, a Ford Mustang Mach-E is `MUSTANG MACH E`). Model years run from `year_from` to `year_to` inclusive. At most 200 models, and each make and model pair appears once, compared case-insensitively because the API matches names that way.
 - `report_date_from` (required for fixed-list mode) - The first NHTSA report received date kept, inclusive, as `YYYY-MM-DD`
 - `report_date_to` (required for fixed-list mode) - The last NHTSA report received date kept, inclusive, as `YYYY-MM-DD`
 - `request_pause_seconds` (optional) - The pause after each API call, between 0 and 10. Defaults to "0.2"
@@ -186,9 +186,11 @@ Fixed-list mode is implemented in `def sync_fixed_list(configuration, state)`:
 3. Upsert the `recalls` rows with the configured `make` and `model`, and NHTSA's spelling in `nhtsa_make` and `nhtsa_model`
 4. Upsert one `configured_vehicle` row per model year, with the number of campaigns kept, so a zero means the API was called and returned no campaign in the window
 5. Delete the rows that model no longer returns, for example a campaign whose report date was amended out of the window, and the model years removed from its range
-6. Checkpoint after each model, so an interrupted sync resumes at the next one
+6. Checkpoint after each model. The state records each model this pass has finished, with its `nhtsa_model`, year range and report-date window, so an interrupted sync resumes with every model the pass has not finished. A model added to the list, or a finished model whose entry or window changed, is synced on the resume, not skipped
 
-After a full pass, the connector deletes every row of a model removed from `models`. A sync that starts from an empty state, which is the first sync or a full re-sync, truncates both tables first: a re-sync clears state but keeps every destination row, so without the truncate a row that left the filter before the re-sync would never be deleted. A result with no campaign number or an unparseable report date is skipped and counted, and the count is logged and reported to the dashboard with `op.warning`.
+After a full pass, the connector deletes every row of a model removed from `models`. A sync that starts with no fixed-list state truncates both tables first. That covers the first sync, a full re-sync, and the first sync after a connection switches from seed mode to fixed-list mode. A re-sync clears state but keeps every destination row, and seed mode leaves its own `recalls` rows, so without the truncate those rows would never be deleted. The seed-only tables (`complaints`, `vehicle_specs`, `discovery_insights`, `safety_analysis`) are not part of the fixed-list schema and keep their last seed-mode rows; use a new connection for fixed-list mode if they should not be there.
+
+A result with no campaign number or an unparseable report date is skipped and counted, and each model's count is logged and reported to the dashboard with `op.warning` before that model's checkpoint, so an interrupted sync that resumes past the model has already reported it. A skipped result is unknown, not absent, so it never causes a delete: a tracked campaign whose number the skipped result carries is kept, and a skipped result with no readable campaign number keeps every tracked campaign of that model year until a later sync returns a clean response.
 
 
 ## Error handling
@@ -202,9 +204,9 @@ Retry logic:
 - Non-retryable errors (401, 403) are logged and raised immediately
 
 Fixed-list mode handling via `def fetch_vehicle_recalls(session, make, nhtsa_model, model_year)` in `fixed_list.py`:
-- HTTP 400 means NHTSA does not know the vehicle, and the call is treated as no campaigns
+- HTTP 400 with NHTSA's unknown-vehicle body (`{"Count": 0, "results": []}`) means NHTSA does not know the vehicle, and the call is treated as no campaigns. A 400 with any other body, such as an edge error page, fails the sync naming the vehicle, before anything is written
 - HTTP 429 and 5xx, connection errors and timeouts are tried up to three times in all, with exponential backoff (2 and 4 seconds), then the sync fails naming the vehicle
-- Any other non-success status, or a body that is not JSON, fails the sync immediately naming the vehicle
+- Any other non-success status, a body that is not JSON, a JSON body that is not an object, or a `results` field that is not a list fails the sync immediately naming the vehicle, before anything is written, so a malformed response cannot delete tracked campaigns
 - A missing or null `results` field is treated as no campaigns
 
 Cortex Agent handling via `def call_cortex_agent(configuration, prompt, cortex_session=None)`:
