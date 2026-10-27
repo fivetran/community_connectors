@@ -1,3 +1,9 @@
+---
+name: Goshippo
+description: Sync shipment data from Goshippo API
+category: SaaS & APIs
+---
+
 # Goshippo Connector Example
 
 ## Connector overview

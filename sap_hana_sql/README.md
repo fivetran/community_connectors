@@ -1,3 +1,9 @@
+---
+name: SAP HANA
+description: Connect to SAP HANA SQL Server using hdbcli
+category: Databases
+---
+
 # SAP HANA Connector Example
 
 ## Connector overview

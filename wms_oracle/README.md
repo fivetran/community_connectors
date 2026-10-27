@@ -1,3 +1,9 @@
+---
+name: Oracle WMS
+description: Sync warehouse management data from Oracle WMS REST API with incremental sync, historical backfill, and pre-cursor drift detection across 26 entities.
+category: SaaS & APIs
+---
+
 # Oracle WMS Connector Example
 
 ## Connector overview

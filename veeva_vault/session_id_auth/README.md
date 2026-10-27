@@ -1,3 +1,9 @@
+---
+name: Veeva Vault (Session Authentication)
+description: Authenticate to Veeva Vault with session ID
+category: SaaS & APIs
+---
+
 # Veeva Vault Connector - Using Session Authentication Example
 
 ## Connector overview

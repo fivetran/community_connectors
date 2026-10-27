@@ -1,3 +1,9 @@
+---
+name: IBM Db2 (Log-Based Replication)
+description: Sync IBM Db2 data using log-based CDC via the ASN SQL Replication framework, reading from Change Data tables without polling the source.
+category: Databases
+---
+
 # IBM Db2 Log-Based Replication Connector Example
 
 ## Connector overview

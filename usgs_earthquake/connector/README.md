@@ -1,3 +1,9 @@
+---
+name: USGS Earthquake
+description: Sync earthquake and seismic events from the USGS FDSN Event Web Service, including revisions and deletes, with a context pack ([usgs_earthquake/context_pack](https://github.com/fivetran/community_connectors/tree/main/usgs_earthquake/context_pack)) that gives AI agents a dbt and MetricFlow semantic layer and DuckDB agent instructions.
+category: AI and Connector SDK
+---
+
 # USGS Earthquake Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Federal Register
+description: Sync rules, proposed rules, notices, and presidential documents from the Federal Register API
+category: SaaS & APIs
+---
+
 # Federal Register Connector Example
 
 ## Connector overview

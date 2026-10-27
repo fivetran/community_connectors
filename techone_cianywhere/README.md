@@ -1,3 +1,9 @@
+---
+name: TechOne CiAnywhere
+description: Sync general ledger, chart of accounts, and transaction data from the TechOne CiAnywhere web services API
+category: SaaS & APIs
+---
+
 # TechOne CiAnywhere Connector Example
 
 ## Connector overview

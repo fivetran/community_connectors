@@ -1,3 +1,9 @@
+---
+name: Fixed-Width SFTP
+description: Read 12 fixed-width files from 3 SFTP subdirectories (ELAN, CUP, LPL/DFM) into 12 destination tables with soft-delete purge logic and implied-decimal parsing
+category: SaaS & APIs
+---
+
 # Fixed-Width SFTP Connector Example
 
 Fivetran Connector SDK connector that reads 12 fixed-width files delivered daily to an SFTP server by three financial-data providers (ELAN, CUP, LPL/DFM) and syncs them to 12 destination tables.

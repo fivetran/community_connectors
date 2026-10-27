@@ -1,3 +1,9 @@
+---
+name: Cassandra
+description: Connect and sync data from Cassandra database
+category: Databases
+---
+
 # Cassandra Connector Example
 
 ## Connector overview

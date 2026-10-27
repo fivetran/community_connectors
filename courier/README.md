@@ -1,3 +1,9 @@
+---
+name: Courier
+description: Sync notifications data from Courier multi-channel platform
+category: SaaS & APIs
+---
+
 # Connector SDK Courier API Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Couchbase Capella
+description: Sync data from Couchbase Capella
+category: Databases
+---
+
 # Couchbase Capella Connector Example
 
 ## Connector overview

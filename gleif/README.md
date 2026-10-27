@@ -1,3 +1,9 @@
+---
+name: GLEIF
+description: Sync Legal Entity Identifier (LEI) reference data from the GLEIF API
+category: SaaS & APIs
+---
+
 # GLEIF Connector Example
 
 ## Connector overview

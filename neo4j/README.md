@@ -1,3 +1,9 @@
+---
+name: Neo4j
+description: Extract data from Neo4j graph databases
+category: Databases
+---
+
 # Neo4j Database Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Gumroad
+description: Sync sales, products, and subscribers from Gumroad
+category: SaaS & APIs
+---
+
 # Gumroad Connector Example
 
 ## Connector overview

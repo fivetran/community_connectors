@@ -1,3 +1,9 @@
+---
+name: Oracle Primavera P6
+description: Sync project, activity, and resource data from the Oracle Primavera P6 EPPM Data Service REST API
+category: SaaS & APIs
+---
+
 # Oracle Primavera P6 Connector Example
 
 ## Connector overview

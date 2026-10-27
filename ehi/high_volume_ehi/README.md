@@ -1,3 +1,9 @@
+---
+name: EHI (High Volume)
+description: Sync high-volume EHI tables from Microsoft SQL Server using keyset and offset pagination with parallel processing
+category: Databases
+---
+
 # EHI High Volume Connector Example
 
 ## Connector overview

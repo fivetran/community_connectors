@@ -1,3 +1,9 @@
+---
+name: Oura Ring
+description: Sync daily activity, sleep, readiness, stress, and heart rate data from the Oura Ring API v2.
+category: SaaS & APIs
+---
+
 # Oura Ring Connector Example
 
 ## Connector overview

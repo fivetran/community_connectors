@@ -1,3 +1,9 @@
+---
+name: SAM.gov
+description: Sync government contracting opportunities from SAM.gov
+category: SaaS & APIs
+---
+
 # SAM.gov Opportunities Connector Example
 
 ## Connector overview

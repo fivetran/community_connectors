@@ -1,3 +1,9 @@
+---
+name: Sensor Tower
+description: Sync mobile app market intelligence from Sensor Tower
+category: SaaS & APIs
+---
+
 # Sensor Tower Connector Example
 
 ## Connector overview

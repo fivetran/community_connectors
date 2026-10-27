@@ -1,3 +1,9 @@
+---
+name: Sybase ASE
+description: Sync data from Sybase ASE using the `FreeTDS` driver and `PyODBC`.
+category: Databases
+---
+
 # Sybase ASE Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Teradata Vantage
+description: Sync data from Teradata Vantage database
+category: Databases
+---
+
 # Teradata Vantage Connector Example
 
 ## Connector overview

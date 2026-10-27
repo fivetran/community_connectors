@@ -45,7 +45,7 @@ Add each new connector in an appropriately named directory. A new connector must
 
 - The connector implementation
 - A `requirements.txt` or `pyproject.toml` file when the connector uses external dependencies
-- A connector-level `README.md` based on the template connector
+- A connector-level `README.md` based on the template connector, starting with the `name`, `description`, and `category` frontmatter shown in the template
 - Any other files required to configure or run the connector
 
 Include only the README template sections relevant to the connector; concise documentation is sufficient when it explains how to configure and run the connector.
@@ -173,6 +173,14 @@ To apply Black formatting, run `.github/scripts/fix-python-formatting.sh` from t
 ### Root README
 
 A check verifies that new connector directories are documented in the root `README.md`.
+
+### README frontmatter
+
+A check verifies that every connector `README.md` starts with valid `name`, `description`, and `category` frontmatter. The [Fivetran community connectors catalog](https://fivetran.com/docs/connector-sdk/community-connectors) is generated from it. To run the check locally:
+
+```bash
+python .github/scripts/validate_readme_frontmatter.py
+```
 
 ### Contributor License Agreement
 

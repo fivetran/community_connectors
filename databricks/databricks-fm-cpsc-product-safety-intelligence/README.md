@@ -1,3 +1,9 @@
+---
+name: Databricks CPSC Product Safety Intelligence
+description: Sync CPSC product recall data and enrich incidents with Databricks `ai_query()` multi-agent product safety analysis.
+category: AI and Connector SDK
+---
+
 # Databricks CPSC Product Safety Intelligence Connector Example
 
 ## Connector overview

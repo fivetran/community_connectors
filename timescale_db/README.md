@@ -1,3 +1,9 @@
+---
+name: TimescaleDB
+description: Sync time-series and vector data from TimescaleDB
+category: Databases
+---
+
 # TimescaleDB Example Connector
 
 ## Connector overview

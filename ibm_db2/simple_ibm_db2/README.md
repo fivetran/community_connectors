@@ -1,3 +1,9 @@
+---
+name: IBM Db2
+description: Sync data from IBM Db2 using the `ibm_db` library.
+category: Databases
+---
+
 # IBM DB2 Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Bright Data Web Unlocker
+description: Sync unlocked web page content for one or more URLs from the Bright Data Web Unlocker API
+category: SaaS & APIs
+---
+
 # Bright Data Web Unlocker Connector Example
 
 ## Connector overview

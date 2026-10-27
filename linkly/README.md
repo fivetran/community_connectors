@@ -1,3 +1,9 @@
+---
+name: Linkly
+description: Sync workspaces, links, custom domains, daily click totals, and conversions from the Linkly URL shortener API
+category: SaaS & APIs
+---
+
 # Linkly Connector Example
 
 ## Connector overview

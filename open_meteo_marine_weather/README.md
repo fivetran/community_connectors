@@ -1,3 +1,9 @@
+---
+name: Open-Meteo Marine Weather
+description: Sync hourly and daily marine weather data (wave height, direction, period, swell, wind waves) from the Open-Meteo Marine Weather API
+category: SaaS & APIs
+---
+
 # Open-Meteo Marine Weather Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Google Cloud Pub/Sub
+description: Sync data from Google Cloud Pub/Sub
+category: Message Queues & Streaming
+---
+
 # Google Cloud Pub/Sub Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: MasterTax
+description: Sync data from MasterTax API
+category: SaaS & APIs
+---
+
 # MasterTax Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Oktopost
+description: Sync social media exports from Oktopost BI API
+category: SaaS & APIs
+---
+
 # Oktopost Connector Example
 
 ## Connector overview

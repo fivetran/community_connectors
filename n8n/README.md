@@ -1,3 +1,9 @@
+---
+name: n8n
+description: Sync workflow automation data from n8n
+category: SaaS & APIs
+---
+
 # n8n Connector Example
 
 ## Connector overview

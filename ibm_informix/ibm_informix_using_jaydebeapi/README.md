@@ -1,3 +1,9 @@
+---
+name: IBM Informix (JayDeBeApi)
+description: Sync data from IBM Informix using `jaydebeapi` with an external JDBC driver.
+category: Databases
+---
+
 # IBM Informix Connector using JayDeBeApi
 
 ## **Connector Overview**

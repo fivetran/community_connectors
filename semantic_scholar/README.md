@@ -1,3 +1,9 @@
+---
+name: Semantic Scholar
+description: Sync academic paper records from the Semantic Scholar Academic Graph API, with optional Snowflake Cortex research impact, domain, and accessibility enrichment
+category: SaaS & APIs
+---
+
 # Semantic Scholar Academic Graph Connector Example
 
 ## Connector overview

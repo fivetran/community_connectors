@@ -1,3 +1,9 @@
+---
+name: Snowflake Cortex Clinical Trial Intelligence
+description: Sync ClinicalTrials.gov records and enrich them with Snowflake Cortex Agent clinical trial landscape intelligence.
+category: AI and Connector SDK
+---
+
 # Snowflake Cortex Clinical Trial Intelligence Connector Example
 
 ## Connector overview

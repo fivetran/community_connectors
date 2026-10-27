@@ -1,3 +1,9 @@
+---
+name: Prometheus
+description: Sync metrics and time series from Prometheus
+category: SaaS & APIs
+---
+
 # Prometheus Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Microsoft Excel
+description: Sync data from Microsoft Excel files
+category: SaaS & APIs
+---
+
 # Microsoft Excel File Connector Example
 
 ## Connector overview
