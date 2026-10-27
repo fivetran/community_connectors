@@ -383,14 +383,14 @@ def query_covers(tracked_query, query: str) -> bool:
     """
     Check that a no-recalls answer to `query` speaks for the campaigns tracked under `tracked_query`.
 
-    NHTSA matches the model spelling without regard to case, and the report window is applied by the connector, not
-    sent to NHTSA, so the answer covers the tracked campaigns when the spelling is the same in any case and the window
-    still contains the one they were tracked under. A widened window then keeps them; a narrowed one does not, since
-    a tracked campaign may fall outside it.
+    NHTSA matches the model spelling without regard to ASCII letter case, and the report window is applied by the
+    connector, not sent to NHTSA, so the answer covers the tracked campaigns when the spelling is the same in any
+    letter case and the window still contains the one they were tracked under. A widened window then keeps them; a
+    narrowed one does not, since a tracked campaign may fall outside it.
 
     Args:
-        tracked_query: the model_query that tracked every row the destination holds for the model, or None when no
-            single query did
+        tracked_query: the model_query that tracked every row the destination holds for one model year, or None
+            when no single query did
         query: the model_query of this sync
 
     Returns:
@@ -403,7 +403,14 @@ def query_covers(tracked_query, query: str) -> bool:
     current = query.rsplit(KEY_SEPARATOR, 2)
     if len(tracked) != 3:
         return False
-    same_spelling = tracked[0].casefold() == current[0].casefold()
+    # NHTSA matches ASCII letters without regard to case but not Unicode folds such as German sharp s to "ss", so
+    # only an ASCII spelling is compared case-insensitively.
+    old_spelling, new_spelling = tracked[0], current[0]
+    same_spelling = old_spelling == new_spelling or (
+        old_spelling.isascii()
+        and new_spelling.isascii()
+        and old_spelling.lower() == new_spelling.lower()
+    )
     # ISO dates compare correctly as strings
     return same_spelling and current[1] <= tracked[1] and tracked[2] <= current[2]
 
@@ -426,8 +433,8 @@ def build_state(
         last_completed_sync: UTC timestamp of the last completed pass, or None
         pass_done: "make|model" -> model_fingerprint of each model finished in the current pass; empty after a
             completed pass
-        synced_queries: "make|model" -> the model_query that tracked every row in that model's synced_keys, or None
-            when rows kept across a query change were tracked under an earlier one
+        synced_queries: "make|model" -> {model year: the model_query that tracked every row of that year in
+            synced_keys, or None when rows kept across a query change were tracked under an earlier one}
 
     Returns:
         the state dict

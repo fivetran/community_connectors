@@ -63,7 +63,9 @@ instructions:
     - Only nhtsa_model_coverage proves a configured model had no recalls (models_without_campaigns, has_campaigns).
       A model missing from a result is not evidence of no recalls. NHTSA answers a misspelled make or
       nhtsa_model the same as a model with no recalls, so say the count is what NHTSA returned for the configured
-      spelling.
+      spelling. A count above zero can include a campaign NHTSA stopped listing, which the connector keeps when
+      NHTSA answers no recalls for that whole model year and the views do not mark, so report campaigns as held by
+      the last sync, not as listed by NHTSA today.
     - Never add campaign counts across model years or models: a campaign that covers several years or models would
       count more than once. Query campaign_count filtered on the model with no year, or on the make with no model.
     - Query first_report_date and last_report_date on their own, with no group_by and no where (the report_window
@@ -93,9 +95,11 @@ instructions:
     - When configured_models is zero, the last sync loaded nothing. Say so and stop: never report it as zero
       campaigns. When configured_models is above zero and report_window returns no dates, the configured vehicles had
       no campaign in the window: report zero campaigns, with models_without_campaigns as the proof, and in place of
-      the window say that no campaign fell in it. A sync in progress can hold a partial set: a first sync, or a
-      re-sync that starts over, shows only the models it has finished so far, and a model added to the configuration
-      has no rows until the sync reaches it. Give configured_models with the answer.
+      the window say that no campaign fell in it. A sync in progress can hold a partial or mixed set: a first sync,
+      or a re-sync that starts over, shows only the models it has finished so far, a model added to the configuration
+      has no rows until the sync reaches it, the models it has not reached yet still hold what the last sync wrote,
+      and a model removed from the configuration keeps its rows until the pass ends. Give configured_models with the
+      answer.
 
   response: |
     Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date, or that no

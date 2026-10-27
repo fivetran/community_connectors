@@ -1378,15 +1378,24 @@ def sync_fixed_list(configuration: dict, state: dict):
             # NHTSA dropping every campaign of a model year it listed before is more likely a fault than a
             # withdrawal, so those campaigns are kept, not deleted. That holds only when this sync's query covers the
             # one that tracked them: a no-recalls answer to another nhtsa_model spelling, or over a window that no
-            # longer contains theirs, says nothing about them, so they are deleted as usual.
-            covered = query_covers(synced_queries.get(label), query)
-            no_recall_labels = {str(year) for year in no_recall_years}
+            # longer contains theirs, says nothing about them, so they are deleted as usual. The query is recorded
+            # per model year, as the rows and the skip protection are, so a year that cannot vouch for its rows
+            # leaves the other years' keep in place.
+            prior_queries = synced_queries.get(label)
+            if not isinstance(prior_queries, dict):
+                prior_queries = {}
+            covered_years = {
+                str(year)
+                for year in model["years"]
+                if query_covers(prior_queries.get(str(year)), query)
+            }
+            no_recall_labels = {str(year) for year in no_recall_years} & covered_years
             tracked = {
                 key
                 for key in missing - kept
                 if key.rsplit(KEY_SEPARATOR, 1)[1] in no_recall_labels
             }
-            if tracked and covered:
+            if tracked:
                 kept |= tracked
                 years = sorted({int(key.rsplit(KEY_SEPARATOR, 1)[1]) for key in tracked})
                 # One campaign can cover several model years, so the warning counts campaigns, not tracked rows.
@@ -1398,9 +1407,10 @@ def sync_fixed_list(configuration: dict, state: dict):
                 them = "it" if campaigns == 1 else "them"
                 message = (
                     f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in {year_text}, "
-                    f"but an earlier sync with the same nhtsa_model, over a report window this one contains, "
-                    f"tracked {held} there. The connector kept {them} instead of deleting {them}. If NHTSA "
-                    f"withdrew {them}, run a full re-sync of the connection to clear {them}."
+                    "but an earlier sync, with this nhtsa_model in the same or another letter case and over a "
+                    f"report window this one contains, tracked {held} there. The connector kept {them} instead "
+                    f"of deleting {them}. If NHTSA withdrew {them}, run a full re-sync of the connection to clear "
+                    f"{them}."
                 )
                 log.warning(message)
                 # Surface the kept campaigns as a sync warning in the Fivetran dashboard, not only in the logs.
@@ -1441,10 +1451,17 @@ def sync_fixed_list(configuration: dict, state: dict):
                 op.warning(message)
             synced_keys[label] = sorted(set(rows) | kept)
             synced_years[label] = list(model["years"])
-            # The recorded query must have tracked every row the destination holds. A row kept because a skipped
-            # result could stand for it was tracked under the earlier query, so after a query change that no longer
-            # covers the earlier one, no single query tracked them all and nothing is recorded.
-            synced_queries[label] = query if covered or not kept else None
+            # Each year's recorded query must have tracked every row the destination holds for that year. A row kept
+            # because a skipped result could stand for it was tracked under the earlier query, so after a query
+            # change that does not cover the earlier one, no single query tracked that year's rows and none is
+            # recorded for it.
+            kept_years = {key.rsplit(KEY_SEPARATOR, 1)[1] for key in kept}
+            synced_queries[label] = {
+                str(year): (
+                    query if str(year) in covered_years or str(year) not in kept_years else None
+                )
+                for year in model["years"]
+            }
             pass_done[label] = fingerprints[index]
             next_model = labels[to_sync[position + 1]] if position + 1 < len(to_sync) else None
             log.debug(f"{label}: {len(rows)} rows across {len(model['years'])} model years")

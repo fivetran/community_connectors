@@ -437,7 +437,7 @@ models:
       - name: nhtsa_model
         description: The model name sent to NHTSA.
       - name: campaign_count
-        description: Distinct campaigns for this vehicle in the window. 0 means none.
+        description: Distinct campaigns the connector holds for this vehicle. 0 means none.
         data_tests:
           - not_null
       - name: has_campaigns
@@ -446,7 +446,8 @@ models:
         description: >
           The connector's count of the campaign rows it kept for this vehicle on its last sync: the campaigns inside
           the report-date window, after its own filtering, plus any tracked campaign kept because its result was
-          skipped or because NHTSA listed no recalls for its model year to the query it was tracked under. Not
+          skipped or because NHTSA listed no recalls for its model year to a query that covers the one it was
+          tracked under (the same nhtsa_model in any letter case, over a window that contains the earlier one). Not
           the number the API returned, which can be larger or smaller.
       - name: last_synced_at
         description: When the connector last queried this vehicle.

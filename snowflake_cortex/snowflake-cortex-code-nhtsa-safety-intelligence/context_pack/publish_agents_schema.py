@@ -229,7 +229,8 @@ def fetch(args: argparse.Namespace) -> None:
             sys.exit(
                 f"run {args.run_id}: semantic_manifest.json metric {position} has no name; nothing was written"
             )
-    # The osi step reads every entry of these lists by key, so an entry that is not an object stops the run here.
+    # The osi step parses every entry of these lists as an object, so one that is not is named here, before a file is
+    # written, instead of failing later with a traceback.
     for key in ("semantic_models", "saved_queries"):
         entries = semantic.get(key, [])
         if not isinstance(entries, list):
