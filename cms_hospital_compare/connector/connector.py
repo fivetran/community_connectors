@@ -660,7 +660,7 @@ def resolve_start(table: str, release: dict, saved: dict) -> tuple:
         # or whether any row reached the table, so the guards could not check the resume. Rows are keyed on the
         # release, so loading it again is idempotent.
         log.info(
-            f"{table}: saved progress has no paging evidence; reloading the release from the start"
+            f"{table}: saved progress has no paging evidence or rows written; reloading the release from the start"
         )
         is_resuming = False
     if is_resuming:
@@ -788,7 +788,7 @@ def page_release(
     totals: dict,
 ):
     """
-    Page a release from the saved offset until the API stops short or reaches the count it reports.
+    Page a release from the saved offset until the API returns a short or empty page.
 
     Args:
         session: the shared HTTP session
@@ -815,9 +815,11 @@ def page_release(
         ]
         page_keys = [get_natural_key(row, dataset) if row is not None else None for row in rows]
         check_page_signature(table, page_keys, paging)
-        if paging["offset"] + len(records) > paging["count"]:
-            # Paging ends at the reported count, so a count that is too low would record a truncated release as
-            # loaded. A count that grows during paging still passes: each page is held to its own count.
+        if records and paging["offset"] + len(records) > paging["count"]:
+            # Records past the reported count mean the count is too low, and the release would be recorded with
+            # a count that hides them. A count that grows during paging still passes: each page is held to its own
+            # count. An empty page has no records past the count: a file that shrank under the same version, or was
+            # replaced by a smaller one, ends paging and goes to the checks in finish_release.
             raise RuntimeError(
                 f"{table}: the page at offset {paging['offset']} returned {len(records)} records, past the "
                 f"{paging['count']} rows CMS reports"
@@ -839,7 +841,9 @@ def page_release(
         save_page_progress(
             dataset["dataset_id"], release, paging, page_size, datasets_state, totals
         )
-        if len(records) < page_size or paging["offset"] >= paging["count"]:
+        # Stop only on a short page. A full page that ends at the reported count is followed by one more request,
+        # so a count too low by whole pages still meets the check above instead of completing a truncated release.
+        if len(records) < page_size:
             return
         if paging["pages"] >= max_pages:
             raise RuntimeError(
@@ -896,7 +900,7 @@ def finish_release(
     totals: dict,
 ):
     """
-    Record a paged release in dataset_release and mark it complete, unless it is short or was replaced.
+    Record a paged release in dataset_release and mark it complete, unless it wrote no rows, is short or was replaced.
 
     Args:
         session: the shared HTTP session
@@ -912,19 +916,14 @@ def finish_release(
     dataset_id = dataset["dataset_id"]
     table = dataset["table"]
     offset = paging["offset"]
-    # A short page before the reported count means rows are missing. Leave the release incomplete so the next sync
-    # resumes at this offset, instead of recording a truncated release as complete.
-    if offset < paging["count"] and not accept_short_release(
-        table, paging, is_resuming, saved, totals
-    ):
-        return
     if paging["rows_written"] == 0:
         # No row of this release reached the table: CMS returned none, or every record was skipped for a missing
         # natural key (a renamed key column) or for not being an object. Recording it would make it the latest
         # release and empty every view that reads it, with row_count equal to api_row_count, so no gap would show.
         # It stays incomplete and the earlier release stays the latest. It is saved at offset 0 without paging
         # evidence, so the next sync reads it again from the start: once its records can be loaded (CMS fixes the
-        # data under the same version, or a redeploy maps the renamed key), it loads in full.
+        # data under the same version, or a redeploy maps the renamed key), it loads in full. This runs before the
+        # short-page check, so a release that stopped short with no rows is not resumed past the records it skipped.
         entry = f"{table}: release {release['release_version']}"
         if offset > 0:
             entry += f" ({offset} records, none could be loaded)"
@@ -944,6 +943,12 @@ def finish_release(
         # Learn more about how and where to checkpoint by reading our best practices documentation
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state=build_state(datasets_state, totals))
+        return
+    # A short page before the reported count means rows are missing. Leave the release incomplete so the next sync
+    # resumes at this offset, instead of recording a truncated release as complete.
+    if offset < paging["count"] and not accept_short_release(
+        table, paging, is_resuming, saved, totals
+    ):
         return
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
@@ -1112,7 +1117,9 @@ def update(configuration: dict, state: dict):
     skipped = sum(totals["skipped"].values())
     duplicates = sum(totals["duplicates"].values())
     if skipped:
-        message = f"Skipped {skipped} CMS records with a missing natural key value."
+        message = (
+            f"Skipped {skipped} CMS records that had no natural key value or were not objects."
+        )
         log.warning(message)
         op.warning(message)
     if duplicates:

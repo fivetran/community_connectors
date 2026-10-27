@@ -55,7 +55,7 @@ The views name the tables without a schema. The session puts the schema that hol
 
 Every path below starts a session the same way: attach the connector's tables read-only, put their schema on the search path, check that every table has loaded a release, and run `cms_views.sql`. The views are created in the session's in-memory database, so the warehouse is never written.
 
-Create the views only once every table has a row in `dataset_release`. `fivetran debug` creates each table at the start of the first sync with only its key and release columns, and adds the other columns with the first rows, so `cms_views.sql` fails on a table that has not loaded a release yet. The check query below returns 5 when every table has one; with a lower number, or an error because `dataset_release` does not exist yet, wait for a sync that loads the rest.
+Create the views only once every table has a row in `dataset_release`. `fivetran debug` creates each table at the start of the first sync with only its key and release columns, and adds the other columns with the first rows, so `cms_views.sql` fails on a table that has no rows yet. The check query below returns 5 when every table has a row in `dataset_release`; with a lower number, wait for a sync that loads the rest.
 
 ### The DuckDB CLI
 
