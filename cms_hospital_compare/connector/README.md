@@ -78,9 +78,10 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 ## Data handling
 
 - Release detection: the catalog metadata (`/metastore/schemas/dataset/items/<dataset_id>?show-reference-ids`) carries the data file's version, a Unix epoch that changes whenever CMS replaces the file. It is the release identifier, written to every row as `cms_release_version`. When no version is published, the catalog's `%modified` timestamp is used instead. Refer to `def get_release(session, dataset_id)`.
-- State holds, per dataset, the release version, the offset reached and whether the release finished loading. A finished release is skipped; a partly loaded one resumes at its offset; a new release starts again at offset 0. A partly loaded release also keeps its paging evidence, so the guards under Error handling hold across a resume: a fingerprint of the release's first page and of the last page read, the last natural key, and the offset of any short page. It also keeps the number of rows written so far, so a resumed release still knows whether any row reached the table. A partly loaded release saved without that evidence or that number, by an earlier version of this connector, is reloaded from offset 0. Refer to `def sync_dataset(session, dataset, datasets_state, page_size, delay_seconds, totals)`, `def resolve_start(table, release, saved)` and `def save_page_progress(dataset_id, release, paging, page_size, datasets_state, totals)`.
+- State holds, per dataset, the release version, the offset reached and whether the release finished loading. A finished release is skipped; a partly loaded one resumes at its offset; a new release starts again at offset 0. A partly loaded release also keeps its paging evidence, so the guards under Error handling hold across a resume: a fingerprint of the release's first page and of the last page read, the last natural key, and the offset of any short page. It also keeps the number of rows written so far, so a resumed release still knows whether any row reached the table, and its load attempt. A partly loaded release saved without that evidence, that number or a load attempt, by an earlier version of this connector, is reloaded from offset 0 as a new attempt. Refer to `def sync_dataset(session, dataset, datasets_state, page_size, delay_seconds, totals)`, `def resolve_start(table, release, saved)` and `def save_page_progress(dataset_id, release, paging, page_size, datasets_state, totals)`.
 - State also carries the dashboard warnings not yet reported: the skipped and repeated key counts, kept per release so that a release paged again from offset 0 is not counted twice, and the tables whose release was replaced during the sync, recorded with fewer rows than CMS reported, or read again because CMS reported fewer rows than were already read. A resume skips the pages and releases that produced them, so without this a sync that fails or is killed partway would lose them. They are reported when a later sync finishes and dropped by its final checkpoint; a kill between the report and that checkpoint reports them again on the next sync. Refer to `def build_state(datasets_state, totals)`, `def restore_totals(state)` and `def drop_restarted_counts(totals, dataset_id, saved, release)`.
 - History, not replacement: the primary key includes `cms_release_version`, so a new release adds rows and never deletes the previous release's. To read current values, join to the latest `dataset_release` row per dataset. A release that CMS replaced while it was being paged is not recorded in `dataset_release`, and the next sync loads the new one. The rows already written from that partial release stay in the raw tables, orphaned: no `dataset_release` row points to them, so a join to `dataset_release` leaves them out.
+- Load attempts: every row carries `cms_load_attempt`, and the `dataset_release` row carries the `load_attempt` that was recorded. A release starts at attempt 1 and a resume continues its attempt. A release that loads again from the start under the same version, because it wrote no rows or CMS reported fewer rows than were already read, is a new attempt, numbered one higher. Upserts never delete, so rows the abandoned attempt read and the new one did not, such as rows CMS removed from a file that shrank in place, stay in the raw table with the old attempt. To read a release, join on both `cms_release_version` and `cms_load_attempt`; that join leaves them out. Rows and `dataset_release` rows written before this column existed have no attempt and are read as attempt 1. A completed release loaded again after its state was lost is attempt 1 again, so its rows still match its `dataset_release` row while it reloads. Refer to `def next_load_attempt(release, saved)`.
 - Values are written as text, exactly as the API returns them, including sentinel strings such as `Not Available`, `Not Applicable`, `Too Few to Report` and banded text (`very high`). Dates such as `start_date` stay in the API's `MM/DD/YYYY` form. Typing belongs in the warehouse.
 - Column names are the API's, lowercase, with two renames: `sample` becomes `sample_size` (a reserved word in several SQL engines) and `_condition` becomes `measure_condition`. Refer to `def get_column_name(source_name)`.
 - A record with a blank natural key value is skipped and counted; a natural key repeated within one release is counted and the last record kept. Rows are sorted on the natural key, so a repeat is found by comparing each key with the one before it, and memory stays flat however large the release is. Both counts are logged and reported to the dashboard with `op.warning` when the sync finishes, including counts carried in state from a sync that did not finish. Refer to `def upsert_page_rows(table, rows, page_keys, paging, totals, count_key)`.
@@ -94,12 +95,12 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 - A dataset that keeps returning full pages more than 10 pages past the row count its first page reported fails the sync, as a guard against a row count that keeps growing. The limit scales with `page_size`, so a small page size does not trip it. Refer to `def page_release(session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals)`.
 - A short page before the reported row count, in a release that has written at least one row, leaves the release incomplete, with a warning on the dashboard, saves that offset in state as evidence of the short page, and the next sync resumes there. If that resume finds no rows at the saved offset, and the release has at least one row, the row count was overstated: the release is recorded in `dataset_release` with the rows CMS returned, so `row_count` is below `api_row_count`, and the dashboard shows a warning. Without that, a release whose count CMS overstates would never complete. `row_count` is the number of records paged, including records skipped (no natural key, or not an object) and repeated keys, so a gap from skipped records does not show as `row_count` below `api_row_count`; it shows as `rows_written` below `row_count`, and the skipped-record warning reports it. A sync killed after a full page leaves no such evidence, so one empty page on the resume only records the short page, and the release completes on the next sync only if that page is still empty. Refer to `def finish_release(session, dataset, release, paging, is_resuming, saved, datasets_state, totals)` and `def accept_short_release(table, paging, is_resuming, saved, totals)`.
 - A release that writes no rows is never recorded in `dataset_release`. That happens when CMS reports a row count of 0, or when every record it returns is skipped, because it has no natural key (as after a renamed key column) or is not an object. Recording it would make it the latest release and empty every view that reads it, with `row_count` equal to `api_row_count`, so no gap would show. It stays incomplete, the earlier release stays the latest, and the dashboard warning names the release and how many records it read, none of which could be loaded. Its progress is saved at offset 0 without paging evidence, even when CMS stopped short of the count, so the next sync reads it again from the start and does not resume past the records it skipped: once its records can be loaded, because CMS fixed the data under the same version or a redeploy maps a renamed key, it loads in full. The rows written so far are saved in state with the offset, so a resumed release counts the rows written before the interruption. Refer to `def finish_release(session, dataset, release, paging, is_resuming, saved, datasets_state, totals)`.
-- A page that returns records past the row count CMS reports with it fails the sync, instead of ending paging early and recording a truncated release as loaded. Each page is held to the count it came with, so a count that grows during paging still passes. The sync fails again on every run until CMS corrects the count, and the datasets after it in the sync wait for it; the pages already loaded stay in the table, and the release is not recorded, so the views keep the earlier release. An empty page is never past the count, so paging ends there. When the release was replaced by a smaller one, it is reported as replaced. When CMS lowers the count below the rows already read under the same release, for one bad response or a file that shrank in place, the release is not recorded: a warning names it, and the next sync reads it again from the start and records the count it finds. Upserts never delete, so for a file that shrank, the rows read before the count fell stay in the table under that release. Refer to `def page_release(session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals)`.
+- A page that returns records past the row count CMS reports with it fails the sync, instead of ending paging early and recording a truncated release as loaded. Each page is held to the count it came with, so a count that grows during paging still passes. The sync fails again on every run until CMS corrects the count, and the datasets after it in the sync wait for it; the pages already loaded stay in the table, and the release is not recorded, so the views keep the earlier release. An empty page is never past the count, so paging ends there. When the release was replaced by a smaller one, it is reported as replaced. When CMS lowers the count below the rows already read under the same release, for one bad response or a file that shrank in place, the release is not recorded: a warning names it, and the next sync reads it again from the start as a new load attempt and records the count it finds. Rows the first attempt read that CMS no longer returns stay in the raw table under the old attempt, and a join on the load attempt leaves them out. A file that shrinks in place to a count at or above the rows already read cannot be told apart from a normal end of paging, so it is recorded as read: rows CMS removed after they were read stay in the release, and rows that moved to offsets already read are missed until CMS publishes a new version. Refer to `def page_release(session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals)`.
 - Configuration errors are raised by `def validate_configuration(configuration)` before any API call, and reported at setup time by the setup test.
 
 ## Tables created
 
-Every dataset table has the API's columns, written as STRING, plus the two release columns. The tables below list the declared columns; the other columns are created as the API names them.
+Every dataset table has the API's columns, written as STRING, plus the two release columns and the load attempt. The tables below list the declared columns; the other columns are created as the API names them.
 
 ### hospital
 
@@ -110,6 +111,7 @@ The `hospital` table holds Hospital General Information (`xubh-q36u`): one row p
 | `facility_id` | STRING | CMS Certification Number (CCN) | Yes |
 | `cms_release_version` | STRING | Release the row belongs to | Yes |
 | `cms_released` | STRING | Catalog release date of that release, `YYYY-MM-DD` | No |
+| `cms_load_attempt` | INT | Load attempt of the release that wrote the row (see Data handling) | No |
 
 ### timely_effective_care
 
@@ -121,6 +123,7 @@ The `timely_effective_care` table holds Timely and Effective Care for hospitals 
 | `measure_id` | STRING | CMS measure identifier | Yes |
 | `cms_release_version` | STRING | Release the row belongs to | Yes |
 | `cms_released` | STRING | Catalog release date of that release, `YYYY-MM-DD` | No |
+| `cms_load_attempt` | INT | Load attempt of the release that wrote the row (see Data handling) | No |
 
 ### unplanned_hospital_visit
 
@@ -132,6 +135,7 @@ The `unplanned_hospital_visit` table holds Unplanned Hospital Visits for hospita
 | `measure_id` | STRING | CMS measure identifier, for example `READM_30_HF` | Yes |
 | `cms_release_version` | STRING | Release the row belongs to | Yes |
 | `cms_released` | STRING | Catalog release date of that release, `YYYY-MM-DD` | No |
+| `cms_load_attempt` | INT | Load attempt of the release that wrote the row (see Data handling) | No |
 
 ### unplanned_hospital_visit_national
 
@@ -142,6 +146,7 @@ The `unplanned_hospital_visit_national` table holds the national rates for the s
 | `measure_id` | STRING | CMS measure identifier | Yes |
 | `cms_release_version` | STRING | Release the row belongs to | Yes |
 | `cms_released` | STRING | Catalog release date of that release, `YYYY-MM-DD` | No |
+| `cms_load_attempt` | INT | Load attempt of the release that wrote the row (see Data handling) | No |
 
 ### hrrp
 
@@ -153,6 +158,7 @@ The `hrrp` table holds the Hospital Readmissions Reduction Program (`9n3s-kdb3`)
 | `measure_name` | STRING | HRRP condition, for example `READM-30-HF-HRRP` | Yes |
 | `cms_release_version` | STRING | Release the row belongs to | Yes |
 | `cms_released` | STRING | Catalog release date of that release, `YYYY-MM-DD` | No |
+| `cms_load_attempt` | INT | Load attempt of the release that wrote the row (see Data handling) | No |
 
 ### dataset_release
 
@@ -168,6 +174,7 @@ The `dataset_release` table has one row per dataset per release the connector re
 | `row_count` | INT | Records paged from the API for this release, including records skipped (no natural key, or not an object) and repeated keys | No |
 | `api_row_count` | INT | Row count the API reported for the release | No |
 | `rows_written` | INT | Records written to the table for this release, repeated keys included; below `row_count` when records were skipped | No |
+| `load_attempt` | INT | Load attempt that was recorded; the release's rows with this `cms_load_attempt` are the release | No |
 | `loaded_at` | UTC_DATETIME | When the release finished loading | No |
 
 ## Additional considerations

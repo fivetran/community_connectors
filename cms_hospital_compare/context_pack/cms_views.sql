@@ -5,6 +5,8 @@
 --   1. Each <table>_history view reads only releases the connector recorded in dataset_release, so a release that
 --      is still loading is never read. A release CMS overstated the count of is recorded with the records CMS
 --      returned, and its row_count is below api_row_count. It drops rows with _fivetran_deleted = true.
+--      It also reads only the rows of the load attempt dataset_release recorded, so rows left by an abandoned
+--      attempt of the same release (the connector re-read it from the start) stay out.
 --   2. Each plain view (cms_hospital, cms_hrrp, ...) keeps only the latest recorded release of its table.
 --   3. Numbers are cast with try_cast, so every CMS sentinel ("Not Available", "Not Applicable", "N/A",
 --      "Too Few to Report", an empty string) becomes NULL instead of a string that sorts or averages wrongly.
@@ -47,6 +49,7 @@ with releases as (
     row_count,
     api_row_count,
     rows_written,
+    load_attempt,
     loaded_at,
     coalesce(
       try_cast(release_version as bigint),
@@ -65,6 +68,7 @@ select
   row_count,
   api_row_count,
   rows_written,
+  load_attempt,
   loaded_at,
   row_number() over (
     partition by table_name
@@ -125,6 +129,7 @@ from hospital as h
 inner join cms_release_history as r
   on r.table_name = 'hospital'
   and r.release_version = h.cms_release_version
+  and coalesce(r.load_attempt, 1) = coalesce(h.cms_load_attempt, 1)
 where not coalesce(h._fivetran_deleted, false);
 
 create or replace view cms_hospital as
@@ -155,6 +160,7 @@ from timely_effective_care as t
 inner join cms_release_history as r
   on r.table_name = 'timely_effective_care'
   and r.release_version = t.cms_release_version
+  and coalesce(r.load_attempt, 1) = coalesce(t.cms_load_attempt, 1)
 where not coalesce(t._fivetran_deleted, false);
 
 create or replace view cms_timely_effective_care as
@@ -198,6 +204,7 @@ from unplanned_hospital_visit as u
 inner join cms_release_history as r
   on r.table_name = 'unplanned_hospital_visit'
   and r.release_version = u.cms_release_version
+  and coalesce(r.load_attempt, 1) = coalesce(u.cms_load_attempt, 1)
 where not coalesce(u._fivetran_deleted, false);
 
 create or replace view cms_unplanned_hospital_visit as
@@ -233,6 +240,7 @@ from unplanned_hospital_visit_national as n
 inner join cms_release_history as r
   on r.table_name = 'unplanned_hospital_visit_national'
   and r.release_version = n.cms_release_version
+  and coalesce(r.load_attempt, 1) = coalesce(n.cms_load_attempt, 1)
 where not coalesce(n._fivetran_deleted, false);
 
 create or replace view cms_unplanned_hospital_visit_national as
@@ -269,6 +277,7 @@ from hrrp as p
 inner join cms_release_history as r
   on r.table_name = 'hrrp'
   and r.release_version = p.cms_release_version
+  and coalesce(r.load_attempt, 1) = coalesce(p.cms_load_attempt, 1)
 where not coalesce(p._fivetran_deleted, false);
 
 create or replace view cms_hrrp as

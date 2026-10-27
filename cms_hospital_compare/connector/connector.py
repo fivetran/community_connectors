@@ -83,6 +83,11 @@ __LOADED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 __RELEASE_TABLE = "dataset_release"
 __RELEASE_COLUMN = "cms_release_version"
 __RELEASED_COLUMN = "cms_released"
+# Each load of a release is one attempt. A release that loads again from the start under the same version, after a
+# count that fell below the rows read or a load that wrote no rows, is a new attempt; a resume continues the attempt.
+# Rows and the dataset_release row carry the attempt, and the views read only the rows of the recorded attempt, so
+# rows an abandoned attempt read and the new one did not stay out of every view.
+__LOAD_ATTEMPT_COLUMN = "cms_load_attempt"
 # Summary counts a resume cannot count again, because it skips the pages and releases that produced them. They are
 # carried in every checkpoint and cleared only by the final checkpoint, after op.warning has reported them.
 __PENDING_WARNINGS_KEY = "pending_warnings"
@@ -243,20 +248,22 @@ def get_column_name(source_name: str) -> str:
     return __COLUMN_RENAMES.get(name, name)
 
 
-def build_row(record: dict, release: dict) -> dict:
+def build_row(record: dict, release: dict, load_attempt: int = 1) -> dict:
     """
-    Shape one datastore record into a destination row stamped with its release.
+    Shape one datastore record into a destination row stamped with its release and load attempt.
 
     Args:
         record: one element of the API's `results` array
         release: the dataset's release, from get_release
+        load_attempt: the load attempt of the release that reads the record
 
     Returns:
-        a flat dict of text values plus the release columns
+        a flat dict of text values plus the release columns and the load attempt
     """
     row = {get_column_name(key): _convert_to_text(value) for key, value in record.items()}
     row[__RELEASE_COLUMN] = release["release_version"]
     row[__RELEASED_COLUMN] = release["released"]
+    row[__LOAD_ATTEMPT_COLUMN] = load_attempt
     return row
 
 
@@ -522,7 +529,7 @@ def copy_datasets_state(datasets_state: dict) -> dict:
     Copy the per-dataset progress, so a checkpoint holds every dataset, not only the one being synced.
 
     Args:
-        datasets_state: dataset_id -> {"release_version", "offset", "complete"}, plus the paging evidence
+        datasets_state: dataset_id -> {"release_version", "offset", "complete", "load_attempt"}, plus the paging evidence
             of a release in progress: "first_page_signature", "last_page_signature", "last_key" and, after a
             short page, "short_page_offset"
 
@@ -653,15 +660,18 @@ def resolve_start(table: str, release: dict, saved: dict) -> tuple:
         (is_resuming, the progress to resume from, or an empty dict when the release loads from the start)
     """
     is_resuming = saved.get("release_version") == release["release_version"]
+    has_paging_evidence = all(key in saved for key in ("first_page_signature", "rows_written"))
+    has_load_attempt = is_positive_count(saved.get("load_attempt"))
     if is_resuming and not saved.get("offset"):
         # Nothing to resume: no page was read, or the release wrote no rows and was saved at offset 0 to be read again
         is_resuming = False
-    elif is_resuming and ("first_page_signature" not in saved or "rows_written" not in saved):
-        # State saved before the paging evidence and the rows written were persisted cannot show which pages it saw
-        # or whether any row reached the table, so the guards could not check the resume. Rows are keyed on the
-        # release, so loading it again is idempotent.
+    elif is_resuming and not (has_paging_evidence and has_load_attempt):
+        # State saved before the paging evidence, the rows written and the load attempt were persisted cannot show
+        # which pages it saw, whether any row reached the table, or which attempt its rows belong to, so the guards
+        # could not check the resume. Loading it again from the start, as a new attempt, is idempotent.
         log.info(
-            f"{table}: saved progress has no paging evidence or rows written; reloading the release from the start"
+            f"{table}: saved progress has no paging evidence, rows written or load attempt; reloading the release "
+            "from the start"
         )
         is_resuming = False
     if is_resuming:
@@ -670,6 +680,27 @@ def resolve_start(table: str, release: dict, saved: dict) -> tuple:
         return True, saved
     log.info(f"{table}: loading release {release['release_version']} ({release['released']})")
     return False, {}
+
+
+def next_load_attempt(release: dict, saved: dict) -> int:
+    """
+    Number the load attempt of a release that loads from the start.
+
+    Args:
+        release: the release that now loads from offset 0
+        saved: the dataset's saved progress before this sync, or an empty dict
+
+    Returns:
+        1 for a release not loaded before under this version, or the saved attempt plus 1 for an incomplete release
+        of the same version that loads again from the start
+    """
+    if saved.get("release_version") != release["release_version"] or saved.get("complete"):
+        # A new release, or a completed one loaded again after its state was lost: the first attempt, so rows read
+        # again match the attempt its dataset_release row recorded.
+        return 1
+    attempt = saved.get("load_attempt")
+    # Rows of an attempt saved before attempts were numbered carry no attempt, which the views read as attempt 1
+    return (attempt if is_positive_count(attempt) else 1) + 1
 
 
 def check_page_signature(table: str, page_keys: list, paging: dict):
@@ -763,6 +794,7 @@ def save_page_progress(
         "last_page_signature": paging["last_page_signature"],
         "last_key": list(paging["previous_key"]) if paging["previous_key"] else None,
         "rows_written": paging["rows_written"],
+        "load_attempt": paging["load_attempt"],
     }
     if paging["last_page_length"] < page_size and paging["offset"] < paging["count"]:
         # Saved with the offset in one checkpoint, so the next sync knows the API itself stopped short here,
@@ -812,15 +844,22 @@ def page_release(
         paging["pages"] += 1
         paging["last_page_length"] = len(records)
         rows = [
-            build_row(record, release) if isinstance(record, dict) else None for record in records
+            (
+                build_row(record, release, paging["load_attempt"])
+                if isinstance(record, dict)
+                else None
+            )
+            for record in records
         ]
         page_keys = [get_natural_key(row, dataset) if row is not None else None for row in rows]
         check_page_signature(table, page_keys, paging)
         if records and paging["offset"] + len(records) > paging["count"]:
             # Records past the reported count mean the count is too low, and the release would be recorded with
             # a count that hides them. A count that grows during paging still passes: each page is held to its own
-            # count. An empty page has no records past the count: a file that shrank under the same version, or was
-            # replaced by a smaller one, ends paging, and finish_release reads it again or reports it replaced.
+            # count. An empty page has no records past the count, so it ends paging. finish_release reports a
+            # smaller replacement as replaced, and reads a file that shrank under the same version again as a new
+            # attempt when the count fell below the rows read. A file that shrank to a count at or above the rows
+            # read cannot be told apart from a normal end of paging, and is recorded as it was read.
             raise RuntimeError(
                 f"{table}: the page at offset {paging['offset']} returned {len(records)} records, past the "
                 f"{paging['count']} rows CMS reports"
@@ -880,9 +919,7 @@ def accept_short_release(
         # otherwise it never completes and the views, which join on dataset_release, never show it.
         # row_count below api_row_count keeps the gap between the count and the records returned visible in the
         # ledger. Records skipped for a missing key are inside row_count and reported by their own warning.
-        entry = f"{table}: {offset} of {count} rows"
-        if entry not in totals["short"]:
-            totals["short"].append(entry)
+        # finish_release adds the summary entry once the release is recorded: CMS can still have replaced it.
         log.warning(f"{table}: CMS reported {count} rows but returned {offset} on two syncs")
         return True
     totals["incomplete"].append(f"{table}: {offset} of {count} rows")
@@ -937,6 +974,7 @@ def finish_release(
             "release_version": release["release_version"],
             "offset": 0,
             "complete": False,
+            "load_attempt": paging["load_attempt"],
         }
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
@@ -977,8 +1015,9 @@ def finish_release(
         # mid-release (a count of 0 from a proxy or a datastore re-import), or a file that shrank in place.
         # Recording it would mark a truncated release complete for the whole version, or keep rows CMS no longer
         # reports, with row_count above api_row_count and no warning. It stays incomplete and is saved at offset 0
-        # without paging evidence, so the next sync reads it again from the start and records the count it finds.
-        # A smaller replacement under a new version is handled by the check above.
+        # without paging evidence, so the next sync reads it again from the start as a new load attempt and records
+        # the count it finds. The views read only the recorded attempt's rows, so rows this attempt read and the
+        # next one does not stay out of them. A smaller replacement under a new version is handled by the check above.
         entry = f"{table}: {offset} rows read, {paging['count']} reported"
         if entry not in totals["recount"]:
             totals["recount"].append(entry)
@@ -990,6 +1029,7 @@ def finish_release(
             "release_version": release["release_version"],
             "offset": 0,
             "complete": False,
+            "load_attempt": paging["load_attempt"],
         }
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
@@ -999,6 +1039,13 @@ def finish_release(
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state=build_state(datasets_state, totals))
         return
+
+    if offset < paging["count"]:
+        # A short release that passed accept_short_release, still current, so it is recorded with the rows returned.
+        # The entry is added before the checkpoint below, so a kill after it carries the warning to the next sync.
+        entry = f"{table}: {offset} of {paging['count']} rows"
+        if entry not in totals["short"]:
+            totals["short"].append(entry)
 
     # The 'upsert' operation is used to insert or update data in the destination table.
     # The first argument is the name of the destination table.
@@ -1014,6 +1061,7 @@ def finish_release(
             "row_count": offset,
             "api_row_count": paging["count"],
             "rows_written": paging["rows_written"],
+            "load_attempt": paging["load_attempt"],
             "loaded_at": datetime.now(timezone.utc).strftime(__LOADED_AT_FORMAT),
         },
     )
@@ -1021,6 +1069,7 @@ def finish_release(
         "release_version": release["release_version"],
         "offset": offset,
         "complete": True,
+        "load_attempt": paging["load_attempt"],
     }
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
@@ -1059,8 +1108,11 @@ def sync_dataset(
         log.info(f"{table}: release {release['release_version']} already loaded, skipping")
         return
     is_resuming, start = resolve_start(table, release, saved)
-    if not is_resuming:
+    if is_resuming:
+        load_attempt = start["load_attempt"]
+    else:
         drop_restarted_counts(totals, dataset_id, saved, release)
+        load_attempt = next_load_attempt(release, saved)
     saved = start
 
     # The paging guards live in state, not only in memory, so a resume is held to the same checks as a sync that
@@ -1074,6 +1126,7 @@ def sync_dataset(
         "last_page_signature": saved.get("last_page_signature"),
         "previous_key": tuple(saved["last_key"]) if saved.get("last_key") else None,
         "rows_written": int(saved.get("rows_written") or 0),
+        "load_attempt": load_attempt,
     }
     page_release(
         session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals
@@ -1094,6 +1147,7 @@ def schema(configuration: dict):
         columns = {column: "STRING" for column in dataset["natural_key"]}
         columns[__RELEASE_COLUMN] = "STRING"
         columns[__RELEASED_COLUMN] = "STRING"
+        columns[__LOAD_ATTEMPT_COLUMN] = "INT"
         tables.append(
             {
                 "table": dataset["table"],
@@ -1114,6 +1168,7 @@ def schema(configuration: dict):
                 "row_count": "INT",
                 "api_row_count": "INT",
                 "rows_written": "INT",
+                "load_attempt": "INT",
                 "loaded_at": "UTC_DATETIME",
             },
         }
