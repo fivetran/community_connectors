@@ -87,7 +87,7 @@ __RELEASED_COLUMN = "cms_released"
 # carried in every checkpoint and cleared only by the final checkpoint, after op.warning has reported them.
 __PENDING_WARNINGS_KEY = "pending_warnings"
 __CARRIED_COUNTS = ("skipped", "duplicates")
-__CARRIED_LISTS = ("superseded", "short")
+__CARRIED_LISTS = ("superseded", "short", "recount")
 
 # Source columns renamed before they reach the destination: `sample` is a reserved word in several SQL engines,
 # and a leading underscore is not portable across destinations.
@@ -570,6 +570,7 @@ def restore_totals(state: dict) -> dict:
         "incomplete": [],
         "short": [],
         "empty": [],
+        "recount": [],
     }
     pending = state.get(__PENDING_WARNINGS_KEY)
     if not isinstance(pending, dict):
@@ -819,7 +820,7 @@ def page_release(
             # Records past the reported count mean the count is too low, and the release would be recorded with
             # a count that hides them. A count that grows during paging still passes: each page is held to its own
             # count. An empty page has no records past the count: a file that shrank under the same version, or was
-            # replaced by a smaller one, ends paging and goes to the checks in finish_release.
+            # replaced by a smaller one, ends paging, and finish_release reads it again or reports it replaced.
             raise RuntimeError(
                 f"{table}: the page at offset {paging['offset']} returned {len(records)} records, past the "
                 f"{paging['count']} rows CMS reports"
@@ -900,7 +901,8 @@ def finish_release(
     totals: dict,
 ):
     """
-    Record a paged release in dataset_release and mark it complete, unless it wrote no rows, is short or was replaced.
+    Record a paged release in dataset_release and mark it complete, unless it wrote no rows, is short, was
+    replaced, or now has a count below the rows already read.
 
     Args:
         session: the shared HTTP session
@@ -961,6 +963,34 @@ def finish_release(
         log.warning(
             f"{table}: release {release['release_version']} was replaced by {current['release_version']} during the sync"
         )
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+        op.checkpoint(state=build_state(datasets_state, totals))
+        return
+
+    if offset > paging["count"]:
+        # Under the same version, CMS now reports fewer rows than were already read: one bad or empty response
+        # mid-release (a count of 0 from a proxy or a datastore re-import), or a file that shrank in place.
+        # Recording it would mark a truncated release complete for the whole version, or keep rows CMS no longer
+        # reports, with row_count above api_row_count and no warning. It stays incomplete and is saved at offset 0
+        # without paging evidence, so the next sync reads it again from the start and records the count it finds.
+        # A smaller replacement under a new version is handled by the check above.
+        entry = f"{table}: {offset} rows read, {paging['count']} reported"
+        if entry not in totals["recount"]:
+            totals["recount"].append(entry)
+        log.warning(
+            f"{table}: CMS now reports {paging['count']} rows for release {release['release_version']}, "
+            f"fewer than the {offset} already read; the next sync reads it again from the start"
+        )
+        datasets_state[dataset_id] = {
+            "release_version": release["release_version"],
+            "offset": 0,
+            "complete": False,
+        }
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
         # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
@@ -1152,6 +1182,13 @@ def update(configuration: dict, state: dict):
             f"CMS reported more rows than it returned on two syncs in a row for {'; '.join(totals['short'])}; "
             "those releases are recorded with the rows returned, and dataset_release shows row_count below "
             "api_row_count."
+        )
+        log.warning(message)
+        op.warning(message)
+    if totals["recount"]:
+        message = (
+            f"CMS reported fewer rows than were already read for {'; '.join(totals['recount'])}; those releases "
+            "were not recorded, and the next sync reads them again from the start."
         )
         log.warning(message)
         op.warning(message)
