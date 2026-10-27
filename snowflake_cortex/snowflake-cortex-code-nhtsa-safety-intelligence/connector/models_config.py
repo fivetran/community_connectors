@@ -136,7 +136,7 @@ def parse_models(raw) -> list:
         the list of model entries, in configured order
 
     Raises:
-        ValueError: when the value is missing, not a JSON array, empty, too long, or holds a duplicate make and model, compared case-insensitively
+        ValueError: when the value is missing, not a JSON array, empty, too long, or holds a duplicate make and model, compared case-insensitively, a make spelled two ways, or two entries whose make and model read the same joined by a space
     """
     if _is_placeholder(raw):
         raise ValueError("Missing required configuration value: models")
@@ -155,6 +155,23 @@ def parse_models(raw) -> list:
     duplicates = sorted({label for label in labels if labels.count(label) > 1})
     if duplicates:
         raise ValueError(f"models lists the same make and model more than once: {duplicates}")
+    # The make is a group-by and filter value downstream, where "Toyota" and "toyota" would be two makes
+    spellings = {}
+    for m in models:
+        spellings.setdefault(m["make"].casefold(), set()).add(m["make"])
+    conflicts = sorted(sorted(names) for names in spellings.values() if len(names) > 1)
+    if conflicts:
+        raise ValueError(
+            f"models spells the same make more than one way; use one spelling: {conflicts}"
+        )
+    # The context pack labels a model "<make> <model>", so "Alfa" + "Romeo Giulia" and "Alfa Romeo" + "Giulia" would
+    # be one label for two configured models
+    joined = [f"{m['make']} {m['model']}".casefold() for m in models]
+    collisions = sorted({label for label in joined if joined.count(label) > 1})
+    if collisions:
+        raise ValueError(
+            f"models gives two entries the same make and model label once joined by a space: {collisions}"
+        )
     return models
 
 

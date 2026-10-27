@@ -110,7 +110,7 @@ Seed mode parameters:
 - `max_enrichments` (optional) - Maximum Cortex API calls per sync for cost control. Defaults to "10"
 
 Fixed-list mode parameters:
-- `models` (required for fixed-list mode) - A JSON array, encoded as a string, of objects with `make`, `model`, `nhtsa_model`, `year_from` and `year_to`. `make` and `model` are the names written to the tables. `nhtsa_model` is the spelling the API matches, because some marketing names return nothing (a Lexus ES 350 is `ES`, a Mercedes-Benz C-Class is `C 300`, a Ford Mustang Mach-E is `MUSTANG MACH E`). Model years run from `year_from` to `year_to` inclusive. At most 200 models, and each make and model pair appears once, compared case-insensitively because the API matches names that way.
+- `models` (required for fixed-list mode) - A JSON array, encoded as a string, of objects with `make`, `model`, `nhtsa_model`, `year_from` and `year_to`. `make` and `model` are the names written to the tables. `nhtsa_model` is the spelling the API matches, because some marketing names return nothing (a Lexus ES 350 is `ES`, a Mercedes-Benz C-Class is `C 300`, a Ford Mustang Mach-E is `MUSTANG MACH E`). Model years run from `year_from` to `year_to` inclusive. At most 200 models, and each make and model pair appears once, compared case-insensitively because the API matches names that way. A make is spelled the same way in every entry (`Toyota` twice, not `Toyota` and `toyota`), because the tables group and filter on it. Two entries cannot read the same once make and model are joined by a space (`Alfa` with `Romeo Giulia` and `Alfa Romeo` with `Giulia`), because the context pack labels each model that way.
 - `report_date_from` (required for fixed-list mode) - The first NHTSA report received date kept, inclusive, as `YYYY-MM-DD`
 - `report_date_to` (required for fixed-list mode) - The last NHTSA report received date kept, inclusive, as `YYYY-MM-DD`
 - `request_pause_seconds` (optional) - The pause after each API call, between 0 and 10. Defaults to "0.2"
@@ -188,7 +188,7 @@ Fixed-list mode is implemented in `def sync_fixed_list(configuration, state)`:
 5. Delete the rows that model no longer returns, for example a campaign whose report date was amended out of the window, and the model years removed from its range
 6. Checkpoint after each model. The state records each model this pass has finished, with its `nhtsa_model`, year range and report-date window, so an interrupted sync resumes with every model the pass has not finished. A model added to the list, or a finished model whose entry or window changed, is synced on the resume, not skipped
 
-After a full pass, the connector deletes every row of a model removed from `models`. A sync that starts with no fixed-list state truncates both tables first. That covers the first sync, a full re-sync, and the first sync after a connection switches from seed mode to fixed-list mode. A re-sync clears state but keeps every destination row, and seed mode leaves its own `recalls` rows, so without the truncate those rows would never be deleted. The seed-only tables (`complaints`, `vehicle_specs`, `discovery_insights`, `safety_analysis`) are not part of the fixed-list schema and keep their last seed-mode rows; use a new connection for fixed-list mode if they should not be there.
+After a full pass, the connector deletes every row of a model removed from `models`. A sync that starts with no fixed-list state truncates both tables first. That covers the first sync, a full re-sync, and the first sync after a connection switches from seed mode to fixed-list mode, including a switch back after an earlier fixed-list period: seed mode drops the fixed-list state keys, so the next fixed-list sync always starts with the truncate. A re-sync clears state but keeps every destination row, and seed mode leaves its own `recalls` rows, so without the truncate those rows would never be deleted. The seed-only tables (`complaints`, `vehicle_specs`, `discovery_insights`, `safety_analysis`) are not part of the fixed-list schema and keep their last seed-mode rows; use a new connection for fixed-list mode if they should not be there.
 
 A result with no campaign number or an unparseable report date is skipped and counted, and each model's count is logged and reported to the dashboard with `op.warning` before that model's checkpoint, so an interrupted sync that resumes past the model has already reported it. A skipped result is unknown, not absent, so it never causes a delete: a tracked campaign whose number the skipped result carries is kept, and a skipped result with no readable campaign number keeps every tracked campaign of that model year until a later sync returns a clean response.
 
@@ -204,10 +204,10 @@ Retry logic:
 - Non-retryable errors (401, 403) are logged and raised immediately
 
 Fixed-list mode handling via `def fetch_vehicle_recalls(session, make, nhtsa_model, model_year)` in `fixed_list.py`:
-- HTTP 400 with NHTSA's unknown-vehicle body (`{"Count": 0, "results": []}`) means NHTSA does not know the vehicle, and the call is treated as no campaigns. A 400 with any other body, such as an edge error page, fails the sync naming the vehicle, before anything is written
+- HTTP 400 with NHTSA's unknown-vehicle body (`{"Count": 0, "results": []}`) means NHTSA does not know the vehicle, and the call is treated as no campaigns. When NHTSA knows none of a model's configured years, which is what a misspelled `nhtsa_model` looks like, the sync also sends an `op.warning` naming the model. A 400 with any other body, such as an edge error page, fails the sync naming the vehicle, before anything is written for that model
 - HTTP 429 and 5xx, connection errors and timeouts are tried up to three times in all, with exponential backoff (2 and 4 seconds), then the sync fails naming the vehicle
-- Any other non-success status, a body that is not JSON, a JSON body that is not an object, or a `results` field that is not a list fails the sync immediately naming the vehicle, before anything is written, so a malformed response cannot delete tracked campaigns
-- A missing or null `results` field is treated as no campaigns
+- Any other non-success status, a body that is not JSON, a JSON body that is not an object, or a `results` field that is not a list fails the sync immediately naming the vehicle, before anything is written for that model, so a malformed response cannot delete tracked campaigns. Models synced earlier in the same sync keep what they wrote and checkpointed, and the next sync resumes after them
+- A missing or null `results` field is treated as no campaigns only when `Count` is 0. Without a zero `Count`, as in a proxy's JSON error object, the sync fails naming the vehicle
 
 Cortex Agent handling via `def call_cortex_agent(configuration, prompt, cortex_session=None)`:
 - Retry logic with exponential backoff for transient failures (429, 500, 502, 503, 504)
@@ -270,7 +270,7 @@ Primary key: `make`, `model`, `model_year`
 | `model` | STRING | Model as configured (the marketing name) |
 | `model_year` | INT | Model year the API was called for |
 | `nhtsa_model` | STRING | Model spelling the API was called with |
-| `campaigns_returned` | INT | Campaigns in the report-date window for this vehicle, zero when there are none |
+| `campaigns_returned` | INT | Campaign rows the `recalls` table holds for this vehicle after the sync: the campaigns in the report-date window, plus any tracked campaign kept because its result was skipped. Zero when there are none |
 | `last_synced_at` | UTC_DATETIME | Start of the sync that last called the API for this vehicle |
 
 ### complaints
@@ -385,4 +385,4 @@ Sync behavior:
 - NHTSA data changes infrequently (new recalls and complaints are added periodically)
 - Recommended sync frequency: every 24 hours for monitoring, weekly for general analysis
 - The connector checkpoints after each phase and each discovered vehicle in seed mode, and after each model in fixed-list mode, for safe resumption
-- Earlier versions of this example wrote `report_received_date` in `recalls` as text in `DD/MM/YYYY` form. It is now a date in both modes
+- Earlier versions of this example wrote `report_received_date` in `recalls` as text in `DD/MM/YYYY` form. It is now a date in both modes. An existing seed-mode connection rewrites only the rows it fetches again, so rows of vehicles it does not rediscover keep the text value; use a new connection when the column must hold dates only

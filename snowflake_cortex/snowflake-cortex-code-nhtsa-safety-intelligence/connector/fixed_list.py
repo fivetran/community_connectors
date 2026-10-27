@@ -144,6 +144,11 @@ def create_list_session() -> requests.Session:
     return session
 
 
+class UnknownVehicle(list):
+    """The empty result of a call NHTSA answered with its unknown-vehicle body, so a caller can tell it from a
+    vehicle NHTSA knows and lists no campaigns for (a misspelled nhtsa_model looks like this)."""
+
+
 def _is_unknown_vehicle_body(response: requests.Response) -> bool:
     """
     Check that a 400 carries the body NHTSA sends for a vehicle it does not know.
@@ -179,12 +184,12 @@ def fetch_vehicle_recalls(
         model_year: the model year
 
     Returns:
-        the API's `results` list; empty when the API does not know the vehicle
+        the API's `results` list; an empty UnknownVehicle when the API does not know the vehicle
 
     Raises:
         RuntimeError: when the request still fails after the retries, fails with a non-retryable status, answers
-            400 without NHTSA's unknown-vehicle body, or returns a body that is not a JSON object with a list (or
-            missing or null) `results`
+            400 without NHTSA's unknown-vehicle body, or returns a body that is not a JSON object with a list
+            `results` (a missing or null `results` passes only with a Count of 0)
     """
     params = {"make": make, "model": nhtsa_model, "modelYear": model_year}
     for attempt in range(__MAX_RETRIES):
@@ -208,7 +213,7 @@ def fetch_vehicle_recalls(
             raise RuntimeError(f"{make} {nhtsa_model} {model_year}: request failed: {e}") from e
         if response.status_code == __UNKNOWN_VEHICLE_STATUS_CODE:
             if _is_unknown_vehicle_body(response):
-                return []
+                return UnknownVehicle()
             # Any other 400 (an edge or WAF page, a changed API) is not proof the vehicle has no campaigns, and an
             # empty result here would make reconciliation delete the vehicle's tracked campaigns.
             raise RuntimeError(
@@ -243,7 +248,14 @@ def fetch_vehicle_recalls(
             )
         results = payload.get("results")
         if results is None:
-            return []
+            # Only a zero Count says the vehicle has no campaigns. Without it, a JSON object with no `results` (a
+            # proxy's error object, a changed API) is unknown, and returning [] would delete the tracked campaigns.
+            count = payload.get("Count")
+            if isinstance(count, int) and not isinstance(count, bool) and count == 0:
+                return []
+            raise RuntimeError(
+                f"{make} {nhtsa_model} {model_year}: response has no `results` list and Count is {count!r}"
+            )
         if not isinstance(results, list):
             raise RuntimeError(
                 f"{make} {nhtsa_model} {model_year}: expected `results` to be a list, got {type(results).__name__}"
@@ -275,15 +287,18 @@ def collect_model_rows(
 
     Returns:
         (rows keyed by row_key, count of results skipped for a missing campaign number or report date,
-        protected row keys, where a campaign of "*" covers the whole model year; see is_protected)
+        protected row keys, where a campaign of "*" covers the whole model year (see is_protected), count of
+        model years NHTSA answered as an unknown vehicle)
     """
     rows = {}
     skipped = 0
     protected = set()
+    unknown_years = 0
     for model_year in model["years"]:
-        for record in fetch_vehicle_recalls(
-            session, model["make"], model["nhtsa_model"], model_year
-        ):
+        results = fetch_vehicle_recalls(session, model["make"], model["nhtsa_model"], model_year)
+        if isinstance(results, UnknownVehicle):
+            unknown_years += 1
+        for record in results:
             if not isinstance(record, dict):
                 skipped += 1
                 protected.add(f"{__YEAR_MARKER}{KEY_SEPARATOR}{model_year}")
@@ -300,7 +315,7 @@ def collect_model_rows(
             row = build_recall_row(record, model, model_year, reported)
             rows[row_key(row)] = row
         time.sleep(pause_seconds)
-    return rows, skipped, protected
+    return rows, skipped, protected, unknown_years
 
 
 def is_protected(key: str, protected: set) -> bool:

@@ -11,7 +11,8 @@
 --                      and SELECT on its tables, and USAGE on the warehouse the agent runs it on.
 --   the dbt MCP tools  USAGE on the external MCP server and on its API integration. Each reader also connects once in
 --                      Snowflake Intelligence (00_dbt_mcp.sql); a grant cannot give that consent. The dbt views need no
---                      grant here: the Semantic Layer queries them with the dbt platform's own credential.
+--                      grant for the agent: the Semantic Layer queries them with the dbt platform's own credential.
+--                      A SQL tool that reads the views directly needs SELECT on them; the README gives the grants.
 --   Cortex Agents      the SNOWFLAKE.CORTEX_AGENT_USER database role. SNOWFLAKE.CORTEX_USER, which also allows the
 --                      agent, is granted to PUBLIC by default; the grant below still works where an administrator
 --                      revoked that.

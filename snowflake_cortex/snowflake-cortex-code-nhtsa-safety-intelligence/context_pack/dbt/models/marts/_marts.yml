@@ -445,7 +445,8 @@ models:
       - name: campaigns_returned
         description: >
           The connector's count of the campaign rows it kept for this vehicle on its last sync: the campaigns inside
-          the report-date window, after its own filtering. Not the number the API returned, which can be larger.
+          the report-date window, after its own filtering, plus any tracked campaign kept because its result was
+          skipped. Not the number the API returned, which can be larger.
       - name: last_synced_at
         description: When the connector last queried this vehicle.
 

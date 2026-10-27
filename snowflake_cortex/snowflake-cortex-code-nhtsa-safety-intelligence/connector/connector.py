@@ -97,6 +97,14 @@ __SNOWFLAKE_HOST_SUFFIX = ".snowflakecomputing.com"
 # Destination tables written in fixed-list mode
 __RECALLS_TABLE = "recalls"
 __VEHICLE_TABLE = "configured_vehicle"
+# The state keys fixed-list mode writes (fixed_list.build_state); seed mode drops them
+__FIXED_LIST_STATE_KEYS = (
+    "next_model",
+    "pass_done",
+    "synced_keys",
+    "synced_years",
+    "last_completed_sync",
+)
 
 
 def _is_placeholder(value) -> bool:
@@ -1225,18 +1233,22 @@ def _delete_recall_rows(label: str, row_keys) -> int:
     return deleted
 
 
-def upsert_vehicle_rows(model: dict, rows: dict, synced_at: str):
+def upsert_vehicle_rows(model: dict, row_keys: set, synced_at: str):
     """
     Write one configured_vehicle row per configured model year of one model.
 
+    campaigns_returned counts every recalls row the destination holds for the vehicle after this model is synced:
+    the rows upserted now and the tracked rows kept because a skipped result could stand for them.
+
     Args:
         model: a parsed model entry
-        rows: that model's recalls rows keyed by "campaign|model_year"
+        row_keys: that model's "campaign|model_year" keys held in the destination
         synced_at: UTC timestamp of this sync
     """
     campaigns_by_year = {}
-    for row in rows.values():
-        campaigns_by_year[row["model_year"]] = campaigns_by_year.get(row["model_year"], 0) + 1
+    for key in row_keys:
+        model_year = int(key.rsplit(KEY_SEPARATOR, 1)[1])
+        campaigns_by_year[model_year] = campaigns_by_year.get(model_year, 0) + 1
     for model_year in model["years"]:
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
@@ -1351,9 +1363,19 @@ def sync_fixed_list(configuration: dict, state: dict):
         for position, index in enumerate(to_sync):
             model = models[index]
             label = labels[index]
-            rows, skipped, protected = collect_model_rows(
+            rows, skipped, protected, unknown_years = collect_model_rows(
                 session, model, date_from, date_to, pause_seconds
             )
+            if unknown_years == len(model["years"]):
+                # NHTSA knows none of the model's years, which is what a misspelled nhtsa_model looks like. The
+                # model is synced as having no campaigns, as the filter says, but it should not pass unnoticed.
+                message = (
+                    f"{label}: NHTSA does not know {model['make']} {model['nhtsa_model']} for any configured model "
+                    "year; check nhtsa_model. The model is recorded with no campaigns."
+                )
+                log.warning(message)
+                # Surface the unknown model as a sync warning in the Fivetran dashboard, not only in the logs.
+                op.warning(message)
             for key in sorted(rows):
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
@@ -1363,7 +1385,7 @@ def sync_fixed_list(configuration: dict, state: dict):
             missing = set(synced_keys.get(label, [])) - set(rows)
             kept = {key for key in missing if is_protected(key, protected)}
             totals["deleted"] += _delete_recall_rows(label, missing - kept)
-            upsert_vehicle_rows(model, rows, synced_at)
+            upsert_vehicle_rows(model, set(rows) | kept, synced_at)
             totals["deleted"] += _delete_vehicle_rows(
                 label, set(synced_years.get(label, [])) - set(model["years"])
             )
@@ -1441,6 +1463,11 @@ def update(configuration: dict, state: dict):
     if is_fixed_list_mode(configuration):
         sync_fixed_list(configuration, state)
         return
+
+    # Seed mode checkpoints the state it was given, so fixed-list keys would survive a switch to seed mode. A later
+    # switch back would then find fixed-list state, skip the truncate and keep the seed-mode recalls rows. Dropping
+    # them makes the next fixed-list sync start with the truncate.
+    state = {key: value for key, value in state.items() if key not in __FIXED_LIST_STATE_KEYS}
 
     seed_make = configuration.get("seed_make")
     seed_model = configuration.get("seed_model")

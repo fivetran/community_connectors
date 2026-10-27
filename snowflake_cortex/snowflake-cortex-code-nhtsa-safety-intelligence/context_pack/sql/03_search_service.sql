@@ -5,6 +5,9 @@
 -- Run after the dbt Prod job has built nhtsa_campaign_search into {{pack}}. The service answers the questions counts
 -- cannot, such as "which campaigns involve a fire risk"; every count goes through the dbt Semantic Layer instead.
 --
+-- CREATE OR REPLACE drops every grant on the search service. When 05_reader_grants.sql gave a reader role access, run it
+-- again after this file.
+--
 -- makes and models are sorted arrays, so a search filters on one make with
 -- { "@contains": { "makes": "Ford" } } and a campaign that covers two makes stays one document.
 --

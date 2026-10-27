@@ -93,7 +93,7 @@ Render each template with `render_sql.py`, then run it. The order matters:
 | `sql/04_agent.sql` | `nhtsa_recalls_agent`, with the dbt MCP server, `campaign_search` and `agents_context` as its tools, the rules from `AGENTS.md` and the seven checked questions as sample questions | After `02` and `03` |
 | `sql/05_reader_grants.sql` | Grants a reader role what asking the agent needs: `USAGE` on the pack database and schema, the agent, the search service, `agents_context`, the warehouse, the MCP server and its integration, the `SNOWFLAKE.CORTEX_AGENT_USER` database role, and `SELECT` on the current and future `AGENTS` tables, so the table grants survive each publish, which recreates the tables | When a role that owns none of the pack's objects asks the agent, after `04`. Again after re-running `02` or `03`, which drop the grants on the procedure and the search service. `04` keeps the agent's grants (`COPY GRANTS`) |
 | `sql/98_reader_revoke.sql` | Revokes every grant `05` made | Before `99`, when `05` ran. Leave out the grants the role needs for other work, such as the warehouse |
-| `sql/99_teardown.sql` | Drops the agent, the search service, `agents_context`, the MCP server, the integration and the dbt views. The `AGENTS` tables stay, because other agents may read them. Drop `<pack_database>.AGENTS` yourself when nothing else reads it | To remove the pack. Dropping the integration or the MCP server removes every user's consent. The integration is account-level: if another MCP server uses it, delete that line before you run the script |
+| `sql/99_teardown.sql` | Drops the agent, the search service, `agents_context`, the MCP server and the dbt views. The `AGENTS` tables stay, because other agents may read them, and so does the API integration, which is account-level and other MCP servers can share. Drop `<pack_database>.AGENTS`, and the integration (the statement is in the file's header), yourself when nothing else uses them | To remove the pack. Dropping the MCP server or the integration removes every user's consent |
 
 From this directory:
 
@@ -132,9 +132,9 @@ python publish_agents_schema.py publish --work-dir agents_schema_work \
 
 | Step | What it does | Settings it needs |
 |---|---|---|
-| `fetch` | Downloads `manifest.json` and `semantic_manifest.json` of the run through the dbt Admin API, and refuses a run that did not succeed | `DBT_HOST`, `DBT_ACCOUNT_ID`, and a `DBT_TOKEN` that can read the run's artifacts |
+| `fetch` | Downloads `manifest.json` and `semantic_manifest.json` of the run through the dbt Admin API. Refuses a run that did not succeed, a run outside the Production environment, whose schemas the agent does not read, and a manifest with no models or a semantic manifest with no metrics, which would empty the published tables | `DBT_HOST`, `DBT_ACCOUNT_ID`, `DBT_PROD_ENV_ID`, and a `DBT_TOKEN` that can read the run's artifacts |
 | `osi` | Writes `agents_schema_work/osi/nhtsa_recalls_context.osi.yaml`. Writes nothing remote | `DBT_HOST`, `DBT_PROD_ENV_ID` and a Semantic Layer `DBT_TOKEN`, for the compiled SQL. `--no-compiled-sql` skips it |
-| `publish` | Runs `agents-schema dbt`, `agents-schema osi` and `agents-schema skills`. The CLI creates `AGENTS` in the database of the credentials if it does not exist, merges the skill rows into `ROOT`, and replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables. Replacing a table drops the rows another project published in it and every grant on it | `WAREHOUSE_CREDENTIALS`: the CLI's Snowflake credentials as JSON, with `type` `snowflake`, `account`, `user`, `warehouse`, `database` (the pack database), an optional `role`, and `private_key_path`, `private_key_pem` or `password` |
+| `publish` | Runs `agents-schema dbt`, `agents-schema osi` and `agents-schema skills`, and refuses to start without OSI files converted from the fetched run, so the `DBT_*` and `OSI_*` tables never come from different runs. The CLI creates `AGENTS` in the database of the credentials if it does not exist, merges the skill rows into `ROOT`, and replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables. Replacing a table drops the rows another project published in it and every grant on it | `WAREHOUSE_CREDENTIALS`: the CLI's Snowflake credentials as JSON, with `type` `snowflake`, `account`, `user`, `warehouse`, `database` (the pack database), an optional `role`, and `private_key_path`, `private_key_pem` or `password` |
 
 Each step reads its settings from the environment, or from a file of `KEY=VALUE` lines passed with `--env-file`, so no token goes on the command line, and the script prints none of the values it reads. `agents_schema_work/` is in the pack's `.gitignore`.
 
@@ -200,6 +200,8 @@ Claude Code, Cursor and other MCP clients can query the same metrics through a d
 ### An agent with a SQL tool
 
 Every checked question in `AGENTS.md` carries the SQL behind its metric query, written against the dbt models. An agent with a SQL tool and `AGENTS.md` as its instructions can answer from the pack schema with no MCP server. It can also read the definitions from `<pack_database>.AGENTS`, the same tables `agents_context` reads, starting from the `ROOT` table, which lists what the others hold.
+
+The role the SQL tool runs as needs `SELECT` on the views in the pack schema, which `05_reader_grants.sql` does not grant: the Cortex Agent never reads them directly. dbt recreates every view on each Production run, so a grant on one view lasts only until the next run. Grant on the schema's current and future views instead, once: `grant select on all views in schema <pack_database>.<pack_schema> to role <role>;` and `grant select on future views in schema <pack_database>.<pack_schema> to role <role>;`. The schema-level future grant has the same effect on database-level future grants as the one `05` makes on the `AGENTS` tables (see the `05` header).
 
 ### A Managed Data Lake or a standard Snowflake destination
 

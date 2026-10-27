@@ -1,6 +1,7 @@
 -- One document per campaign for Cortex Search. search_text holds the words people search for (component, summary,
--- consequence, remedy). makes and models are sorted arrays, so a search filters on one make with @contains without
--- splitting the campaign into one document per make. Deterministic, so the search service refreshes incrementally.
+-- consequence, remedy), each coalesced so a recall NHTSA sent with a field missing still gets a document. makes and
+-- models are sorted arrays, so a search filters on one make with @contains without splitting the campaign into one
+-- document per make. Deterministic, so the search service refreshes incrementally.
 
 with campaign_makes as (
   select distinct
@@ -34,7 +35,7 @@ model_arrays as (
 
 select
   c.nhtsa_campaign_number,
-  c.component
+  coalesce(c.component, '')
     || ' | ' || coalesce(c.summary, '')
     || ' | ' || coalesce(c.consequence, '')
     || ' | ' || coalesce(c.remedy, '') as search_text,

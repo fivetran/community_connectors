@@ -7,7 +7,7 @@ If your agent has no dbt MCP server, query the dbt models in the pack schema wit
 ## The data
 
 - Source: the NHTSA recalls API (`api.nhtsa.gov/recalls/recallsByVehicle`). The data is public. It holds one record per recall campaign per make, model and model year, not owner or VIN records.
-- A Fivetran Connector SDK connector, run in list mode, queries the API for each configured make, model and model year and syncs two tables: `recalls` (one row per campaign per configured vehicle) and `configured_vehicle` (one row per configured vehicle, with the number of campaigns the API returned for it).
+- A Fivetran Connector SDK connector, run in list mode, queries the API for each configured make, model and model year and syncs two tables: `recalls` (one row per campaign per configured vehicle) and `configured_vehicle` (one row per configured vehicle, with the number of campaign rows the connector kept for it inside the report-date window, not the number the API returned).
 - The dbt project `nhtsa_recalls_context` builds the models and the metrics below from those two tables. dbt project `<project_id>` on dbt platform runs it.
 - A recall campaign has an NHTSA campaign number such as `25V092000`. One campaign often covers several models and model years, so it appears on several rows.
 - The data covers the configured vehicles only. A make or model the connector was not configured to query is not in it.
@@ -21,12 +21,14 @@ The numbers in these rules are examples from the sync of 2026-10-21. Answer from
 3. **Filter on the configured model name** (`recall_row__model`, `model` in SQL), never `nhtsa_model`. NHTSA spells some models differently from the configuration: 48 rows differed on the sync of 2026-10-21.
 4. **Group components on `component_group`**, never `component`. NHTSA writes a component as a colon-delimited path, system first, as in `BACK OVER PREVENTION:SOFTWARE`, so the same system appears under many `component` values. `component_group` is the system, the part before the first colon.
 5. **A null `park_it`, `park_outside` or `over_the_air_update` is unknown**, never false.
-6. **Only `nhtsa_model_coverage` proves a configured model had no campaigns** (`models_without_campaigns`, `has_campaigns`). A model missing from a result is not evidence that it had none.
+6. **Only `nhtsa_model_coverage` proves a configured model had no campaigns** (`models_without_campaigns`, `has_campaigns`). A model missing from a result is not evidence that it had none. A model whose `nhtsa_model` NHTSA does not recognise also shows as having none (the connector warns about it on each sync), so when you report a model with no campaigns, name it as configured and say the count is what NHTSA returned for that spelling.
 7. **Never add campaign counts across model years or models.** A campaign that covers several years or models would count more than once. Query `campaign_count` filtered on the model with no year, or on the make with no model.
 8. **The over-the-air flag is narrower than the text.** `over_the_air_campaigns` counts campaigns NHTSA flagged as over the air (`over_the_air_update` true). On the sync of 2026-10-21 that was 1 campaign, while 37 mentioned an over-the-air update in their text, and some of those remedies are delivered over the air with the flag false (25V315000, 25V540000, 26V165000, 26V283000). Answer "how many are flagged over the air" with the metric and say it is NHTSA's flag. When a question mentions over-the-air remedies, also run `campaign_search` for them, and say the list may be partial.
 9. **State how numbers relate only when the tool results show it.** Say that counts sum to a total, overlap or make up a share only after adding up every row of a result that no row limit cut short. Every campaign has one component group (a dbt test checks it), so a make's counts per component group add up to its campaign total: on the sync of 2026-10-21, the 15 Ford groups summed to exactly 66. In test runs agents claimed both that they add up to more than 66 and that they don't add up to 66.
    Do not state an overlap or a union between a `campaign_search` list and a metric result unless you compared the campaign numbers. Prefer giving the two lists and their counts separately. In a test run an agent said 25V092000 was in both the park-outside list and the over-the-air search list and gave 12 campaigns in all; it is not a park-outside campaign, and the union was 13.
 10. **Use dbt project `<project_id>` only**, on every dbt tool call.
+11. **Filter on the configured spelling of a make or model.** Filters match exactly and are case-sensitive: `= 'ford'` returns nothing where `= 'Ford'` returns Ford's campaigns. Before filtering on a make or model the question names, look up the configured values with `get_dimension_values` (`recall_row__make`, `recall_row__model`, or the `configured_model__` dimensions for the coverage metrics; in SQL, `select distinct make, model from nhtsa_model_coverage`) and filter on the value that matches. When none matches, say the make or model is not in the configuration and stop. A zero from a value that is not in that list is a misspelling, not an absence of campaigns.
+12. **An empty sync is not "no recalls".** When `report_window` returns no dates, or `configured_models` is zero, the last sync loaded nothing for the configured vehicles. Say so and stop: never report it as zero campaigns.
 
 ## Tools
 
@@ -35,6 +37,7 @@ The numbers in these rules are examples from the sync of 2026-10-21. Answer from
 | `list_saved_queries` | Run first. When a saved query fits the question, pass its metrics, group-by and where to `query_metrics`, and add the make or model the question names. Its description starts with the order: pass that as `order_by` too, so the top row comes first and a row limit drops the smallest rows, never the widest. The dbt MCP server lists saved queries but has no tool that runs one |
 | `query_metrics` | Every count. Never compute a count yourself and never write SQL when this tool is available |
 | `list_metrics`, `get_dimensions` | The metrics and dimensions below, when a question needs one the saved queries do not use |
+| `get_dimension_values` | The configured spelling of a make or model, before filtering on it (rule 11) |
 | `campaign_search` | What a campaign is about: fire risk, a part, a remedy, a symptom. Filter one make with `{ "@contains": { "makes": "<Make>" } }`. Results are ranked, not complete: say the list may be partial, and count the campaigns it returns with `campaign_count` |
 | `agents_context` | What a column, flag or model means, its data type, and the models it is built from and feeds; and how a metric is defined: what it counts, its aggregation, the SQL the dbt Semantic Layer compiles for it and the saved queries that use it. All read from Agents Schema. Pass a metric name (`campaign_count`), a column name (`park_it`), a model name (`nhtsa_campaign`), `model.column`, or `*` for every model and metric. Definitions only: counts still come from `query_metrics` |
 
@@ -80,7 +83,7 @@ For one make's configured models, filter on `configured_model__make`, as in `whe
 
 ## Checked questions
 
-Each question has the metric query, the SQL behind it over the dbt models, and the answer it returned on the sync of 2026-10-21 (report dates 2025-01-07 to 2026-09-24). When a question matches one of these, run its query. You may change the make, the model or the model year; change nothing else. If your result differs from the checked answer, the connector has synced newer campaigns: report your result, not the checked one.
+Each question has the metric query, the SQL behind it over the dbt models, and the answer it returned on the sync of 2026-10-21 (report dates 2025-01-07 to 2026-09-24). When a question matches one of these, run its query. You may change the make, the model or the model year; change nothing else. If your result differs from the checked answer, the data has changed since that sync (newer campaigns, a different report-date window or configuration, or campaigns NHTSA amended or withdrew): report your result, not the checked one.
 
 ### Campaigns for one make and the top component group
 
@@ -136,10 +139,11 @@ Metric query: `campaign_count` grouped by `recall_row__model_year`, with `where 
 ```sql
 select
   model_year,
-  campaign_count
-from nhtsa_coverage
+  count(distinct nhtsa_campaign_number) as campaign_count
+from nhtsa_recall
 where make = 'Ford'
-  and lower(model) = lower('Explorer')
+  and model = 'Explorer'
+group by model_year
 order by
   campaign_count desc,
   model_year desc
@@ -160,9 +164,11 @@ select
   makes,
   component_group,
   park_outside,
+  park_it,
   over_the_air_update
 from nhtsa_campaign
 where park_outside
+  or park_it
   or over_the_air_update
 order by nhtsa_campaign_number
 ```
@@ -238,7 +244,7 @@ Answer from the metrics and Search, following the rules above. Start the answer 
 2. The report-date window: `first_report_date` to `last_report_date`.
 3. The metric or tool the answer came from, for example `Source: campaign_count, dbt Semantic Layer`. Say "campaigns", not "recalls", when giving a count. No notes about your own steps or tool choices.
 4. When the answer comes from `campaign_search`, list the campaign numbers and say the list may be partial.
-5. At most 10 rows. Say how many there are in total when there are more.
+5. At most 10 rows, except a campaign list a checked answer gives in full (as the fire-risk answer does). Say how many there are in total when there are more.
 6. If a tool call fails, say so instead of estimating.
 
 End with the credit line: Data: National Highway Traffic Safety Administration, Recalls API (public).

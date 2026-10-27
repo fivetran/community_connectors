@@ -25,18 +25,21 @@ Steps, from this directory:
 
 Environment (or KEY=VALUE lines in a file passed with --env-file; values are never printed):
 
-    fetch    DBT_HOST, DBT_ACCOUNT_ID, DBT_TOKEN       a dbt platform token that can read the run's artifacts
+    fetch    DBT_HOST, DBT_ACCOUNT_ID, DBT_TOKEN,      a dbt platform token that can read the run's artifacts,
+             DBT_PROD_ENV_ID                           and the Production environment the run must belong to
     osi      DBT_HOST, DBT_PROD_ENV_ID, DBT_TOKEN      a Semantic Layer token, for compiled SQL; optional
     publish  WAREHOUSE_CREDENTIALS                     the agents-schema CLI's Snowflake credentials, a JSON object
 
 `fetch` and `osi` only read. `publish` writes to Snowflake: the CLI creates <database>.AGENTS if needed, merges
-the skill rows into AGENTS.ROOT, and replaces the AGENTS.DBT_* tables, the AGENTS.SKILL_USE table and, when `osi`
-has written <work-dir>/osi/*.osi.yaml, the AGENTS.OSI_* tables. Replacing them drops what another project published
+the skill rows into AGENTS.ROOT, and replaces the AGENTS.DBT_* tables, the AGENTS.SKILL_USE table and the
+AGENTS.OSI_* tables. Replacing them drops what another project published
 there and every grant on those tables, so give the pack a database of its own and keep reader access with
 sql/05_reader_grants.sql.
 
-`fetch` removes <work-dir>/osi, and `publish` refuses OSI files converted from any semantic manifest other than the
-fetched one, so the DBT_* and OSI_* tables always come from the same run.
+`fetch` accepts only a successful run in the Production environment (DBT_PROD_ENV_ID), whose schemas are the ones the
+pack's agent reads, and refuses a manifest with no models or a semantic manifest with no metrics. It removes
+<work-dir>/osi, and `publish` refuses to run without OSI files converted from the fetched semantic manifest, so the
+DBT_* and OSI_* tables always come from the same run.
 
 Needs agents-schema 0.0.11 and metricflow 0.213.0, which bring PyYAML and jsonschema. Tested on Python 3.12.
 """
@@ -177,6 +180,9 @@ def admin_api(env: dict[str, str], path: str) -> dict:
             return json.load(response)
     except urllib.error.HTTPError as exc:
         sys.exit(f"dbt Admin API {path}: HTTP {exc.code}")
+    except ValueError:
+        # A proxy or login page answers 200 with HTML.
+        sys.exit(f"dbt Admin API {path}: the response is not JSON")
     except urllib.error.URLError as exc:
         sys.exit(f"dbt Admin API {path}: {exc.reason}")
 
@@ -184,12 +190,28 @@ def admin_api(env: dict[str, str], path: str) -> dict:
 def fetch(args: argparse.Namespace) -> None:
     """Download manifest.json and semantic_manifest.json from a successful dbt platform run into <work-dir>."""
     env = settings(args.env_file)
-    require(env, "DBT_HOST", "DBT_ACCOUNT_ID", "DBT_TOKEN")
-    run = admin_api(env, f"/runs/{args.run_id}/").get("data") or {}
+    require(env, "DBT_HOST", "DBT_ACCOUNT_ID", "DBT_TOKEN", "DBT_PROD_ENV_ID")
+    prod_env_id = require_int(env, "DBT_PROD_ENV_ID")
+    response = admin_api(env, f"/runs/{args.run_id}/")
+    run = (response.get("data") if isinstance(response, dict) else None) or {}
     if run.get("status_humanized") != "Success":
         sys.exit(f"run {args.run_id} is not a successful run: {run.get('status_humanized')}")
+    # A CI or development run builds into other schemas, so the published lineage would point the agent at nothing.
+    if run.get("environment_id") != prod_env_id:
+        sys.exit(f"run {args.run_id} is not in the Production environment (DBT_PROD_ENV_ID)")
     manifest = admin_api(env, f"/runs/{args.run_id}/artifacts/manifest.json")
     semantic = admin_api(env, f"/runs/{args.run_id}/artifacts/semantic_manifest.json")
+    # publish replaces every DBT_* and OSI_* table, so an artifact that describes nothing would empty them.
+    nodes = manifest.get("nodes") if isinstance(manifest, dict) else None
+    models = [
+        n
+        for n in (nodes or {}).values()
+        if isinstance(n, dict) and n.get("resource_type") == "model"
+    ]
+    if not models:
+        sys.exit(f"run {args.run_id}: manifest.json has no models; nothing was written")
+    if not isinstance(semantic, dict) or not semantic.get("metrics"):
+        sys.exit(f"run {args.run_id}: semantic_manifest.json has no metrics; nothing was written")
 
     work = Path(args.work_dir)
     # OSI files converted from an earlier run's semantic manifest must not be published with this run's manifest.
@@ -201,7 +223,6 @@ def fetch(args: argparse.Namespace) -> None:
     target.mkdir(parents=True, exist_ok=True)
     (target / "manifest.json").write_text(json.dumps(manifest))
     (target / "semantic_manifest.json").write_text(json.dumps(semantic))
-    models = [n for n in manifest.get("nodes", {}).values() if n.get("resource_type") == "model"]
     print(
         f"run {args.run_id} (job {run.get('job_definition_id')}, finished {run.get('finished_at')})"
     )
@@ -382,9 +403,16 @@ def compile_metric_sql(env: dict[str, str], metric_names: list[str]) -> dict[str
             sys.exit(f"compileSql {name}: HTTP {exc.code}")
         except urllib.error.URLError as exc:
             sys.exit(f"compileSql {name}: {exc.reason} ({url})")
+        except ValueError:
+            sys.exit(f"compileSql {name}: the response is not JSON ({url})")
+        if not isinstance(payload, dict):
+            sys.exit(f"compileSql {name}: the response is not a JSON object")
         if payload.get("errors"):
             sys.exit(f"compileSql {name}: {payload['errors'][0].get('message')}")
-        compiled[name] = payload["data"]["compileSql"]["sql"]
+        result = (payload.get("data") or {}).get("compileSql") or {}
+        if not isinstance(result.get("sql"), str):
+            sys.exit(f"compileSql {name}: the response has no compiled SQL")
+        compiled[name] = result["sql"]
     return compiled
 
 
@@ -438,9 +466,10 @@ def stage_skills(skills: list[str], uses_schemas: list[str], skills_dir: Path) -
         body = Path(src).read_text()
         if body.startswith("---"):
             sys.exit(f"{src} already has frontmatter; merge uses: by hand")
-        front = (
-            "---\nuses:\n  schemas:\n" + "".join(f"    - {s}\n" for s in uses_schemas) + "---\n\n"
-        )
+        # Each schema is written as a JSON string, which YAML reads as a string: a schema named on, null or 2026
+        # would otherwise load as a boolean, a null or an integer.
+        schemas = "".join(f"    - {json.dumps(s)}\n" for s in uses_schemas)
+        front = f"---\nuses:\n  schemas:\n{schemas}---\n\n"
         (skills_dir / f"{key}.md").write_text(front + body if uses_schemas else body)
         print(f"skill/{key} <- {src}")
 
@@ -462,7 +491,7 @@ def require_osi_matches_manifest(work: Path) -> None:
 
 
 def publish(args: argparse.Namespace) -> None:
-    """Run `agents-schema dbt`, `osi` (when OSI files exist) and `skills` against <database>.AGENTS."""
+    """Run `agents-schema dbt`, `osi` and `skills` against <database>.AGENTS."""
     work = Path(args.work_dir)
     if not (work / "dbt" / "target" / "manifest.json").exists():
         sys.exit(f"no manifest under {work}/dbt/target; run fetch first")
@@ -475,10 +504,14 @@ def publish(args: argparse.Namespace) -> None:
             f"{args.cli} not found: pip install 'agents-schema==0.0.11', or pass --cli <path>"
         )
 
-    steps = [[cli, "dbt", "--project-dir", str(work / "dbt")]]
-    if list((work / "osi").glob("*.osi.yaml")):
-        require_osi_matches_manifest(work)
-        steps.append([cli, "osi", "--osi-dir", str(work / "osi")])
+    # fetch removes osi/, so publishing DBT_* alone would leave an earlier run's OSI_* tables beside them.
+    if not list((work / "osi").glob("*.osi.yaml")):
+        sys.exit(f"no OSI files under {work / 'osi'} for the fetched run; run osi first")
+    require_osi_matches_manifest(work)
+    steps = [
+        [cli, "dbt", "--project-dir", str(work / "dbt")],
+        [cli, "osi", "--osi-dir", str(work / "osi")],
+    ]
     if args.skill:
         stage_skills(args.skill, args.uses_schema, work / "skills")
         steps.append(

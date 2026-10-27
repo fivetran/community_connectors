@@ -11,6 +11,9 @@
 --   agents-schema osi --osi-dir <dir holding the *.osi.yaml converted from target/semantic_manifest.json>
 --   agents-schema skills --skills-dir <dir holding nhtsa-recalls-agent.md, a copy of agent/AGENTS.md>
 --
+-- CREATE OR REPLACE drops every grant on the procedure. When 05_reader_grants.sql gave a reader role access, run it
+-- again after this file.
+--
 -- A Cortex Agent cannot run SQL of its own, so 04_agent.sql exposes this procedure as the agents_context tool. It
 -- reads only the rows for models in {{pack}} and returns JSON:
 --   models   name, materialization, description, upstream and downstream models (dbt lineage)

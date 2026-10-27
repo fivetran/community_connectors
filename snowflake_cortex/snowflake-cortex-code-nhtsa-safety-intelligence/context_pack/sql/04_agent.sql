@@ -61,7 +61,8 @@ instructions:
     - Group components on component_group.
     - A null park_it, park_outside or over_the_air_update means NHTSA sent no usable value: unknown, never false.
     - Only nhtsa_model_coverage proves a configured model had no recalls (models_without_campaigns, has_campaigns).
-      A model missing from a result is not evidence of no recalls.
+      A model missing from a result is not evidence of no recalls. A model whose nhtsa_model NHTSA does not
+      recognise also shows as having none, so say the count is what NHTSA returned for the configured spelling.
     - Never add campaign counts across model years or models: a campaign that covers several years or models would
       count more than once. Query campaign_count filtered on the model with no year, or on the make with no model.
     - Query first_report_date and last_report_date on their own, with no group_by and no where (the report_window
@@ -78,6 +79,13 @@ instructions:
     - Do not state an overlap or a union between a campaign_search list and a metric result unless you compared
       the campaign numbers. Prefer giving the two lists and their counts separately.
     - campaign_search returns makes and models as JSON strings such as ["Ford"], not arrays. Read them as JSON.
+    - Make and model filters match exactly and are case-sensitive: 'ford' matches nothing where 'Ford' matches.
+      Before filtering on a make or model the question names, look up the configured values with
+      get_dimension_values (recall_row__make, recall_row__model, or the configured_model__ dimensions) and filter on
+      the value that matches. When none matches, say the make or model is not in the configuration and stop: a zero
+      from a value not in that list is a misspelling, not an absence of campaigns.
+    - When report_window returns no dates, or configured_models is zero, the last sync loaded nothing. Say so and stop:
+      never report it as zero campaigns.
 
   response: |
     Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date) and the
