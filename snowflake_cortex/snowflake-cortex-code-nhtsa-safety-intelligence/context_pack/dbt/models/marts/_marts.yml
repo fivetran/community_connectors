@@ -418,8 +418,8 @@ models:
 
   - name: nhtsa_coverage
     description: >
-      One row per configured make x model x model year. campaign_count is 0 when the API returned no campaign in the
-      window for that vehicle. campaigns_returned is the connector's count of the campaign rows it kept, kept for
+      One row per configured make x model x model year. campaign_count is 0 when the connector holds no campaign in
+      the window for that vehicle. campaigns_returned is the connector's count of the campaign rows it kept, kept for
       reconciliation.
     columns:
       - name: make
@@ -446,7 +446,8 @@ models:
         description: >
           The connector's count of the campaign rows it kept for this vehicle on its last sync: the campaigns inside
           the report-date window, after its own filtering, plus any tracked campaign kept because its result was
-          skipped. Not the number the API returned, which can be larger.
+          skipped or because NHTSA listed no recalls for its model year under the same nhtsa_model and window. Not
+          the number the API returned, which can be larger or smaller.
       - name: last_synced_at
         description: When the connector last queried this vehicle.
 
@@ -456,8 +457,8 @@ models:
     columns:
       - name: first_report_date
         description: >
-          Earliest report date observed. A tracked campaign the connector kept (an unreadable record, or no recalls
-          listed for its vehicle) can carry a date outside a report window that has since changed.
+          Earliest report date observed. A tracked campaign the connector kept because its record could not be read
+          can carry a date outside a report window that has since changed.
       - name: last_report_date
         description: Latest report date observed, with the same exception as first_report_date.
       - name: campaigns

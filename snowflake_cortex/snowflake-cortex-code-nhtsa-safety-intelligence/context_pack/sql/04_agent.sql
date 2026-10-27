@@ -87,20 +87,21 @@ instructions:
       models (up to two hundred), and if the result is truncated, raise the limit before concluding a value is
       missing. Filter on the value that matches, with the recall_row__ or configured_model__ dimension the metric
       takes. When the lookup returns no values at all, apply the configured_models rule below before you answer.
-      When none matches, say the make or model is not in the configuration and stop: a zero from a value not in
-      that list is a misspelling, not an absence of campaigns. A configured make or model with no campaign is an
+      When none matches, say the make or model is not among the configured vehicles synced, give configured_models
+      so a sync still in progress shows, and stop: a zero from a value not in that list is a misspelling, not an
+      absence of campaigns. A configured make or model with no campaign is an
       answer of zero campaigns.
     - When configured_models is zero, the last sync loaded nothing. Say so and stop: never report it as zero
       campaigns. When configured_models is above zero and report_window returns no dates, the configured vehicles had
       no campaign in the window: report zero campaigns, with models_without_campaigns as the proof, and in place of
-      the window say that no campaign fell in it. A sync in progress shows only the models it has finished so far,
-      so give configured_models with the answer.
+      the window say that no campaign fell in it. A first sync, or a re-sync that starts over, shows only the models
+      it has finished so far, so give configured_models with the answer.
 
   response: |
     Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date, or that no
-    campaign fell in it when report_window has no dates) and the
-    metric you used. Say "campaigns", not "recalls", when giving a count. When the answer comes from campaign_search,
-    list the campaign numbers and say the list may be partial. If a dbt tool call fails, say so instead of estimating.
+    campaign fell in it when report_window has no dates) and the metric you used. Say "campaigns", not "recalls",
+    when giving a count. When the answer comes from campaign_search, list the campaign numbers and say the list may
+    be partial. If a dbt tool call fails, say so instead of estimating.
     State how numbers relate (that they sum to a total, overlap, or make up a share) only after adding up every row
     of a result that no row limit cut short. A result limited to the top rows proves nothing about the total. Answer
     from the tool results only: no notes about your own steps, plans or tool choices in the answer.

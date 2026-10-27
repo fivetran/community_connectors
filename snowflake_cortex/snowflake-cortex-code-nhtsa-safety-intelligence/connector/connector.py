@@ -69,6 +69,7 @@ from fixed_list import (
     create_list_session,
     is_protected,
     model_fingerprint,
+    model_query,
     parse_report_date,
 )
 
@@ -1238,7 +1239,8 @@ def upsert_vehicle_rows(model: dict, row_keys: set, synced_at: str):
     Write one configured_vehicle row per configured model year of one model.
 
     campaigns_returned counts every recalls row the destination holds for the vehicle after this model is synced:
-    the rows upserted now and the tracked rows kept because a skipped result could stand for them.
+    the rows upserted now and the tracked rows kept because a skipped result could stand for them or because NHTSA
+    answered no recalls for their model year.
 
     Args:
         model: a parsed model entry
@@ -1338,6 +1340,7 @@ def sync_fixed_list(configuration: dict, state: dict):
         state = {}
     synced_keys = dict(state.get("synced_keys") or {})
     synced_years = dict(state.get("synced_years") or {})
+    synced_queries = dict(state.get("synced_queries") or {})
     last_completed_sync = state.get("last_completed_sync")
     labels = [model_label(m) for m in models]
     fingerprints = [model_fingerprint(m, date_from, date_to) for m in models]
@@ -1363,37 +1366,47 @@ def sync_fixed_list(configuration: dict, state: dict):
         for position, index in enumerate(to_sync):
             model = models[index]
             label = labels[index]
-            rows, skipped, protected, unknown_years = collect_model_rows(
+            rows, skipped, protected, no_recall_years = collect_model_rows(
                 session, model, date_from, date_to, pause_seconds
             )
+            query = model_query(model, date_from, date_to)
             # A tracked row the API no longer returns is deleted, unless a skipped result could stand for it.
             missing = set(synced_keys.get(label, [])) - set(rows)
             kept = {key for key in missing if is_protected(key, protected)}
-            if unknown_years == len(model["years"]):
+            # NHTSA dropping every campaign of a model year it listed on the last sync is more likely a fault than a
+            # withdrawal, so those campaigns are kept, not deleted. That holds only when the sync that tracked them
+            # asked NHTSA the same thing: a no-recalls answer to a new nhtsa_model spelling or a new report window
+            # says nothing about them, so after such a change they are deleted as usual.
+            no_recall_labels = {str(year) for year in no_recall_years}
+            tracked = {
+                key
+                for key in missing - kept
+                if key.rsplit(KEY_SEPARATOR, 1)[1] in no_recall_labels
+            }
+            if tracked and synced_queries.get(label) == query:
+                kept |= tracked
+                years = sorted({int(key.rsplit(KEY_SEPARATOR, 1)[1]) for key in tracked})
+                # One campaign can cover several model years, so the warning counts campaigns, not tracked rows.
+                campaigns = len({key.rsplit(KEY_SEPARATOR, 1)[0] for key in tracked})
+                noun = "campaign" if campaigns == 1 else "campaigns"
+                message = (
+                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in model years "
+                    f"{', '.join(str(year) for year in years)}, but the last sync, with the same nhtsa_model and "
+                    f"report window, tracked {campaigns} {noun} there. The connector kept them instead of "
+                    "deleting them. If NHTSA withdrew them, run a full re-sync of the connection to clear them."
+                )
+                log.warning(message)
+                # Surface the kept campaigns as a sync warning in the Fivetran dashboard, not only in the logs.
+                op.warning(message)
+            elif len(no_recall_years) == len(model["years"]):
                 # NHTSA gives the same no-recalls answer for a year with no recalls and for a vehicle it does not
-                # know, so a misspelled make or nhtsa_model looks like a model with no recalls in any year.
-                configured_years = {str(year) for year in model["years"]}
-                tracked = {
-                    key for key in missing if key.rsplit(KEY_SEPARATOR, 1)[1] in configured_years
-                }
-                if tracked:
-                    # NHTSA dropping every campaign of a vehicle it listed on the last sync is more likely a
-                    # fault than a withdrawal, so the campaigns of the configured years are kept, not deleted.
-                    kept |= tracked
-                    message = (
-                        f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any "
-                        f"configured model year, but the last sync tracked campaigns for it. The connector "
-                        f"kept {len(tracked)} tracked campaigns instead of deleting them. If NHTSA withdrew "
-                        "them, remove this model from `models` for one sync to clear them, then add it back."
-                    )
-                else:
-                    # The model is synced as having no campaigns, as the filter says, but it should not pass
-                    # unnoticed.
-                    message = (
-                        f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any "
-                        "configured model year. A misspelled make or nhtsa_model gives the same answer, so check "
-                        "them if this model should have recalls. The model is recorded with no campaigns."
-                    )
+                # know, so a misspelled make or nhtsa_model looks like a model with no recalls in any year. The
+                # model is synced as having no campaigns, as the filter says, but it should not pass unnoticed.
+                message = (
+                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any "
+                    "configured model year. A misspelled make or nhtsa_model gives the same answer, so check "
+                    "them if this model should have recalls. The model is recorded with no campaigns."
+                )
                 log.warning(message)
                 # Surface the model as a sync warning in the Fivetran dashboard, not only in the logs.
                 op.warning(message)
@@ -1421,6 +1434,7 @@ def sync_fixed_list(configuration: dict, state: dict):
                 op.warning(message)
             synced_keys[label] = sorted(set(rows) | kept)
             synced_years[label] = list(model["years"])
+            synced_queries[label] = query
             pass_done[label] = fingerprints[index]
             next_model = labels[to_sync[position + 1]] if position + 1 < len(to_sync) else None
             log.debug(f"{label}: {len(rows)} rows across {len(model['years'])} model years")
@@ -1438,6 +1452,7 @@ def sync_fixed_list(configuration: dict, state: dict):
                     synced_years,
                     last_completed_sync,
                     pass_done,
+                    synced_queries,
                 )
             )
     finally:
@@ -1448,6 +1463,8 @@ def sync_fixed_list(configuration: dict, state: dict):
         totals["deleted"] += _delete_recall_rows(label, synced_keys.pop(label))
     for label in sorted(set(synced_years) - set(labels)):
         totals["deleted"] += _delete_vehicle_rows(label, synced_years.pop(label))
+    for label in sorted(set(synced_queries) - set(labels)):
+        synced_queries.pop(label)
     log.info(
         f"Fixed-list sync complete: {totals['upserted']} rows upserted, {totals['deleted']} deleted, "
         f"{totals['skipped']} API results skipped"
@@ -1459,7 +1476,9 @@ def sync_fixed_list(configuration: dict, state: dict):
     # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
     # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state=build_state(None, synced_keys, synced_years, synced_at, {}))
+    op.checkpoint(
+        state=build_state(None, synced_keys, synced_years, synced_at, {}, synced_queries)
+    )
 
 
 def update(configuration: dict, state: dict):

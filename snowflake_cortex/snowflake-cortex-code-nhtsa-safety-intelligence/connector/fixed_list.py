@@ -300,17 +300,17 @@ def collect_model_rows(
 
     Returns:
         (rows keyed by row_key, count of results skipped for a missing campaign number or report date,
-        protected row keys, where a campaign of "*" covers the whole model year (see is_protected), count of
+        protected row keys, where a campaign of "*" covers the whole model year (see is_protected), set of
         model years NHTSA answered with no recalls)
     """
     rows = {}
     skipped = 0
     protected = set()
-    unknown_years = 0
+    no_recall_years = set()
     for model_year in model["years"]:
         results = fetch_vehicle_recalls(session, model["make"], model["nhtsa_model"], model_year)
         if isinstance(results, UnknownVehicle):
-            unknown_years += 1
+            no_recall_years.add(model_year)
         for record in results:
             if not isinstance(record, dict):
                 skipped += 1
@@ -328,7 +328,7 @@ def collect_model_rows(
             row = build_recall_row(record, model, model_year, reported)
             rows[row_key(row)] = row
         time.sleep(pause_seconds)
-    return rows, skipped, protected, unknown_years
+    return rows, skipped, protected, no_recall_years
 
 
 def is_protected(key: str, protected: set) -> bool:
@@ -362,12 +362,30 @@ def model_fingerprint(model: dict, date_from: date, date_to: date) -> str:
     return f"{model['nhtsa_model']}{KEY_SEPARATOR}{years[0]}-{years[-1]}{KEY_SEPARATOR}{date_from}{KEY_SEPARATOR}{date_to}"
 
 
+def model_query(model: dict, date_from: date, date_to: date) -> str:
+    """
+    Describe what a sync asks NHTSA for one model and which of its answers it keeps: the spelling sent and the
+    report-date window. A tracked campaign is kept on a no-recalls answer only when this is unchanged since the
+    sync that tracked it, because a no-recalls answer to a new spelling or a new window says nothing about it.
+
+    Args:
+        model: a parsed model entry
+        date_from: first report received date kept
+        date_to: last report received date kept
+
+    Returns:
+        "nhtsa_model|date_from|date_to"
+    """
+    return f"{model['nhtsa_model']}{KEY_SEPARATOR}{date_from}{KEY_SEPARATOR}{date_to}"
+
+
 def build_state(
     next_model: str,
     synced_keys: dict,
     synced_years: dict,
     last_completed_sync,
     pass_done: dict,
+    synced_queries: dict,
 ) -> dict:
     """
     Assemble the full state written at every checkpoint, so no checkpoint drops a key.
@@ -379,6 +397,7 @@ def build_state(
         last_completed_sync: UTC timestamp of the last completed pass, or None
         pass_done: "make|model" -> model_fingerprint of each model finished in the current pass; empty after a
             completed pass
+        synced_queries: "make|model" -> model_query of the sync that wrote that model's synced_keys
 
     Returns:
         the state dict
@@ -388,5 +407,6 @@ def build_state(
         "pass_done": dict(pass_done),
         "synced_keys": {label: list(keys) for label, keys in synced_keys.items()},
         "synced_years": {label: list(years) for label, years in synced_years.items()},
+        "synced_queries": dict(synced_queries),
         "last_completed_sync": last_completed_sync,
     }

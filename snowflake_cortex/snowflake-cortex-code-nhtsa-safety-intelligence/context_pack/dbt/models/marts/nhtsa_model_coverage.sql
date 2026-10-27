@@ -1,6 +1,6 @@
 -- One row per configured make x model, across every model year configured for it. campaign_count is the distinct
 -- campaigns that cover any of those years, so a campaign spanning three model years counts once. has_campaigns is
--- false when the API returned no campaign for any configured year: "no recalls in the window" as a value, never a
+-- false when the connector holds no campaign for any configured year: "no recalls in the window" as a value, never a
 -- missing row. Answers "which configured models had no recalls" without summing across model years.
 
 with configured_models as (
