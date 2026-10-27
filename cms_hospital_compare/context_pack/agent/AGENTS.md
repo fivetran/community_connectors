@@ -45,7 +45,7 @@ Each question has checked SQL and the answer it returned on the release dated in
 
 "Which hospitals in Connecticut are worse than the nation on heart failure readmissions?"
 
-The summary columns are counted before the detail rows are filtered, so the first row always carries them: a state where no hospital is above the national rate returns one row with `hospitals_above = 0` and NULL hospital columns, not an empty result. The national rate is joined on the measurement period, so `national_rate_pct` is NULL, and `hospitals_without_benchmark` counts the hospitals affected, when the national view holds a different period.
+The summary columns are counted before the detail rows are filtered, so the first row always carries them: a state where no hospital is above the national rate returns one row with `hospitals_above = 0` and NULL hospital columns, not an empty result. The national rate is joined on the measurement period, so `hospitals_without_benchmark` counts the hospitals whose period the national view does not hold, and `national_rate_pct` is NULL when none of them match. Whenever `hospitals_without_benchmark` is above 0, the detail rows are every hospital in the state that reported a rate, highest first, instead of only those above the national rate.
 
 ```sql
 with state_hf as (
@@ -91,13 +91,14 @@ select
 from summary as s
 left join state_hf as h
   on h.score > h.national_rate
+  or (s.hospitals_without_benchmark > 0 and h.score is not null)
 order by h.score desc nulls last, h.facility_id
 limit 5
 ```
 
 Checked answer: 13 of the 26 Connecticut hospitals that reported a rate are above the national rate of 21.3%, for discharges from 2023-07-01 to 2025-06-30. The highest is `070011` at 23.5%. Nationwide, 1,583 of 3,253 reporting hospitals are above it. In American Samoa (`AS`) no hospital reported a rate, and the query returns 0 of 0.
 
-When `national_rate_pct` is NULL or `hospitals_without_benchmark` is above 0, say "national benchmark unavailable for this measurement period" and report the state's rates without a comparison.
+When `national_rate_pct` is NULL or `hospitals_without_benchmark` is above 0, say "national benchmark unavailable for this measurement period" and report the state's rates from the detail rows without a comparison.
 
 ### 2. Highest HRRP excess readmission ratio
 

@@ -13,8 +13,8 @@ completely. Read the latest complete release for current values, or compare rele
 Every value is written as the API returns it, as text. Typing (for example "Not Available" in a numeric score) is
 left to the warehouse.
 
-See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
-and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
+See the Technical Reference documentation (https://fivetran.com/docs/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connector-sdk#connectordevelopmentbestpractices) for details
 """
 
 # For fingerprinting the natural keys of a page, so the repeated-page guard survives a resume
@@ -83,6 +83,11 @@ __LOADED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 __RELEASE_TABLE = "dataset_release"
 __RELEASE_COLUMN = "cms_release_version"
 __RELEASED_COLUMN = "cms_released"
+# Summary counts a resume cannot count again, because it skips the pages and releases that produced them. They are
+# carried in every checkpoint and cleared only by the final checkpoint, after op.warning has reported them.
+__PENDING_WARNINGS_KEY = "pending_warnings"
+__CARRIED_COUNTS = ("skipped", "duplicates")
+__CARRIED_LISTS = ("superseded", "short")
 
 # Source columns renamed before they reach the destination: `sample` is a reserved word in several SQL engines,
 # and a leading underscore is not portable across destinations.
@@ -527,6 +532,60 @@ def copy_datasets_state(datasets_state: dict) -> dict:
     return {key: dict(value) for key, value in datasets_state.items()}
 
 
+def build_state(datasets_state: dict, totals: dict | None = None) -> dict:
+    """
+    Build the state to checkpoint: every dataset's progress, plus the summary counts not yet reported.
+
+    Args:
+        datasets_state: dataset_id -> saved progress
+        totals: running counters for the sync summary, or None once op.warning has reported them
+
+    Returns:
+        the state dict to checkpoint
+    """
+    state = {"datasets": copy_datasets_state(datasets_state)}
+    if totals is not None:
+        pending = {key: totals[key] for key in __CARRIED_COUNTS if totals[key]}
+        pending.update({key: list(totals[key]) for key in __CARRIED_LISTS if totals[key]})
+        if pending:
+            state[__PENDING_WARNINGS_KEY] = pending
+    return state
+
+
+def restore_totals(state: dict) -> dict:
+    """
+    Start the sync summary from the counts a failed or killed sync checkpointed but never reported.
+
+    Args:
+        state: the state the sync starts from
+
+    Returns:
+        the running counters for the sync summary
+    """
+    totals = {
+        "upserted": 0,
+        "skipped": 0,
+        "duplicates": 0,
+        "superseded": [],
+        "incomplete": [],
+        "short": [],
+    }
+    pending = state.get(__PENDING_WARNINGS_KEY)
+    if not isinstance(pending, dict):
+        return totals
+    for key in __CARRIED_COUNTS:
+        value = pending.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            totals[key] = value
+    for key in __CARRIED_LISTS:
+        value = pending.get(key)
+        if isinstance(value, list):
+            totals[key] = [item for item in value if isinstance(item, str)]
+    if any(totals[key] for key in __CARRIED_COUNTS + __CARRIED_LISTS):
+        log.info("Carrying summary counts from an earlier sync that did not finish")
+    return totals
+
+
 def resolve_start(table: str, release: dict, saved: dict) -> tuple:
     """
     Decide whether a release resumes from its saved progress or loads from the start.
@@ -619,7 +678,12 @@ def upsert_page_rows(table: str, rows: list, page_keys: list, paging: dict, tota
 
 
 def save_page_progress(
-    dataset_id: str, release: dict, paging: dict, page_size: int, datasets_state: dict
+    dataset_id: str,
+    release: dict,
+    paging: dict,
+    page_size: int,
+    datasets_state: dict,
+    totals: dict,
 ):
     """
     Save a release's paging progress and evidence after a page, and checkpoint every dataset's progress.
@@ -630,6 +694,7 @@ def save_page_progress(
         paging: the release's paging progress after the page
         page_size: rows per page
         datasets_state: dataset_id -> saved progress; updated in place
+        totals: running counters for the sync summary, checkpointed with the progress
     """
     progress = {
         "release_version": release["release_version"],
@@ -650,7 +715,7 @@ def save_page_progress(
     # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
     # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
+    op.checkpoint(state=build_state(datasets_state, totals))
 
 
 def page_release(
@@ -697,7 +762,9 @@ def page_release(
         upsert_page_rows(table, rows, page_keys, paging, totals)
         # Every record on the page was consumed, so the offset advances by the page's length.
         paging["offset"] += len(records)
-        save_page_progress(dataset["dataset_id"], release, paging, page_size, datasets_state)
+        save_page_progress(
+            dataset["dataset_id"], release, paging, page_size, datasets_state, totals
+        )
         if len(records) < page_size or paging["offset"] >= paging["count"]:
             return
         if paging["pages"] >= max_pages:
@@ -733,7 +800,9 @@ def accept_short_release(
         # would become the latest release and empty its views. Record the release with the rows CMS returned:
         # otherwise it never completes and the views, which join on dataset_release, never show it.
         # row_count below api_row_count keeps the gap visible in the ledger.
-        totals["short"].append(f"{table}: {offset} of {count} rows")
+        entry = f"{table}: {offset} of {count} rows"
+        if entry not in totals["short"]:
+            totals["short"].append(entry)
         log.warning(f"{table}: CMS reported {count} rows but returned {offset} on two syncs")
         return True
     totals["incomplete"].append(f"{table}: {offset} of {count} rows")
@@ -778,10 +847,19 @@ def finish_release(
     # otherwise the next sync loads the new release from the start.
     current = get_release(session, dataset_id)
     if current["release_version"] != release["release_version"]:
-        totals["superseded"].append(table)
+        # A carried entry and a second replacement on the resume name the same table once
+        if table not in totals["superseded"]:
+            totals["superseded"].append(table)
         log.warning(
             f"{table}: release {release['release_version']} was replaced by {current['release_version']} during the sync"
         )
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+        op.checkpoint(state=build_state(datasets_state, totals))
         return
 
     # The 'upsert' operation is used to insert or update data in the destination table.
@@ -811,7 +889,7 @@ def finish_release(
     # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
     # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
+    op.checkpoint(state=build_state(datasets_state, totals))
     log.info(f"{table}: release {release['release_version']} loaded, {offset} rows")
 
 
@@ -864,7 +942,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -903,7 +981,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
@@ -914,14 +992,7 @@ def update(configuration: dict, state: dict):
     datasets_state = dict(state.get("datasets") or {})
     log.info(f"Syncing {len(__DATASETS)} CMS datasets, {page_size} rows per page")
 
-    totals = {
-        "upserted": 0,
-        "skipped": 0,
-        "duplicates": 0,
-        "superseded": [],
-        "incomplete": [],
-        "short": [],
-    }
+    totals = restore_totals(state)
     session = create_session()
     try:
         for dataset in __DATASETS:
@@ -961,13 +1032,15 @@ def update(configuration: dict, state: dict):
         op.warning(message)
     log.info(f"Sync complete: {totals['upserted']} rows upserted")
 
+    # The summary is reported above, so this checkpoint drops the carried counts. A kill before it reports them
+    # again on the next sync: a warning can repeat, but it is never lost.
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
     # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
     # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
     # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state={"datasets": copy_datasets_state(datasets_state)})
+    op.checkpoint(state=build_state(datasets_state))
 
 
 def verify_api_access(configuration: dict):

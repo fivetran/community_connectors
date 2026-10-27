@@ -1,3 +1,9 @@
+---
+name: CMS Hospital Compare
+description: Sync CMS Care Compare hospital quality, emergency department and readmission datasets from the CMS Provider Data Catalog, keeping every release, with a context pack ([cms_hospital_compare/context_pack](https://github.com/fivetran/community_connectors/tree/main/cms_hospital_compare/context_pack)) that gives AI agents typed DuckDB views over the latest complete release and agent instructions with checked questions.
+category: AI and Connector SDK
+---
+
 # CMS Hospital Compare Connector Example
 
 ## Connector overview
@@ -16,7 +22,7 @@ CMS publishes each dataset as a full-replacement snapshot on a release cycle (ro
 
 ## Getting started
 
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
@@ -24,7 +30,7 @@ To initialize a new Connector SDK project using this connector as a starting poi
 fivetran init --template cms_hospital_compare/connector
 ```
 
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
@@ -72,11 +78,12 @@ The datastore query endpoint (`/datastore/query/<dataset_id>/0`) pages with `lim
 ## Data handling
 
 - Release detection: the catalog metadata (`/metastore/schemas/dataset/items/<dataset_id>?show-reference-ids`) carries the data file's version, a Unix epoch that changes whenever CMS replaces the file. It is the release identifier, written to every row as `cms_release_version`. When no version is published, the catalog's `%modified` timestamp is used instead. Refer to `def get_release(session, dataset_id)`.
-- State holds, per dataset, the release version, the offset reached and whether the release finished loading. A finished release is skipped; a partly loaded one resumes at its offset; a new release starts again at offset 0. A partly loaded release also keeps its paging evidence, so the guards under Error handling hold across a resume: a fingerprint of the release's first page and of the last page read, the last natural key, and the offset of any short page. A partly loaded release saved without that evidence, by an earlier version of this connector, is reloaded from offset 0. Refer to `def sync_dataset(session, dataset, datasets_state, page_size, delay_seconds, totals)`, `def resolve_start(table, release, saved)` and `def save_page_progress(dataset_id, release, paging, page_size, datasets_state)`.
+- State holds, per dataset, the release version, the offset reached and whether the release finished loading. A finished release is skipped; a partly loaded one resumes at its offset; a new release starts again at offset 0. A partly loaded release also keeps its paging evidence, so the guards under Error handling hold across a resume: a fingerprint of the release's first page and of the last page read, the last natural key, and the offset of any short page. A partly loaded release saved without that evidence, by an earlier version of this connector, is reloaded from offset 0. Refer to `def sync_dataset(session, dataset, datasets_state, page_size, delay_seconds, totals)`, `def resolve_start(table, release, saved)` and `def save_page_progress(dataset_id, release, paging, page_size, datasets_state, totals)`.
+- State also carries the dashboard warnings not yet reported: the skipped and repeated key counts, and the tables whose release was replaced during the sync or recorded with fewer rows than CMS reported. A resume skips the pages and releases that produced them, so without this a sync that fails or is killed partway would lose them. They are reported when a later sync finishes and dropped by its final checkpoint; a kill between the report and that checkpoint reports them again on the next sync. Refer to `def build_state(datasets_state, totals)` and `def restore_totals(state)`.
 - History, not replacement: the primary key includes `cms_release_version`, so a new release adds rows and never deletes the previous release's. To read current values, join to the latest `dataset_release` row per dataset. A release that CMS replaced while it was being paged is not recorded in `dataset_release`, and the next sync loads the new one. The rows already written from that partial release stay in the raw tables, orphaned: no `dataset_release` row points to them, so a join to `dataset_release` leaves them out.
 - Values are written as text, exactly as the API returns them, including sentinel strings such as `Not Available`, `Not Applicable`, `Too Few to Report` and banded text (`very high`). Dates such as `start_date` stay in the API's `MM/DD/YYYY` form. Typing belongs in the warehouse.
 - Column names are the API's, lowercase, with two renames: `sample` becomes `sample_size` (a reserved word in several SQL engines) and `_condition` becomes `measure_condition`. Refer to `def get_column_name(source_name)`.
-- A record with a blank natural key value is skipped and counted; a natural key repeated within one release is counted and the last record kept. Rows are sorted on the natural key, so a repeat is found by comparing each key with the one before it, and memory stays flat however large the release is. Both counts are logged and reported to the dashboard with `op.warning`. Refer to `def upsert_page_rows(table, rows, page_keys, paging, totals)`.
+- A record with a blank natural key value is skipped and counted; a natural key repeated within one release is counted and the last record kept. Rows are sorted on the natural key, so a repeat is found by comparing each key with the one before it, and memory stays flat however large the release is. Both counts are logged and reported to the dashboard with `op.warning` when the sync finishes, including counts carried in state from a sync that did not finish. Refer to `def upsert_page_rows(table, rows, page_keys, paging, totals)`.
 
 ## Error handling
 
