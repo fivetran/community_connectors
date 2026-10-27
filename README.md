@@ -137,6 +137,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Iterate** ([iterate](https://github.com/fivetran/community_connectors/tree/main/iterate)) - Sync NPS survey data from Iterate REST API
 - **Keycloak** ([keycloak](https://github.com/fivetran/community_connectors/tree/main/keycloak)) - Sync IAM data from Keycloak Admin API
 - **LeaveDates** ([leavedates](https://github.com/fivetran/community_connectors/tree/main/leavedates)) - Sync leave report data from LeaveDates API
+- Linkly ([linkly](https://github.com/fivetran/community_connectors/tree/main/linkly)) - Sync workspaces, links, custom domains, daily click totals, and conversions from the Linkly URL shortener API
 - **MailerLite** ([mailerlite](https://github.com/fivetran/community_connectors/tree/main/mailerlite)) - Sync email marketing data from MailerLite
 - **MasterTax** ([mastertax](https://github.com/fivetran/community_connectors/tree/main/mastertax)) - Sync data from MasterTax API
 - **MeiliSearch** ([meilisearch](https://github.com/fivetran/community_connectors/tree/main/meilisearch)) - Sync index metadata and documents from MeiliSearch
@@ -151,6 +152,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **OData API** ([odata_api](https://github.com/fivetran/community_connectors/tree/main/odata_api)) - Sync data from OData APIs (versions 2 and 4)
 - **Oktopost** ([oktopost](https://github.com/fivetran/community_connectors/tree/main/oktopost)) - Sync social media exports from Oktopost BI API
 - **Open-Meteo Marine Weather** ([open_meteo_marine_weather](https://github.com/fivetran/community_connectors/tree/main/open_meteo_marine_weather)) - Sync hourly and daily marine weather data (wave height, direction, period, swell, wind waves) from the Open-Meteo Marine Weather API
+- **Oracle Primavera P6** ([oracle_primavera_p6](https://github.com/fivetran/community_connectors/tree/main/oracle_primavera_p6)) - Sync project, activity, and resource data from the Oracle Primavera P6 EPPM Data Service REST API
 - **Oura Ring** ([oura_ring](https://github.com/fivetran/community_connectors/tree/main/oura_ring)) - Sync daily activity, sleep, readiness, stress, and heart rate data from the Oura Ring API v2.
 - **OWASP API Vulnerabilities** ([owasp_api_vulns](https://github.com/fivetran/community_connectors/tree/main/owasp_api_vulns)) - Sync OWASP API vulnerability data from NVD 2.0
 - **Partech (Punchh)** ([partech](https://github.com/fivetran/community_connectors/tree/main/partech)) - Sync POS data from Partech (formerly Punchh)
@@ -176,6 +178,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **SuiteDash** ([suitedash](https://github.com/fivetran/community_connectors/tree/main/suitedash)) - Sync CRM data from SuiteDash API
 - **Supabase** ([supabase](https://github.com/fivetran/community_connectors/tree/main/supabase)) - Sync employee data from Supabase database
 - **Talon.One** ([talon_one](https://github.com/fivetran/community_connectors/tree/main/talon_one)) - Sync events data from Talon.One
+- **TechOne CiAnywhere** ([techone_cianywhere](https://github.com/fivetran/community_connectors/tree/main/techone_cianywhere)) - Sync general ledger, chart of accounts, and transaction data from the TechOne CiAnywhere web services API
 - **Temporal Cloud** ([temporal_cloud](https://github.com/fivetran/community_connectors/tree/main/temporal_cloud)) - Sync workflow execution and schedule data from Temporal Cloud.
 - **Toast** ([toast](https://github.com/fivetran/community_connectors/tree/main/toast)) - Sync POS data from Toast
 - **Tulip Interfaces** ([tulip_interfaces](https://github.com/fivetran/community_connectors/tree/main/tulip_interfaces)) - Sync data from Tulip Tables
