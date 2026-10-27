@@ -9,5 +9,5 @@ models:
   - name: stg_nhtsa__configured_vehicle
     description: >
       The connector's configured_vehicle table, live rows only: one row per make x model x model year the connector
-      was configured to query, with how many campaigns the API returned for it. The only proof that a configured
-      vehicle had no recalls in the window.
+      was configured to query, with the number of campaign rows the connector kept for it (not the number the API
+      returned). The only proof that a configured vehicle had no recalls in the window.

@@ -193,7 +193,9 @@ def fetch(args: argparse.Namespace) -> None:
     require(env, "DBT_HOST", "DBT_ACCOUNT_ID", "DBT_TOKEN", "DBT_PROD_ENV_ID")
     prod_env_id = require_int(env, "DBT_PROD_ENV_ID")
     response = admin_api(env, f"/runs/{args.run_id}/")
-    run = (response.get("data") if isinstance(response, dict) else None) or {}
+    run = response.get("data") if isinstance(response, dict) else None
+    if not isinstance(run, dict):
+        run = {}
     if run.get("status_humanized") != "Success":
         sys.exit(f"run {args.run_id} is not a successful run: {run.get('status_humanized')}")
     # A CI or development run builds into other schemas, so the published lineage would point the agent at nothing.
@@ -210,7 +212,10 @@ def fetch(args: argparse.Namespace) -> None:
     ]
     if not models:
         sys.exit(f"run {args.run_id}: manifest.json has no models; nothing was written")
-    if not isinstance(semantic, dict) or not semantic.get("metrics"):
+    metrics = semantic.get("metrics") if isinstance(semantic, dict) else None
+    if not isinstance(metrics, list) or not all(isinstance(m, dict) for m in metrics):
+        metrics = []
+    if not metrics:
         sys.exit(f"run {args.run_id}: semantic_manifest.json has no metrics; nothing was written")
 
     work = Path(args.work_dir)
@@ -414,7 +419,8 @@ def compile_metric_sql(env: dict[str, str], metric_names: list[str]) -> dict[str
             sys.exit(f"compileSql {name}: {message}")
         data = payload.get("data")
         result = data.get("compileSql") if isinstance(data, dict) else None
-        if not isinstance(result, dict) or not isinstance(result.get("sql"), str):
+        sql = result.get("sql") if isinstance(result, dict) else None
+        if not isinstance(sql, str) or not sql.strip():
             sys.exit(f"compileSql {name}: the response has no compiled SQL")
         compiled[name] = result["sql"]
     return compiled

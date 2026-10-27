@@ -455,9 +455,11 @@ models:
       One row: the report dates the answers come from and the sync that produced them. Every answer names this window.
     columns:
       - name: first_report_date
-        description: Earliest report date observed.
+        description: >
+          Earliest report date observed. A tracked campaign the connector kept (an unreadable record, or no recalls
+          listed for its vehicle) can carry a date outside a report window that has since changed.
       - name: last_report_date
-        description: Latest report date observed.
+        description: Latest report date observed, with the same exception as first_report_date.
       - name: campaigns
         description: Campaigns in the window.
       - name: configured_vehicles

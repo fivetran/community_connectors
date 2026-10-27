@@ -144,9 +144,9 @@ def create_list_session() -> requests.Session:
 
 
 class UnknownVehicle(list):
-    """The empty result of a call NHTSA answered with its 400 no-recalls body. NHTSA sends that body both for a
-    vehicle year it lists no recalls for and for a vehicle it does not know, such as a misspelled nhtsa_model, so
-    the two cannot be told apart; a caller can still tell this answer from a 200 with an empty list.
+    """The empty result of a call NHTSA answered with no recalls: its 400 no-recalls body, or a 200 with a zero
+    Count. NHTSA sends that answer both for a vehicle year it lists no recalls for and for a vehicle it does not
+    know, such as a misspelled make or nhtsa_model, so the two cannot be told apart.
     """
 
 
@@ -185,7 +185,8 @@ def fetch_vehicle_recalls(
         model_year: the model year
 
     Returns:
-        the API's `results` list; an empty UnknownVehicle when the API answered with its 400 no-recalls body
+        the API's `results` list; an empty UnknownVehicle when the API answered with no recalls (its 400
+        no-recalls body, or a 200 with a zero Count)
 
     Raises:
         RuntimeError: when the request still fails after the retries, fails with a non-retryable status, answers
@@ -254,7 +255,7 @@ def fetch_vehicle_recalls(
             # proxy's error object, a changed API) is unknown, and returning [] would delete the tracked campaigns.
             count = payload.get("Count")
             if isinstance(count, int) and not isinstance(count, bool) and count == 0:
-                return []
+                return UnknownVehicle()
             raise RuntimeError(
                 f"{make} {nhtsa_model} {model_year}: response has no `results` list and Count is {count!r}"
             )
@@ -269,6 +270,9 @@ def fetch_vehicle_recalls(
             raise RuntimeError(
                 f"{make} {nhtsa_model} {model_year}: `results` holds {len(results)} records but Count is {count!r}"
             )
+        if not results:
+            # A zero Count is the same no-recalls answer as the 400, so the caller treats the two alike
+            return UnknownVehicle()
         return results
     raise RuntimeError(f"{make} {nhtsa_model} {model_year}: no request was attempted")
 
@@ -297,7 +301,7 @@ def collect_model_rows(
     Returns:
         (rows keyed by row_key, count of results skipped for a missing campaign number or report date,
         protected row keys, where a campaign of "*" covers the whole model year (see is_protected), count of
-        model years NHTSA answered as an unknown vehicle)
+        model years NHTSA answered with no recalls)
     """
     rows = {}
     skipped = 0

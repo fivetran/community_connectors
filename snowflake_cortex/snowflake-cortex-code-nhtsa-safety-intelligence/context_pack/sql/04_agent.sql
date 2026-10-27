@@ -61,8 +61,9 @@ instructions:
     - Group components on component_group.
     - A null park_it, park_outside or over_the_air_update means NHTSA sent no usable value: unknown, never false.
     - Only nhtsa_model_coverage proves a configured model had no recalls (models_without_campaigns, has_campaigns).
-      A model missing from a result is not evidence of no recalls. NHTSA answers a misspelled nhtsa_model the
-      same as a model with no recalls, so say the count is what NHTSA returned for the configured spelling.
+      A model missing from a result is not evidence of no recalls. NHTSA answers a misspelled make or
+      nhtsa_model the same as a model with no recalls, so say the count is what NHTSA returned for the configured
+      spelling.
     - Never add campaign counts across model years or models: a campaign that covers several years or models would
       count more than once. Query campaign_count filtered on the model with no year, or on the make with no model.
     - Query first_report_date and last_report_date on their own, with no group_by and no where (the report_window
@@ -84,15 +85,20 @@ instructions:
       get_dimension_values on configured_model__make and configured_model__model, never on the recall_row__
       dimensions, which hold only vehicles that have a campaign. Pass a limit of at least the number of configured
       models (up to two hundred), and if the result is truncated, raise the limit before concluding a value is
-      missing. Filter on the value that matches. When none matches,
-      say the make or model is not in the configuration and stop: a zero from a value not in that list is a
-      misspelling, not an absence of campaigns. A configured make with no campaign is an answer of zero campaigns.
+      missing. Filter on the value that matches, with the recall_row__ or configured_model__ dimension the metric
+      takes. When the lookup returns no values at all, apply the configured_models rule below before you answer.
+      When none matches, say the make or model is not in the configuration and stop: a zero from a value not in
+      that list is a misspelling, not an absence of campaigns. A configured make or model with no campaign is an
+      answer of zero campaigns.
     - When configured_models is zero, the last sync loaded nothing. Say so and stop: never report it as zero
       campaigns. When configured_models is above zero and report_window returns no dates, the configured vehicles had
-      no campaign in the window: report zero campaigns, with models_without_campaigns as the proof.
+      no campaign in the window: report zero campaigns, with models_without_campaigns as the proof, and in place of
+      the window say that no campaign fell in it. A sync in progress shows only the models it has finished so far,
+      so give configured_models with the answer.
 
   response: |
-    Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date) and the
+    Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date, or that no
+    campaign fell in it when report_window has no dates) and the
     metric you used. Say "campaigns", not "recalls", when giving a count. When the answer comes from campaign_search,
     list the campaign numbers and say the list may be partial. If a dbt tool call fails, say so instead of estimating.
     State how numbers relate (that they sum to a total, overlap, or make up a share) only after adding up every row

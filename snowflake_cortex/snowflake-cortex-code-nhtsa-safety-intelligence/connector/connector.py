@@ -1366,15 +1366,34 @@ def sync_fixed_list(configuration: dict, state: dict):
             rows, skipped, protected, unknown_years = collect_model_rows(
                 session, model, date_from, date_to, pause_seconds
             )
+            # A tracked row the API no longer returns is deleted, unless a skipped result could stand for it.
+            missing = set(synced_keys.get(label, [])) - set(rows)
+            kept = {key for key in missing if is_protected(key, protected)}
             if unknown_years == len(model["years"]):
-                # NHTSA sends the same 400 for a year with no recalls and for a vehicle it does not know, so a
-                # misspelled nhtsa_model looks like a model with no recalls in any configured year. The model is
-                # synced as having no campaigns, as the filter says, but it should not pass unnoticed.
-                message = (
-                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any configured "
-                    "model year. A misspelled nhtsa_model gives the same answer, so check it if this model should "
-                    "have recalls. The model is recorded with no campaigns."
-                )
+                # NHTSA gives the same no-recalls answer for a year with no recalls and for a vehicle it does not
+                # know, so a misspelled make or nhtsa_model looks like a model with no recalls in any year.
+                configured_years = {str(year) for year in model["years"]}
+                tracked = {
+                    key for key in missing if key.rsplit(KEY_SEPARATOR, 1)[1] in configured_years
+                }
+                if tracked:
+                    # NHTSA dropping every campaign of a vehicle it listed on the last sync is more likely a
+                    # fault than a withdrawal, so the campaigns of the configured years are kept, not deleted.
+                    kept |= tracked
+                    message = (
+                        f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any "
+                        f"configured model year, but the last sync tracked campaigns for it. The connector "
+                        f"kept {len(tracked)} tracked campaigns instead of deleting them. If NHTSA withdrew "
+                        "them, remove this model from `models` for one sync to clear them, then add it back."
+                    )
+                else:
+                    # The model is synced as having no campaigns, as the filter says, but it should not pass
+                    # unnoticed.
+                    message = (
+                        f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in any "
+                        "configured model year. A misspelled make or nhtsa_model gives the same answer, so check "
+                        "them if this model should have recalls. The model is recorded with no campaigns."
+                    )
                 log.warning(message)
                 # Surface the model as a sync warning in the Fivetran dashboard, not only in the logs.
                 op.warning(message)
@@ -1383,9 +1402,6 @@ def sync_fixed_list(configuration: dict, state: dict):
                 # The first argument is the name of the destination table.
                 # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(table=__RECALLS_TABLE, data=rows[key])
-            # A tracked row the API no longer returns is deleted, unless a skipped result could stand for it.
-            missing = set(synced_keys.get(label, [])) - set(rows)
-            kept = {key for key in missing if is_protected(key, protected)}
             totals["deleted"] += _delete_recall_rows(label, missing - kept)
             upsert_vehicle_rows(model, set(rows) | kept, synced_at)
             totals["deleted"] += _delete_vehicle_rows(
