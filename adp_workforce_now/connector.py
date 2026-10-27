@@ -13,6 +13,9 @@ import os
 # For sleeping between retry attempts
 import time
 
+# For checking that the timeout is a finite number
+import math
+
 # For writing inline PEM strings to temporary files that `requests` can use for mTLS
 import tempfile
 
@@ -43,6 +46,8 @@ __DEFAULT_DEPARTMENTS_URL = "https://api.adp.com/hcm/v1/validation-tables/depart
 __DEFAULT_TIMEOUT = 30  # seconds
 __RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 __MAX_ATTEMPTS = 4
+__MAX_BACKOFF_SECONDS = 60  # cap applied only to locally computed exponential backoff
+__MAX_RETRY_AFTER_SECONDS = 300  # fail rather than retry early if the server asks for longer
 
 
 def validate_configuration(configuration: dict):
@@ -65,6 +70,27 @@ def validate_configuration(configuration: dict):
         raise ValueError(
             "Provide either cert_path/key_path or cert_string/key_string in configuration."
         )
+
+    # Validate numeric options up front, before any certificate files are created
+    _validate_int_option(configuration, "page_size", 1000, 1)
+    _validate_int_option(configuration, "start_skip", 0, 0)
+    _get_timeout(configuration)
+
+
+def _validate_int_option(configuration: dict, key: str, default: int, minimum: int) -> int:
+    """Return an integer option from configuration, raising ValueError if it is invalid."""
+    raw = configuration.get(key, default)
+    if isinstance(raw, bool):
+        raise ValueError(f"Invalid {key} value: {raw!r}")
+    try:
+        value = int(raw)
+        if isinstance(raw, float) and raw != value:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {key} value: {raw!r}; must be an integer") from exc
+    if value < minimum:
+        raise ValueError(f"Invalid {key} value: {value}; must be >= {minimum}")
+    return value
 
 
 def schema(configuration: dict):
@@ -102,7 +128,7 @@ def _first_truthy(*values: Any) -> Optional[Any]:
 
 
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
-    """Parse a Retry-After header as delay-seconds, capped at 60s.
+    """Parse a Retry-After header as delay-seconds. The server-provided delay is not capped here.
 
     Args:
         value: the raw Retry-After header value, or None if absent.
@@ -115,7 +141,7 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
         return None
     stripped = value.strip()
     if stripped.isdigit():
-        return min(60.0, float(stripped))
+        return float(stripped)
     return None
 
 
@@ -154,13 +180,19 @@ def _request_with_backoff(
             log.warning(
                 f"{method} {url} attempt {attempt}/{__MAX_ATTEMPTS} failed ({exc}), retrying"
             )
-            time.sleep(min(60, 2**attempt))
+            time.sleep(min(__MAX_BACKOFF_SECONDS, 2**attempt))
             continue
 
         if response.status_code in __RETRY_STATUS_CODES and attempt < __MAX_ATTEMPTS:
             wait_seconds = _parse_retry_after(response.headers.get("Retry-After"))
             if wait_seconds is None:
-                wait_seconds = min(60, 2**attempt)
+                wait_seconds = min(__MAX_BACKOFF_SECONDS, 2**attempt)
+            elif wait_seconds > __MAX_RETRY_AFTER_SECONDS:
+                raise RuntimeError(
+                    f"{method} {url} returned HTTP {response.status_code} with Retry-After "
+                    f"{wait_seconds:.0f}s, which exceeds the maximum of "
+                    f"{__MAX_RETRY_AFTER_SECONDS}s; try again later"
+                )
             log.warning(
                 f"{method} {url} got HTTP {response.status_code} on attempt "
                 f"{attempt}/{__MAX_ATTEMPTS}; retrying in {wait_seconds:.0f}s"
@@ -214,8 +246,10 @@ def get_access_token(configuration: dict, cert: Tuple[str, str]) -> str:
     return token
 
 
-def _resolve_next_link(payload: Dict[str, Any], current_url: str) -> Optional[str]:
-    """Extract the next page link if provided by ADP."""
+def _resolve_next_link(payload: Any, current_url: str) -> Optional[str]:
+    """Extract the next page link if provided by ADP; non-dict payloads have none."""
+    if not isinstance(payload, dict):
+        return None
     links = payload.get("links") or payload.get("_links")
     next_href: Optional[str] = None
 
@@ -284,31 +318,45 @@ def _materialize_cert_files(configuration: dict) -> Tuple[Tuple[str, str], Calla
 
     Returns:
         A ((cert_path, key_path), cleanup) tuple. cleanup() removes any temporary files
-        created for inline PEM strings; it is a no-op when cert_path/key_path were used.
+        created for inline PEM strings (logging any removal failure); it is a no-op when
+        cert_path/key_path were used. The caller must invoke it when finished. If setup fails,
+        any files already created are removed before the exception propagates.
     """
     has_strings = configuration.get("cert_string") and configuration.get("key_string")
     has_paths = configuration.get("cert_path") and configuration.get("key_path")
 
     if has_strings:
-        cert_fd = tempfile.NamedTemporaryFile("w", delete=False, suffix=".pem", encoding="utf-8")
-        key_fd = tempfile.NamedTemporaryFile("w", delete=False, suffix=".key", encoding="utf-8")
-        try:
-            cert_fd.write(_normalize_pem(configuration["cert_string"]))
-            key_fd.write(_normalize_pem(configuration["key_string"]))
-        finally:
-            cert_fd.close()
-            key_fd.close()
-            os.chmod(cert_fd.name, 0o600)
-            os.chmod(key_fd.name, 0o600)
+        created: List[str] = []
 
         def _cleanup():
-            for path in (cert_fd.name, key_fd.name):
+            for path in created:
                 try:
                     os.remove(path)
-                except OSError:
+                except FileNotFoundError:
                     pass
+                except OSError as exc:
+                    log.warning(f"Failed to remove temporary file {path}: {exc}")
+            created.clear()
 
-        return (cert_fd.name, key_fd.name), _cleanup
+        try:
+            paths = []
+            for content, suffix in (
+                (configuration["cert_string"], ".pem"),
+                (configuration["key_string"], ".key"),
+            ):
+                normalized = _normalize_pem(content)
+                # mkstemp creates the file with 0600 permissions
+                fd, path = tempfile.mkstemp(suffix=suffix)
+                created.append(path)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(normalized)
+                os.chmod(path, 0o600)
+                paths.append(path)
+        except BaseException:
+            _cleanup()
+            raise
+
+        return (paths[0], paths[1]), _cleanup
 
     if has_paths:
 
@@ -327,20 +375,27 @@ def _normalize_pem(pem_text: str) -> str:
     cleaned = textwrap.dedent(pem_text).replace("\r", "").strip()
     if "-----BEGIN" not in cleaned or "-----END" not in cleaned:
         raise ValueError("Invalid PEM format.")
-    lines = cleaned.splitlines()
-    begin = next((line for line in lines if line.startswith("-----BEGIN")), None)
-    end = next((line for line in lines if line.startswith("-----END")), None)
-    if not begin or not end:
-        raise ValueError("PEM missing BEGIN/END markers.")
 
-    body_chars = "".join(
-        line.strip()
-        for line in lines
-        if not line.startswith("-----BEGIN") and not line.startswith("-----END")
-    )
-    wrapped_body = "\n".join(textwrap.wrap(body_chars, 64))
-    normalized = f"{begin}\n{wrapped_body}\n{end}\n"
-    return normalized
+    blocks: List[str] = []
+    begin: Optional[str] = None
+    body: List[str] = []
+    for raw_line in cleaned.splitlines():
+        line = raw_line.strip()
+        if line.startswith("-----BEGIN"):
+            if begin is not None:
+                raise ValueError("PEM block missing END marker.")
+            begin, body = line, []
+        elif line.startswith("-----END"):
+            if begin is None:
+                raise ValueError("PEM END marker without BEGIN marker.")
+            wrapped_body = "\n".join(textwrap.wrap("".join(body), 64))
+            blocks.append(f"{begin}\n{wrapped_body}\n{line}\n")
+            begin = None
+        elif begin is not None:
+            body.append(line)
+    if begin is not None or not blocks:
+        raise ValueError("PEM missing BEGIN/END markers.")
+    return "".join(blocks)
 
 
 def _get_timeout(configuration: dict) -> Optional[float]:
@@ -348,20 +403,21 @@ def _get_timeout(configuration: dict) -> Optional[float]:
     timeout = configuration.get("request_timeout", __DEFAULT_TIMEOUT)
     if timeout is None or timeout == "":
         return None
-    if isinstance(timeout, (int, float)):
-        return float(timeout)
-    if isinstance(timeout, str):
-        try:
-            return float(timeout)
-        except ValueError as exc:
-            raise ValueError(f"Invalid request_timeout value: {timeout}") from exc
-    raise ValueError(f"Unsupported request_timeout type: {type(timeout)}")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float, str)):
+        raise ValueError(f"Unsupported request_timeout type: {type(timeout)}")
+    try:
+        value = float(timeout)
+    except ValueError as exc:
+        raise ValueError(f"Invalid request_timeout value: {timeout}") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"Invalid request_timeout value: {timeout}; must be finite and > 0")
+    return value
 
 
 def fetch_departments(
     configuration: dict, access_token: str, cert: Tuple[str, str]
-) -> Iterable[Dict[str, Any]]:
-    """Stream departments from ADP, following pagination until the source is exhausted.
+) -> Iterable[List[Dict[str, Any]]]:
+    """Stream departments from ADP page by page, following pagination until exhausted.
 
     Args:
         configuration: the validated connector configuration.
@@ -369,14 +425,14 @@ def fetch_departments(
         cert: the (cert_path, key_path) tuple used for mutual TLS.
 
     Yields:
-        Each raw department record returned by the API.
+        A list of the raw department records from each page returned by the API.
 
     Raises:
         RuntimeError: if a page request fails.
     """
     departments_url = configuration.get("departments_url", __DEFAULT_DEPARTMENTS_URL)
-    start_skip = int(configuration.get("start_skip", 0))
-    page_size = int(configuration.get("page_size", 1000))
+    start_skip = _validate_int_option(configuration, "start_skip", 0, 0)
+    page_size = _validate_int_option(configuration, "page_size", 1000, 1)
     timeout = _get_timeout(configuration)
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -397,8 +453,7 @@ def fetch_departments(
 
         payload = response.json()
         records = _extract_departments(payload)
-        for record in records:
-            yield record
+        yield records
 
         # Prefer server-provided pagination link; otherwise, fall back to OData $skip/$top.
         next_link = _resolve_next_link(payload, next_url)
@@ -407,7 +462,11 @@ def fetch_departments(
             params = None  # next link already includes query params
             continue
 
-        if records and len(records) == page_size:
+        if params is None:
+            # Already following server links; a missing next link means we are done, and the
+            # stale local offset must not be used.
+            next_url = None
+        elif records and len(records) == page_size:
             start_skip += page_size
             next_url = departments_url
             params = {"$skip": start_skip, "$top": page_size}
@@ -488,16 +547,22 @@ def update(configuration: dict, state: dict):
 
         upserted = 0
         # Departments is effectively a reference table; we fetch all rows each sync.
-        for record in fetch_departments(configuration, access_token, cert):
-            flattened = _flatten_department(record)
-            if not flattened["department_code"]:
-                log.warning(f"Skipping department without code: {record}")
-                continue
-            # The 'upsert' operation is used to insert or update data in the destination table.
-            # The first argument is the name of the destination table.
-            # The second argument is a dictionary containing the record to be upserted.
-            op.upsert(table="departments", data=flattened)
-            upserted += 1
+        for page in fetch_departments(configuration, access_token, cert):
+            for record in page:
+                flattened = _flatten_department(record)
+                if not flattened["department_code"]:
+                    log.warning(f"Skipping department without code: {record}")
+                    continue
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
+                op.upsert(table="departments", data=flattened)
+                upserted += 1
+
+            # Save the progress by checkpointing the state after every page. This is important for ensuring that the sync process can resume
+            # from the correct position in case of next sync or interruptions.
+            # No pagination offset is stored in state, so the next sync still rereads all rows.
+            op.checkpoint(state)
 
         log.info(f"Upserted {upserted} departments")
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
