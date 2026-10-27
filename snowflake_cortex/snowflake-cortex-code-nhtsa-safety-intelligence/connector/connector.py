@@ -71,6 +71,7 @@ from fixed_list import (
     model_fingerprint,
     model_query,
     parse_report_date,
+    query_covers,
 )
 
 # API Configuration Constants
@@ -104,6 +105,7 @@ __FIXED_LIST_STATE_KEYS = (
     "pass_done",
     "synced_keys",
     "synced_years",
+    "synced_queries",
     "last_completed_sync",
 )
 
@@ -1373,27 +1375,32 @@ def sync_fixed_list(configuration: dict, state: dict):
             # A tracked row the API no longer returns is deleted, unless a skipped result could stand for it.
             missing = set(synced_keys.get(label, [])) - set(rows)
             kept = {key for key in missing if is_protected(key, protected)}
-            # NHTSA dropping every campaign of a model year it listed on the last sync is more likely a fault than a
-            # withdrawal, so those campaigns are kept, not deleted. That holds only when the sync that tracked them
-            # asked NHTSA the same thing: a no-recalls answer to a new nhtsa_model spelling or a new report window
-            # says nothing about them, so after such a change they are deleted as usual.
+            # NHTSA dropping every campaign of a model year it listed before is more likely a fault than a
+            # withdrawal, so those campaigns are kept, not deleted. That holds only when this sync's query covers the
+            # one that tracked them: a no-recalls answer to another nhtsa_model spelling, or over a window that no
+            # longer contains theirs, says nothing about them, so they are deleted as usual.
+            covered = query_covers(synced_queries.get(label), query)
             no_recall_labels = {str(year) for year in no_recall_years}
             tracked = {
                 key
                 for key in missing - kept
                 if key.rsplit(KEY_SEPARATOR, 1)[1] in no_recall_labels
             }
-            if tracked and synced_queries.get(label) == query:
+            if tracked and covered:
                 kept |= tracked
                 years = sorted({int(key.rsplit(KEY_SEPARATOR, 1)[1]) for key in tracked})
                 # One campaign can cover several model years, so the warning counts campaigns, not tracked rows.
                 campaigns = len({key.rsplit(KEY_SEPARATOR, 1)[0] for key in tracked})
-                noun = "campaign" if campaigns == 1 else "campaigns"
+                year_text = ("model year " if len(years) == 1 else "model years ") + ", ".join(
+                    str(year) for year in years
+                )
+                held = f"{campaigns} campaign" if campaigns == 1 else f"{campaigns} campaigns"
+                them = "it" if campaigns == 1 else "them"
                 message = (
-                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in model years "
-                    f"{', '.join(str(year) for year in years)}, but the last sync, with the same nhtsa_model and "
-                    f"report window, tracked {campaigns} {noun} there. The connector kept them instead of "
-                    "deleting them. If NHTSA withdrew them, run a full re-sync of the connection to clear them."
+                    f"{label}: NHTSA listed no recalls for {model['make']} {model['nhtsa_model']} in {year_text}, "
+                    f"but an earlier sync with the same nhtsa_model, over a report window this one contains, "
+                    f"tracked {held} there. The connector kept {them} instead of deleting {them}. If NHTSA "
+                    f"withdrew {them}, run a full re-sync of the connection to clear {them}."
                 )
                 log.warning(message)
                 # Surface the kept campaigns as a sync warning in the Fivetran dashboard, not only in the logs.
@@ -1434,7 +1441,10 @@ def sync_fixed_list(configuration: dict, state: dict):
                 op.warning(message)
             synced_keys[label] = sorted(set(rows) | kept)
             synced_years[label] = list(model["years"])
-            synced_queries[label] = query
+            # The recorded query must have tracked every row the destination holds. A row kept because a skipped
+            # result could stand for it was tracked under the earlier query, so after a query change that no longer
+            # covers the earlier one, no single query tracked them all and nothing is recorded.
+            synced_queries[label] = query if covered or not kept else None
             pass_done[label] = fingerprints[index]
             next_model = labels[to_sync[position + 1]] if position + 1 < len(to_sync) else None
             log.debug(f"{label}: {len(rows)} rows across {len(model['years'])} model years")

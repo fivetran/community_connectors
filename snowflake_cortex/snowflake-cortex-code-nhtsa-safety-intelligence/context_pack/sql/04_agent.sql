@@ -89,13 +89,13 @@ instructions:
       takes. When the lookup returns no values at all, apply the configured_models rule below before you answer.
       When none matches, say the make or model is not among the configured vehicles synced, give configured_models
       so a sync still in progress shows, and stop: a zero from a value not in that list is a misspelling, not an
-      absence of campaigns. A configured make or model with no campaign is an
-      answer of zero campaigns.
+      absence of campaigns. A configured make or model with no campaign is an answer of zero campaigns.
     - When configured_models is zero, the last sync loaded nothing. Say so and stop: never report it as zero
       campaigns. When configured_models is above zero and report_window returns no dates, the configured vehicles had
       no campaign in the window: report zero campaigns, with models_without_campaigns as the proof, and in place of
-      the window say that no campaign fell in it. A first sync, or a re-sync that starts over, shows only the models
-      it has finished so far, so give configured_models with the answer.
+      the window say that no campaign fell in it. A sync in progress can hold a partial set: a first sync, or a
+      re-sync that starts over, shows only the models it has finished so far, and a model added to the configuration
+      has no rows until the sync reaches it. Give configured_models with the answer.
 
   response: |
     Lead with the answer. Name the report-date window it covers (first_report_date to last_report_date, or that no

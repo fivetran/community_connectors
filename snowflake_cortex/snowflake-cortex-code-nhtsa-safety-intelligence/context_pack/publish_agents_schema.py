@@ -219,16 +219,29 @@ def fetch(args: argparse.Namespace) -> None:
         sys.exit(f"run {args.run_id}: semantic_manifest.json has no metrics; nothing was written")
     # A malformed entry is named, not reported as "no metrics", and stops the run before a file is written.
     for position, metric in enumerate(metrics):
-        name = metric.get("name") if isinstance(metric, dict) else None
+        if not isinstance(metric, dict):
+            sys.exit(
+                f"run {args.run_id}: semantic_manifest.json metric {position} is not an object; "
+                "nothing was written"
+            )
+        name = metric.get("name")
         if not isinstance(name, str) or not name:
             sys.exit(
                 f"run {args.run_id}: semantic_manifest.json metric {position} has no name; nothing was written"
             )
+    # The osi step reads every entry of these lists by key, so an entry that is not an object stops the run here.
     for key in ("semantic_models", "saved_queries"):
-        if not isinstance(semantic.get(key, []), list):
+        entries = semantic.get(key, [])
+        if not isinstance(entries, list):
             sys.exit(
                 f"run {args.run_id}: semantic_manifest.json `{key}` is not a list; nothing was written"
             )
+        for position, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                sys.exit(
+                    f"run {args.run_id}: semantic_manifest.json `{key}` entry {position} is not an object; "
+                    "nothing was written"
+                )
 
     work = Path(args.work_dir)
     # OSI files converted from an earlier run's semantic manifest must not be published with this run's manifest.

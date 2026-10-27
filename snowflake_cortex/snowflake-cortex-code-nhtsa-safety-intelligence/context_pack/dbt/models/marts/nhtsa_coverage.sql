@@ -1,5 +1,5 @@
 -- One row per configured make x model x model year, from the connector's configured_vehicle table.
--- campaign_count is 0 when the connector holds no campaign in the window for that vehicle, so "no recalls" is a
+-- campaign_count is 0 when the connector holds no campaign for that vehicle, so "no recalls" is a
 -- value here, not a missing row. A vehicle that was never configured has no row: its recall history is unknown.
 -- campaigns_returned is the connector's count of the campaign rows it kept for the same vehicle (inside the report-date
 -- window, after its own filtering, plus any tracked campaign kept because its result was skipped or because NHTSA
