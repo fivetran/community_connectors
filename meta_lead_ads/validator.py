@@ -6,7 +6,7 @@ import re  # For normalizing timestamp offsets before parsing them
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-__GRAPH_VERSION_FALLBACK = "v19.0"
+__GRAPH_VERSION_FALLBACK = "v26.0"
 
 
 def _parse_bool(value: Optional[str], default: bool = False) -> bool:

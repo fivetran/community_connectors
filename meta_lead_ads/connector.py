@@ -1,7 +1,8 @@
 """This connector demonstrates syncing Facebook (Meta) Lead Ads data into a single
 leads table via the Meta Graph API. It supports incremental sync per lead-gen form,
 using a created_time cursor that only advances once a form's pagination has fully
-completed, since Meta's page ordering by created_time is not guaranteed.
+completed. The leadgen endpoint returns newest leads first, so advancing the cursor
+mid-pagination could permanently skip older leads after a failure.
 See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
 and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
 """
@@ -97,12 +98,12 @@ def _process_form(
 ) -> int:
     """
     Sync all leads for a single form, upserting each page and periodically checkpointing state.
-    The form's resumable cursor advances at each periodic checkpoint (not only once the form
-    fully completes), so a failure only risks replaying up to check_point_limit rows rather
-    than the whole form. This is safe against Meta's Graph API not guaranteeing pages are
-    returned in strict created_time order, because iterate_leads_for_form() re-queries with a
-    1-second overlap on the saved cursor, and leads are upserted by lead_id, so replaying that
-    overlap window on resume never skips or duplicates a row.
+    The form's saved created_time cursor is advanced only after the form's pagination has
+    fully completed. Meta returns leads newest first, so moving the cursor forward mid-pagination
+    could permanently skip older, not-yet-fetched leads if the sync failed part way through.
+    Periodic checkpoints during pagination therefore keep the previous cursor unchanged; a failure
+    simply replays the form from its last completed cursor, which is safe because leads are
+    upserted by lead_id.
     Args:
         page: the page dictionary the form belongs to, including its page-scoped access token.
         form: the lead-gen form dictionary to sync leads for.
@@ -132,8 +133,7 @@ def _process_form(
             f"total_since_ckpt={rows_since_checkpoint} max_cursor={max_cursor}"
         )
         if rows_since_checkpoint >= cfg["check_point_limit"]:
-            if max_cursor:
-                forms_state[form_id] = {"last_created_time": max_cursor}
+            # The form cursor is intentionally not advanced here (see docstring).
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
             # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.

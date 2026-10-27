@@ -129,10 +129,9 @@ def iterate_leads_for_form(
         "fields": "created_time,id,ad_id,form_id,field_data",
     }
     if since_time:
-        # Query with a 1-second overlap on the lower bound: since the cursor may have been
-        # checkpointed mid-pagination (see connector.py's _process_form), a strict lower
-        # bound could permanently skip a lead with the same second-level created_time as the
-        # saved cursor. Re-fetching that second is safe because leads are upserted by lead_id.
+        # Query with a 1-second overlap on the lower bound so a lead sharing the second-level
+        # created_time of the saved cursor is never skipped. Re-fetching that second is safe
+        # because leads are upserted by lead_id.
         overlap_unix_time = _convert_time_to_unix(since_time) - 1
         params["filtering"] = json.dumps(
             [
@@ -158,8 +157,11 @@ def iterate_leads_for_form(
             if created_time and (batch_max_created is None or created_time > batch_max_created):
                 batch_max_created = created_time
         yield batch, batch_max_created
-        cursors = data.get("paging", {}).get("cursors", {})
-        after = cursors.get("after")
+        paging = data.get("paging", {})
+        # Meta can return cursors.after even on the last page; only paging.next signals more data.
+        if not paging.get("next"):
+            break
+        after = paging.get("cursors", {}).get("after")
         if not after:
             break
 

@@ -3,7 +3,7 @@
 ## Connector overview
 This connector syncs Facebook (Meta) Lead Ads data into your destination using the Meta Graph API. It discovers the pages and lead-generation forms configured (or all pages/forms accessible to the provided token) and syncs each lead into a single `leads` table, with the raw form field data preserved as JSON for downstream modeling.
 
-Incremental sync uses a per-form cursor on `created_time`, advanced at each periodic checkpoint once at least `check_point_limit` new rows have been written for a form, so a failure only risks replaying up to that many rows rather than the whole form. Each resumed query re-fetches with a 1-second overlap on the saved cursor, and leads are upserted by `lead_id`, so replaying that overlap window never skips or duplicates a row.
+Incremental sync uses a per-form cursor on `created_time`. The Graph leadgen endpoint returns newest leads first, so the cursor is advanced only after a form's pagination has fully completed; periodic checkpoints during pagination leave it unchanged. If a sync fails mid-form, the next sync replays that form from its last completed cursor with a 1-second overlap, and leads are upserted by `lead_id`, so no lead is skipped or duplicated.
 
 ## Requirements
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
@@ -28,7 +28,7 @@ fivetran init --template meta_lead_ads
 ## Features
 - Discovers pages and lead-generation forms automatically, or restricts the sync to explicit `page_ids` / `form_ids`.
 - Single `leads` table with an explicit schema; the raw `field_data` array is preserved as a JSON string column for flexible downstream parsing.
-- Threshold-based checkpointing per form to bound replay volume on failure, using a 1-second query overlap on the saved cursor and idempotent lead_id upserts to make that replay safe.
+- Cursor advanced only after a form's pagination completes (newest-first ordering), with a 1-second query overlap and idempotent lead_id upserts.
 - Retries transient HTTP errors (429, 5xx) with exponential backoff, and fails the sync on unrecoverable request errors instead of silently truncating data.
 
 ## Configuration file
@@ -38,7 +38,7 @@ fivetran init --template meta_lead_ads
   "page_ids": "<ALL_OR_COMMA_SEPARATED_PAGE_IDS>",
   "form_ids": "<ALL_OR_COMMA_SEPARATED_FORM_IDS>",
   "initial_start_time": "<OPTIONAL_ISO8601_START_TIME_EG_2023-01-01T00:00:00Z>",
-  "graph_version": "<GRAPH_API_VERSION_EG_v24.0>",
+  "graph_version": "<GRAPH_API_VERSION_EG_v26.0>",
   "include_archived_forms": "<TRUE_OR_FALSE_DEFAULT_FALSE>",
   "request_timeout_seconds": "<REQUEST_TIMEOUT_SECONDS_DEFAULT_30>",
   "fetch_limit": "<LEADS_PAGE_SIZE_DEFAULT_1000>",
@@ -69,7 +69,7 @@ To set up authentication:
 4. Provide the generated token as `system_user_access_token` in `configuration.json`.
 
 ## Pagination
-Page and form listings are paginated using the Graph API's `paging.next` cursor. Refer to `def _paginate_graph_collection` in `meta_helpers.py`. Lead listings are paginated using the `after` cursor returned in `paging.cursors`; pagination for a form stops once no `after` cursor is returned. Refer to `def iterate_leads_for_form` in `meta_helpers.py`.
+Page and form listings are paginated using the Graph API's `paging.next` cursor. Refer to `def _paginate_graph_collection` in `meta_helpers.py`. Lead listings are paginated using the `after` cursor returned in `paging.cursors`; pagination for a form stops once `paging.next` is absent, even if `paging.cursors.after` is present. Refer to `def iterate_leads_for_form` in `meta_helpers.py`.
 
 ## Data handling
 Each lead is transformed into a single row with page and form metadata, `ad_id`, `created_time`, and a `field_data` column containing the raw list of field objects from the source, serialized as JSON. Refer to `def _process_leads` in `connector.py`. Parsing individual form fields into columns is left to downstream transformation (for example, in a warehouse view or dbt model), since new fields may be added to forms without requiring a connector change.

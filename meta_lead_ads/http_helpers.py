@@ -15,6 +15,8 @@ from fivetran_connector_sdk import Logging as log
 __RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 __MAX_ATTEMPTS = 5
 __BACKOFF_BASE = 1.5
+# Graph API error codes that indicate throttling (Meta returns these with HTTP 400).
+__RETRYABLE_GRAPH_ERROR_CODES = {4, 17, 32, 341, 613}
 BASE_URL_TEMPLATE = "https://graph.facebook.com/{version}"
 
 # Query-string parameters whose values must never reach the logs.
@@ -37,6 +39,23 @@ def _redact_url(url: str) -> str:
     for param in __SENSITIVE_PARAMS:
         query = re.sub(rf"(?<![\w]){param}=[^&]*", f"{param}=REDACTED", query)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
+def _is_retryable_graph_error(resp: Response) -> bool:
+    """Return True if the response body carries a throttling/transient Graph error code.
+
+    Args:
+        resp: the non-200 HTTP response.
+
+    Returns:
+        bool: True for rate-limit style Graph error codes; False for auth/parameter errors
+        or an unparseable body.
+    """
+    try:
+        code = resp.json().get("error", {}).get("code")
+    except (ValueError, AttributeError):
+        return False
+    return code in __RETRYABLE_GRAPH_ERROR_CODES
 
 
 def request_with_retries(
@@ -86,7 +105,10 @@ def request_with_retries(
             except ValueError as e:
                 log.error(f"Invalid JSON response from {safe_url}")
                 raise RuntimeError(f"Invalid JSON response from {safe_url}") from e
-        if resp.status_code in __RETRY_STATUS_CODES and attempt < __MAX_ATTEMPTS:
+        retryable = resp.status_code in __RETRY_STATUS_CODES or (
+            resp.status_code == 400 and _is_retryable_graph_error(resp)
+        )
+        if retryable and attempt < __MAX_ATTEMPTS:
             wait = __BACKOFF_BASE**attempt
             log.warning(
                 f"Retryable status {resp.status_code} attempt {attempt}/{__MAX_ATTEMPTS} "
