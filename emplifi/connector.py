@@ -19,6 +19,14 @@ from datetime import date, datetime, timedelta
 # For issuing HTTP requests to the Emplifi API
 import requests
 
+# Per-network endpoints, metric names, and post field lists
+from constants import (
+    AGGREGATED_METRICS,
+    POST_FIELDS_BY_NETWORK,
+    POSTS_ENDPOINT,
+    PROFILE_METRICS,
+)
+
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 
@@ -29,8 +37,12 @@ from fivetran_connector_sdk import Logging as log
 from fivetran_connector_sdk import Operations as op
 
 __BASE_URL = "https://api.emplifi.io"
-__RETRY_STATUS_CODES = {500, 502, 503, 504}
+__RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+# Longest server-provided Retry-After (seconds) we will wait for before failing the sync.
+__MAX_RETRY_AFTER_SECONDS = 300
 __MAX_ATTEMPTS = 4
+# Emplifi caps metrics requests at 25 metrics per call.
+__MAX_METRICS_PER_REQUEST = 25
 
 # Networks whose profiles/metrics/posts this connector syncs.
 NETWORKS = [
@@ -55,182 +67,6 @@ METRICS_CHUNK_DAYS = 30
 # Emplifi's posts endpoints page at up to 100 posts per request.
 POSTS_PAGE_SIZE = 100
 
-# Per-network post endpoint paths.
-POSTS_ENDPOINT = {
-    "facebook": "/3/facebook/page/posts",
-    "instagram": "/3/instagram/profile/posts",
-    "twitter": "/3/twitter/profile/tweets",
-    "youtube": "/3/youtube/profile/videos",
-    "linkedin": "/3/linkedin/profile/posts",
-    "pinterest": "/3/pinterest/profile/posts",
-    "tiktok": "/3/tiktok/profile/posts",
-    "snapchat": "/3/snapchat/profile/posts",
-}
-
-# Per-network valid profile metrics, from the Emplifi API docs metric table. A network not
-# listed here (e.g. snapchat, whatsapp) has no supported profile metrics and is skipped in
-# step 2.
-PROFILE_METRICS = {
-    "facebook": [
-        "fans_lifetime",
-        "fans_change",
-        "insights_fan_adds",
-        "insights_fan_removes",
-        "insights_impressions",
-        "insights_reach",
-        "insights_reactions",
-        "insights_follows",
-    ],
-    "instagram": [
-        "followers_lifetime",
-        "followers_change",
-        "following_lifetime",
-        "following_change",
-        "insights_followers",
-        "insights_impressions",
-        "insights_media_views",
-        "insights_profile_views",
-    ],
-    "twitter": [
-        "followers_lifetime",
-        "followers_change",
-        "following_lifetime",
-    ],
-    "youtube": [
-        "subscribers_lifetime",
-        "subscribers_change",
-        "views_change",
-        "viewed_time_change",
-        "video_lifetime",
-    ],
-    "linkedin": [
-        "followers_lifetime",
-        "followers_change",
-        "insights_impressions",
-    ],
-    "pinterest": [
-        "followers_lifetime",
-    ],
-    "tiktok": [
-        "insights_fans_lifetime",
-        "insights_fans_change",
-        "insights_video_views",
-        "insights_profile_views",
-    ],
-}
-
-# Per-network valid post fields, sourced from the Emplifi API docs per-network posts section.
-# Only confirmed-valid fields are included per network to avoid Code-3 validation errors.
-POST_FIELDS_BY_NETWORK = {
-    # /3/facebook/page/posts - reactions, comments, shares, interactions, post_attribution
-    # are all documented as valid.
-    "facebook": [
-        "id",
-        "created_time",
-        "content",
-        "url",
-        "media_type",
-        "interactions",
-        "reactions",
-        "comments",
-        "shares",
-        "post_attribution",
-        "profileId",
-    ],
-    # /3/instagram/profile/posts - comments (not number_of_comments), likes, and
-    # interactions are all documented as valid.
-    "instagram": [
-        "id",
-        "created_time",
-        "content",
-        "url",
-        "media_type",
-        "interactions",
-        "likes",
-        "comments",
-        "profileId",
-    ],
-    # /3/twitter/profile/tweets - per Twitter's Developer Policy, Emplifi no longer provides
-    # individual tweet details. Only these fields are allowed: no metrics (no created_time,
-    # interactions, likes, etc.).
-    "twitter": [
-        "id",
-        "profileId",
-        "origin",
-    ],
-    # /3/youtube/profile/videos - documented fields: comments, created_time, id,
-    # interactions, likes, url, video_views, video_view_time, duration, profileId.
-    # title is invalid (use description); number_of_comments and insights_video_views
-    # are also invalid here.
-    "youtube": [
-        "id",
-        "created_time",
-        "url",
-        "description",
-        "interactions",
-        "likes",
-        "comments",
-        "video_views",
-        "video_view_time",
-        "duration",
-        "profileId",
-    ],
-    # /3/linkedin/profile/posts - documented fields: comments, reactions, interactions,
-    # content, created_time, id, url. likes is invalid (LinkedIn uses reactions).
-    "linkedin": [
-        "id",
-        "created_time",
-        "content",
-        "url",
-        "media_type",
-        "interactions",
-        "reactions",
-        "comments",
-        "profileId",
-    ],
-    # /3/pinterest/profile/posts - kept to a minimal safe set; few profiles use this network.
-    "pinterest": [
-        "id",
-        "created_time",
-        "url",
-        "interactions",
-        "comments",
-    ],
-    # /3/tiktok/profile/posts - basic fields per the docs: id, created_time, link, media,
-    # message, duration, content_type (no profileId, no interactions, no likes in basic
-    # fields). insights_ fields require insights_enabled=true on the profile; they fail
-    # gracefully (Code-7) per-profile when not enabled.
-    "tiktok": [
-        "id",
-        "created_time",
-        "link",
-        "media",
-        "message",
-        "duration",
-        "insights_video_views",
-        "insights_engagements",
-        "insights_likes",
-        "insights_comments",
-        "insights_shares",
-    ],
-}
-
-# Cross-platform aggregated metrics for /3/aggregated-metrics, with names taken directly
-# from the Emplifi API docs metric table. Invalid names that cause Code-3 errors: reactions,
-# comments, video_views, reach, shares - the correct equivalents are number_of_comments,
-# page_shares, insights_video_views, etc.
-AGGREGATED_METRICS = [
-    "interactions",
-    "likes",
-    "number_of_comments",
-    "page_posts",
-    "insights_engagements",
-    "insights_video_views",
-    "insights_impressions",
-    "page_shares",
-    "engagement_rate",
-]
-
 # Emplifi allows up to 100 profiles per /3/aggregated-metrics request.
 AGGREGATED_METRICS_BATCH_SIZE = 100
 
@@ -242,11 +78,20 @@ def validate_configuration(configuration: dict):
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing.
+        ValueError: if any required configuration parameter is missing or invalid.
     """
     for key in ("token", "secret"):
-        if not str(configuration.get(key, "")).strip():
+        value = configuration.get(key)
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: '{key}'")
+
+    lookback = configuration.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
+    try:
+        lookback_int = int(lookback)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("'lookback_days' must be a positive integer") from exc
+    if lookback_int < 1:
+        raise ValueError("'lookback_days' must be a positive integer")
 
 
 def schema(configuration: dict):
@@ -299,7 +144,8 @@ def _request_with_backoff(method, url, configuration, **kwargs):
         The requests.Response object for the final attempt.
 
     Raises:
-        RuntimeError: if every attempt fails with a connection error or timeout.
+        RuntimeError: if every attempt fails with a connection error or timeout, or if the
+            server asks for a longer wait than __MAX_RETRY_AFTER_SECONDS.
     """
     last_exception = None
     for attempt in range(1, __MAX_ATTEMPTS + 1):
@@ -323,13 +169,17 @@ def _request_with_backoff(method, url, configuration, **kwargs):
             time.sleep(min(60, 2**attempt))
             continue
 
-        retryable = response.status_code == 429 or response.status_code in __RETRY_STATUS_CODES
-        if retryable and attempt < __MAX_ATTEMPTS:
+        if response.status_code in __RETRY_STATUS_CODES and attempt < __MAX_ATTEMPTS:
             wait_seconds = min(60, 2**attempt)
-            if response.status_code == 429:
-                retry_after = response.headers.get("Retry-After")
-                if retry_after and retry_after.strip().isdigit():
-                    wait_seconds = min(60, int(retry_after))
+            retry_after = response.headers.get("Retry-After")
+            if response.status_code == 429 and retry_after and retry_after.strip().isdigit():
+                wait_seconds = int(retry_after)
+                if wait_seconds > __MAX_RETRY_AFTER_SECONDS:
+                    raise RuntimeError(
+                        f"{method} {url} rate limited with Retry-After={wait_seconds}s, "
+                        f"which exceeds the {__MAX_RETRY_AFTER_SECONDS}s wait budget; "
+                        "failing so the sync is retried later"
+                    )
             log.warning(
                 f"{method} {url} got HTTP {response.status_code} on attempt "
                 f"{attempt}/{__MAX_ATTEMPTS}; retrying in {wait_seconds:.0f}s"
@@ -376,7 +226,7 @@ def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
         return {"success": True, "header": [], "data": []}
 
     if 3 in err_codes:
-        log.warning(f"Code-3 validation error at POST {url}: {json.dumps(errors)}")
+        log.warning(f"Code-3 validation error at {url}: {json.dumps(errors)}")
         return {"success": True, "header": [], "data": []}
 
     if 7 in err_codes:
@@ -392,7 +242,7 @@ def _get(url: str, configuration: dict) -> dict:
     """Issue a GET request against the Emplifi API."""
     response = _request_with_backoff("GET", url, configuration)
     response.raise_for_status()
-    return response.json()
+    return _parse_body(response.json(), url)
 
 
 def _post(url: str, payload: dict, configuration: dict) -> dict:
@@ -410,6 +260,21 @@ def _date_chunks(date_start: str, date_end: str, chunk_days: int = METRICS_CHUNK
         end_chunk = min(start + timedelta(days=chunk_days - 1), end)
         yield start.strftime("%Y-%m-%d"), end_chunk.strftime("%Y-%m-%d")
         start = end_chunk + timedelta(days=1)
+
+
+def _is_done(state: dict, key: str) -> bool:
+    """Return True if the unit of work identified by key already finished in this window."""
+    return key in state.get("progress", {}).get("done", [])
+
+
+def _mark_done(state: dict, key: str):
+    """Record a finished unit of work in state and checkpoint so it is not replayed."""
+    state["progress"]["done"].append(key)
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+    op.checkpoint(state)
 
 
 def _parse_metrics_response(body: dict, profile_id: str) -> list:
@@ -468,6 +333,10 @@ def _parse_metrics_response(body: dict, profile_id: str) -> list:
 def _fetch_all_profiles(configuration: dict) -> dict:
     """Fetch connected profiles for every supported network.
 
+    A network the account has no access to (HTTP 400/403/404) is skipped; any other
+    failure, including exhausted retries and rate limits, aborts the sync so the shared
+    watermark never advances past a network that was not read.
+
     Args:
         configuration: the validated connector configuration.
 
@@ -480,12 +349,16 @@ def _fetch_all_profiles(configuration: dict) -> dict:
         url = f"{base_url}/3/{network}/profiles"
         try:
             body = _get(url, configuration)
-            profiles = body.get("profiles", [])
-            result[network] = profiles
-            log.info(f"  {network}: {len(profiles)} profile(s)")
         except requests.HTTPError as e:
-            log.warning(f"  {network}: skipped ({e})")
-            result[network] = []
+            status = e.response.status_code if e.response is not None else None
+            if status in (400, 403, 404):
+                log.warning(f"  {network}: skipped, not available for this account ({e})")
+                result[network] = []
+                continue
+            raise
+        profiles = body.get("profiles", [])
+        result[network] = profiles
+        log.info(f"  {network}: {len(profiles)} profile(s)")
     return result
 
 
@@ -493,9 +366,12 @@ def _sync_profiles(profiles_by_network: dict):
     """Upsert every fetched profile into the profiles table."""
     for network, profiles in profiles_by_network.items():
         for p in profiles:
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
-                "profiles",
-                {
+                table="profiles",
+                data={
                     "id": str(p.get("id", "")),
                     "network": network,
                     "name": p.get("name"),
@@ -508,8 +384,11 @@ def _sync_profiles(profiles_by_network: dict):
             )
 
 
-def _sync_profile_metrics(configuration, profiles_by_network, date_start, date_end):
-    """Fetch and upsert daily profile metrics for every profile, one profile per call."""
+def _sync_profile_metrics(configuration, state, profiles_by_network, date_start, date_end):
+    """Fetch and upsert daily profile metrics for every profile, one profile per call.
+
+    Checkpoints after each profile so an interruption resumes at the next profile.
+    """
     base_url = configuration.get("base_url", __BASE_URL)
 
     for network, profiles in profiles_by_network.items():
@@ -518,31 +397,38 @@ def _sync_profile_metrics(configuration, profiles_by_network, date_start, date_e
         metrics = PROFILE_METRICS.get(network, [])
         if not metrics:
             continue
+        if len(metrics) > __MAX_METRICS_PER_REQUEST:
+            log.warning(
+                f"profile_metrics [{network}]: {len(metrics)} metrics configured but Emplifi "
+                f"allows {__MAX_METRICS_PER_REQUEST} per call; truncating the rest"
+            )
 
         url = f"{base_url}/3/{network}/metrics"
         log.info(f"  profile_metrics [{network}] - {len(profiles)} profiles")
 
         for profile in profiles:
             pid = str(profile["id"])
+            progress_key = f"profile_metrics:{network}:{pid}"
+            if _is_done(state, progress_key):
+                continue
+
             for d_start, d_end in _date_chunks(date_start, date_end):
                 payload = {
                     "date_start": d_start,
                     "date_end": d_end,
                     "profiles": [pid],
-                    # Emplifi caps metrics requests at 25 per call.
-                    "metrics": metrics[:25],
+                    "metrics": metrics[:__MAX_METRICS_PER_REQUEST],
                     "dimensions": [{"type": "date.day"}],
                 }
-                try:
-                    body = _post(url, payload, configuration)
-                except (RuntimeError, requests.HTTPError) as e:
-                    log.warning(f"profile_metrics [{network}] pid={pid}: {e}")
-                    continue
+                body = _post(url, payload, configuration)
 
                 for row in _parse_metrics_response(body, pid):
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
                     op.upsert(
-                        "profile_metrics",
-                        {
+                        table="profile_metrics",
+                        data={
                             "profile_id": row["profile_id"],
                             "network": network,
                             "date": row["date"],
@@ -550,9 +436,10 @@ def _sync_profile_metrics(configuration, profiles_by_network, date_start, date_e
                             "value": row["value"],
                         },
                     )
+            _mark_done(state, progress_key)
 
 
-def _sync_posts(configuration, profiles_by_network, date_start, date_end):
+def _sync_posts(configuration, state, profiles_by_network, date_start, date_end):
     """Fetch and upsert posts for every profile, paginating with Emplifi's cursor.
 
     Key requirements from the Emplifi API:
@@ -561,7 +448,9 @@ def _sync_posts(configuration, profiles_by_network, date_start, date_end):
       - Subsequent pages send ONLY {"after": "<cursor>"}, no other fields.
 
     Twitter note: due to Twitter's Developer Policy, Emplifi only returns id/profileId/origin.
-    TikTok note: insights_ fields only populate for profiles with insights_enabled=true.
+    TikTok note: insights_ fields are only requested for profiles with insights_enabled=true.
+
+    Checkpoints after each profile so an interruption resumes at the next profile.
     """
     base_url = configuration.get("base_url", __BASE_URL)
 
@@ -572,12 +461,21 @@ def _sync_posts(configuration, profiles_by_network, date_start, date_end):
         if not endpoint:
             continue
 
-        fields = POST_FIELDS_BY_NETWORK.get(network, ["id", "created_time"])
+        all_fields = POST_FIELDS_BY_NETWORK.get(network, ["id", "created_time"])
         url = f"{base_url}{endpoint}"
         log.info(f"  posts [{network}] - {len(profiles)} profiles")
 
         for profile in profiles:
             pid = str(profile["id"])
+            progress_key = f"posts:{network}:{pid}"
+            if _is_done(state, progress_key):
+                continue
+
+            fields = all_fields
+            if not profile.get("insights_enabled", False):
+                # insights_ fields raise Code-7 when the profile has insights disabled, which
+                # would drop the otherwise accessible basic fields for the whole profile.
+                fields = [f for f in all_fields if not f.startswith("insights_")]
 
             # First-page payload has no "after" key at all. Emplifi uses a oneOf schema:
             # branch A (first page) requires profiles + date_start + date_end + fields, no
@@ -593,11 +491,7 @@ def _sync_posts(configuration, profiles_by_network, date_start, date_end):
             }
 
             while True:
-                try:
-                    body = _post(url, payload, configuration)
-                except (RuntimeError, requests.HTTPError) as e:
-                    log.warning(f"posts [{network}] pid={pid}: {e}")
-                    break
+                body = _post(url, payload, configuration)
 
                 data_obj = body.get("data", {})
                 if isinstance(data_obj, dict):
@@ -621,16 +515,20 @@ def _sync_posts(configuration, profiles_by_network, date_start, date_end):
                             row[k] = json.dumps(v)
                         else:
                             row[k] = str(v)
-                    op.upsert("posts", row)
+                    # The 'upsert' operation is used to insert or update data in the destination table.
+                    # The first argument is the name of the destination table.
+                    # The second argument is a dictionary containing the record to be upserted.
+                    op.upsert(table="posts", data=row)
 
                 if not next_cursor:
                     break
 
                 # Branch B: subsequent pages send only the cursor string.
                 payload = {"after": next_cursor}
+            _mark_done(state, progress_key)
 
 
-def _sync_aggregated_post_metrics(configuration, profiles_by_network, date_start, date_end):
+def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, date_start, date_end):
     """Fetch and upsert cross-platform aggregated post metrics, batched across profiles.
 
     POST /3/aggregated-metrics requires:
@@ -641,6 +539,7 @@ def _sync_aggregated_post_metrics(configuration, profiles_by_network, date_start
     The response is a header+data matrix; a profile dimension is added when more than one
     profile is requested. This batches all profiles across all networks into groups of
     AGGREGATED_METRICS_BATCH_SIZE, issuing one call per metric per batch per date chunk.
+    Checkpoints after each metric/batch pair.
     """
     base_url = configuration.get("base_url", __BASE_URL)
     url = f"{base_url}/3/aggregated-metrics"
@@ -663,14 +562,11 @@ def _sync_aggregated_post_metrics(configuration, profiles_by_network, date_start
         f"batch(es), {len(AGGREGATED_METRICS)} metrics"
     )
 
-    endpoint_confirmed_missing = False
     for metric in AGGREGATED_METRICS:
-        if endpoint_confirmed_missing:
-            break
-
-        for batch in batches:
-            if endpoint_confirmed_missing:
-                break
+        for batch_index, batch in enumerate(batches):
+            progress_key = f"aggregated:{metric}:{batch_index}"
+            if _is_done(state, progress_key):
+                continue
 
             for d_start, d_end in _date_chunks(date_start, date_end):
                 payload = {
@@ -686,15 +582,30 @@ def _sync_aggregated_post_metrics(configuration, profiles_by_network, date_start
                     status = e.response.status_code if e.response is not None else None
                     if status in (404, 405):
                         log.warning(f"Aggregated endpoint returned {status} - skipping")
-                        endpoint_confirmed_missing = True
                         return
-                    log.warning(f"aggregated metric={metric} batch[0]={batch[0]}: {e}")
-                    continue
-                except RuntimeError as e:
-                    log.warning(f"aggregated metric={metric}: {e}")
-                    continue
+                    raise
 
                 _upsert_aggregated_metrics_response(body, metric, batch)
+            _mark_done(state, progress_key)
+
+
+def _resolve_network(pid_obj, pid_str: str, batch: list) -> str:
+    """Return the network of a profile in an aggregated-metrics response.
+
+    Uses the platform echoed in the response when present. For an ID-only entry, falls back
+    to the requested batch, and raises if the ID appears on more than one network because
+    the destination primary key would then collide.
+    """
+    if isinstance(pid_obj, dict) and pid_obj.get("platform"):
+        return pid_obj["platform"]
+
+    platforms = {obj["platform"] for obj in batch if obj["id"] == pid_str}
+    if len(platforms) != 1:
+        raise RuntimeError(
+            f"Cannot attribute aggregated metrics for profile {pid_str} to a single network "
+            f"(candidates: {sorted(platforms)})"
+        )
+    return platforms.pop()
 
 
 def _upsert_aggregated_metrics_response(body, metric, batch):
@@ -738,13 +649,13 @@ def _upsert_aggregated_metrics_response(body, metric, batch):
                 if isinstance(raw, list):
                     raw = raw[0] if raw else None
                 pid_str = str(pid_obj["id"]) if isinstance(pid_obj, dict) else str(pid_obj)
-                nw = next(
-                    (obj["platform"] for obj in batch if obj["id"] == pid_str),
-                    "unknown",
-                )
+                nw = _resolve_network(pid_obj, pid_str, batch)
+                # The 'upsert' operation is used to insert or update data in the destination table.
+                # The first argument is the name of the destination table.
+                # The second argument is a dictionary containing the record to be upserted.
                 op.upsert(
-                    "aggregated_post_metrics",
-                    {
+                    table="aggregated_post_metrics",
+                    data={
                         "profile_id": pid_str,
                         "network": nw,
                         "date": d,
@@ -756,9 +667,12 @@ def _upsert_aggregated_metrics_response(body, metric, batch):
             raw = row_data[0] if isinstance(row_data, list) else row_data
             if isinstance(raw, list):
                 raw = raw[0] if raw else None
+            # The 'upsert' operation is used to insert or update data in the destination table.
+            # The first argument is the name of the destination table.
+            # The second argument is a dictionary containing the record to be upserted.
             op.upsert(
-                "aggregated_post_metrics",
-                {
+                table="aggregated_post_metrics",
+                data={
                     "profile_id": batch[0]["id"],
                     "network": batch[0]["platform"],
                     "date": d,
@@ -778,6 +692,8 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
+    log.warning("Example: API Connector : Emplifi Connector")
+
     validate_configuration(configuration=configuration)
 
     today = date.today()
@@ -798,35 +714,43 @@ def update(configuration: dict, state: dict):
     sync_end = yesterday.strftime("%Y-%m-%d")
     log.info(f"Window: {sync_start} -> {sync_end}")
 
+    # Resume partially completed work only if it belongs to the same window; otherwise start
+    # fresh. last_synced_date is advanced only after the full window has succeeded.
+    window = [sync_start, sync_end]
+    if state.get("progress", {}).get("window") != window:
+        state["progress"] = {"window": window, "done": []}
+
     log.info("STEP 1 - Fetching all connected profiles ...")
     profiles_by_network = _fetch_all_profiles(configuration)
     total = sum(len(v) for v in profiles_by_network.values())
     log.info(f"  Total: {total} profiles")
 
     if total == 0:
-        log.warning(
-            "Zero profiles returned - likely rate-limited. State NOT advanced. " "Wait and re-run."
-        )
+        log.warning("Zero profiles returned. State NOT advanced.")
         return
 
     _sync_profiles(profiles_by_network)
-    # Checkpoint the same (unfinalized) state after each step so upserts made so far are
-    # durably committed sooner, bounding how much work is replayed on an interruption.
-    # last_synced_date itself is only finalized once the full window has been synced below.
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
     op.checkpoint(state)
 
     log.info("STEP 2 - Profile metrics ...")
-    _sync_profile_metrics(configuration, profiles_by_network, sync_start, sync_end)
-    op.checkpoint(state)
+    _sync_profile_metrics(configuration, state, profiles_by_network, sync_start, sync_end)
 
     log.info("STEP 3 - Posts ...")
-    _sync_posts(configuration, profiles_by_network, sync_start, sync_end)
-    op.checkpoint(state)
+    _sync_posts(configuration, state, profiles_by_network, sync_start, sync_end)
 
     log.info("STEP 4 - Aggregated post metrics ...")
-    _sync_aggregated_post_metrics(configuration, profiles_by_network, sync_start, sync_end)
+    _sync_aggregated_post_metrics(configuration, state, profiles_by_network, sync_start, sync_end)
 
     state["last_synced_date"] = sync_end
+    state.pop("progress", None)
+    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+    # from the correct position in case of next sync or interruptions.
+    # Learn more about how and where to checkpoint by reading our best practices documentation
+    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
     op.checkpoint(state)
     log.info(f"Done. Checkpointed last_synced_date={sync_end}")
 
