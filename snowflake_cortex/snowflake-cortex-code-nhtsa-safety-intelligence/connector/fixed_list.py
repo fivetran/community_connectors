@@ -406,11 +406,9 @@ def query_covers(tracked_query, query: str) -> bool:
     # NHTSA matches ASCII letters without regard to case but not Unicode folds such as German sharp s to "ss", so
     # only an ASCII spelling is compared case-insensitively.
     old_spelling, new_spelling = tracked[0], current[0]
-    same_spelling = old_spelling == new_spelling or (
-        old_spelling.isascii()
-        and new_spelling.isascii()
-        and old_spelling.lower() == new_spelling.lower()
-    )
+    both_ascii = old_spelling.isascii() and new_spelling.isascii()
+    same_case_insensitive = both_ascii and old_spelling.lower() == new_spelling.lower()
+    same_spelling = old_spelling == new_spelling or same_case_insensitive
     # ISO dates compare correctly as strings
     return same_spelling and current[1] <= tracked[1] and tracked[2] <= current[2]
 
