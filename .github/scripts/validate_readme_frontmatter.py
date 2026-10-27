@@ -71,7 +71,8 @@ def validate_readme(readme: pathlib.Path) -> list:
         if not isinstance(value, str) or not value.strip():
             errors.append(f"'{key}' must be a non-empty string")
 
-    unknown_keys = sorted(set(frontmatter) - set(REQUIRED_KEYS))
+    # YAML keys can be numbers or other scalars, so compare and report them as strings.
+    unknown_keys = sorted(str(key) for key in frontmatter if key not in REQUIRED_KEYS)
     if unknown_keys:
         errors.append(f"unknown keys: {', '.join(unknown_keys)}")
 
