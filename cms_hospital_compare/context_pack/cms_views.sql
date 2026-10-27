@@ -27,8 +27,10 @@
 -- The views are created in the in-memory database, so the warehouse stays read-only.
 
 -- Every release the connector recorded, one row per table per release. row_count is the number of records paged,
--- including records skipped for a missing natural key and repeated keys, so it can exceed the rows in the view;
--- api_row_count is the count CMS reported. is_latest_release marks the release the plain views read.
+-- including records skipped (no natural key, or not an object) and repeated keys, so it can exceed the rows in the
+-- view; rows_written is the records written to the table, repeats included, so rows_written below row_count counts
+-- the skipped records; api_row_count is the count CMS reported. is_latest_release marks the release the plain views
+-- read.
 --
 -- The connector only ever loads a dataset's current release, so the latest load is the latest release. Ties fall
 -- to release_version: the data file's Unix epoch, or the catalog's %modified timestamp
@@ -44,6 +46,7 @@ with releases as (
     cms_modified,
     row_count,
     api_row_count,
+    rows_written,
     loaded_at,
     coalesce(
       try_cast(release_version as bigint),
@@ -61,6 +64,7 @@ select
   cms_modified,
   row_count,
   api_row_count,
+  rows_written,
   loaded_at,
   row_number() over (
     partition by table_name

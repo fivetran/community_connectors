@@ -27,7 +27,7 @@ The same text problem breaks other questions. The longest median ED time (`OP_18
 Two more mistakes have no number yet, because this sync holds one release per dataset:
 
 - After the next CMS release, the raw tables hold both releases. A count over them counts most hospitals twice. The views read the latest release only.
-- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row. When CMS reports more records than it returns on two syncs in a row, the connector records the release with the records CMS returned, and `row_count` is below `api_row_count` in `cms_release`; `agent/AGENTS.md` has the agent say so. A release that writes no rows, because CMS returned none or every record lacked its natural key, is never recorded, so a table can have no row in `cms_release` until its first release loads.
+- While a release is loading, its rows are in the table before it is complete. If CMS replaces the file during the load, those rows stay incomplete. The connector writes a release's `dataset_release` row only after its last page, and only if CMS has not replaced it. The views read only releases that have that row. When CMS reports more records than it returns on two syncs in a row, the connector records the release with the records CMS returned, and `row_count` is below `api_row_count` in `cms_release`; `agent/AGENTS.md` has the agent say so. A release that writes no rows, because CMS returned none or none of its records could be loaded (no natural key, or not an object), is never recorded, so a table can have no row in `cms_release` until its first release loads. A release that loses some records is recorded, and `rows_written` below `row_count` in `cms_release` shows how many were loaded.
 
 ## What the views do
 
@@ -35,7 +35,7 @@ Two more mistakes have no number yet, because this sync holds one release per da
 
 | View | Reads | What changes |
 |---|---|---|
-| `cms_release`, `cms_release_history` | `dataset_release` | `cms_released` becomes a DATE; `is_latest_release` marks the release the other views read; `row_count` is the records paged, including any skipped for a missing key, and `api_row_count` the count CMS reported |
+| `cms_release`, `cms_release_history` | `dataset_release` | `cms_released` becomes a DATE; `is_latest_release` marks the release the other views read; `row_count` is the records paged, including records skipped (no natural key, or not an object) and repeated keys; `rows_written` the records written to the table, repeats included; `api_row_count` the count CMS reported |
 | `cms_hospital` | `hospital` | `hospital_overall_rating` and the measure-group counts become integers; `emergency_services` becomes `has_emergency_services` |
 | `cms_timely_effective_care` | `timely_effective_care` | `score` becomes a number and `score_text` keeps what CMS sent (the `EDV` band) |
 | `cms_unplanned_hospital_visit` | `unplanned_hospital_visit` | Scores, estimates and counts become numbers; `comparison` folds the labels of `compared_to_national` into five values (on `OP_36`, CMS compares with the expected rate, not the national rate) |
@@ -53,7 +53,9 @@ The views name the tables without a schema. The session puts the schema that hol
 
 ## Connect your AI to this data
 
-Every path below starts a session the same way: attach the connector's tables read-only, put their schema on the search path, and run `cms_views.sql`. The views are created in the session's in-memory database, so the warehouse is never written.
+Every path below starts a session the same way: attach the connector's tables read-only, put their schema on the search path, check that every table has loaded a release, and run `cms_views.sql`. The views are created in the session's in-memory database, so the warehouse is never written.
+
+Create the views only once every table has a row in `dataset_release`. `fivetran debug` creates each table at the start of the first sync with only its key and release columns, and adds the other columns with the first rows, so `cms_views.sql` fails on a table that has not loaded a release yet. The check query below returns 5 when every table has one; with a lower number, or an error because `dataset_release` does not exist yet, wait for a sync that loads the rest.
 
 ### The DuckDB CLI
 
@@ -66,13 +68,14 @@ duckdb
 ```sql
 ATTACH '../connector/files/warehouse.db' AS cms_wh (READ_ONLY);
 SET search_path = 'memory.main,cms_wh.tester';
+select count(distinct table_name) as tables_loaded from dataset_release where not coalesce(_fivetran_deleted, false);
 .read cms_views.sql
 select table_name, cms_released from cms_release order by table_name;
 ```
 
 ### An agent with a DuckDB or SQL tool
 
-Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its instructions, and a tool that runs DuckDB SQL. Have the agent run the first three statements above as its first call; the fourth is a check you can skip. In a tool that does not support the CLI's `.read` command, pass the contents of `cms_views.sql` instead. Then ask a question, for example "Which states have the longest emergency department visits?". The agent should answer with the checked SQL from `AGENTS.md`.
+Give Claude Code, Cursor or another coding assistant `agent/AGENTS.md` as its instructions, and a tool that runs DuckDB SQL. Have the agent run the first three statements above as its first call, and the fourth only when `tables_loaded` is 5; otherwise the agent says the data has not loaded. The fifth is a check you can skip. In a tool that does not support the CLI's `.read` command, pass the contents of `cms_views.sql` instead. Then ask a question, for example "Which states have the longest emergency department visits?". The agent should answer with the checked SQL from `AGENTS.md`.
 
 ### An MCP DuckDB server
 

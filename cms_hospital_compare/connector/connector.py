@@ -514,11 +514,6 @@ def fetch_page(session: requests.Session, dataset: dict, offset: int, page_size:
         )
     if isinstance(count, bool) or not isinstance(count, int):
         raise RuntimeError(f"{dataset['dataset_id']} offset {offset}: response has no row count")
-    if count == 0 and results:
-        # Paging ends at the reported count, so a count of 0 with records would record a one-page release as loaded
-        raise RuntimeError(
-            f"{dataset['dataset_id']} offset {offset}: response reports 0 rows but returned {len(results)}"
-        )
     return results, count
 
 
@@ -657,9 +652,13 @@ def resolve_start(table: str, release: dict, saved: dict) -> tuple:
         (is_resuming, the progress to resume from, or an empty dict when the release loads from the start)
     """
     is_resuming = saved.get("release_version") == release["release_version"]
-    if is_resuming and "first_page_signature" not in saved:
-        # State saved before the paging evidence was persisted cannot show which pages it saw, so the guards
-        # could not check the resume. Rows are keyed on the release, so loading it again is idempotent.
+    if is_resuming and not saved.get("offset"):
+        # Nothing to resume: no page was read, or the release wrote no rows and was saved at offset 0 to be read again
+        is_resuming = False
+    elif is_resuming and ("first_page_signature" not in saved or "rows_written" not in saved):
+        # State saved before the paging evidence and the rows written were persisted cannot show which pages it saw
+        # or whether any row reached the table, so the guards could not check the resume. Rows are keyed on the
+        # release, so loading it again is idempotent.
         log.info(
             f"{table}: saved progress has no paging evidence; reloading the release from the start"
         )
@@ -802,7 +801,8 @@ def page_release(
         totals: running counters for the sync summary; updated in place
 
     Raises:
-        RuntimeError: when a page repeats an earlier page, or the release needs more pages than the count allows
+        RuntimeError: when a page repeats an earlier page or returns records past the reported count, or the
+            release needs more pages than the count allows
     """
     table = dataset["table"]
     max_pages = None
@@ -815,6 +815,13 @@ def page_release(
         ]
         page_keys = [get_natural_key(row, dataset) if row is not None else None for row in rows]
         check_page_signature(table, page_keys, paging)
+        if paging["offset"] + len(records) > paging["count"]:
+            # Paging ends at the reported count, so a count that is too low would record a truncated release as
+            # loaded. A count that grows during paging still passes: each page is held to its own count.
+            raise RuntimeError(
+                f"{table}: the page at offset {paging['offset']} returned {len(records)} records, past the "
+                f"{paging['count']} rows CMS reports"
+            )
         if max_pages is None:
             # Size the guard from the first page's count, so it scales with page_size and the release size.
             remaining = max(paging["count"] - paging["offset"], 0)
@@ -899,6 +906,7 @@ def finish_release(
         is_resuming: whether the sync resumed the release from saved progress
         saved: the progress the sync resumed from, or an empty dict
         datasets_state: dataset_id -> saved progress; updated in place and checkpointed when the release completes
+            or wrote no rows
         totals: running counters for the sync summary; updated in place
     """
     dataset_id = dataset["dataset_id"]
@@ -912,16 +920,30 @@ def finish_release(
         return
     if paging["rows_written"] == 0:
         # No row of this release reached the table: CMS returned none, or every record was skipped for a missing
-        # natural key (a renamed key column). Recording it would make it the latest release and empty every view
-        # that reads it, with row_count equal to api_row_count, so no gap would show. It stays incomplete, the
-        # earlier release stays the latest, and the next sync tries again.
+        # natural key (a renamed key column) or for not being an object. Recording it would make it the latest
+        # release and empty every view that reads it, with row_count equal to api_row_count, so no gap would show.
+        # It stays incomplete and the earlier release stays the latest. It is saved at offset 0 without paging
+        # evidence, so the next sync reads it again from the start: once its records can be loaded (CMS fixes the
+        # data under the same version, or a redeploy maps the renamed key), it loads in full.
         entry = f"{table}: release {release['release_version']}"
         if offset > 0:
-            entry += f" ({offset} records, none with a natural key)"
+            entry += f" ({offset} records, none could be loaded)"
         totals["empty"].append(entry)
         log.warning(
             f"{table}: no rows written for release {release['release_version']} from {offset} records"
         )
+        datasets_state[dataset_id] = {
+            "release_version": release["release_version"],
+            "offset": 0,
+            "complete": False,
+        }
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+        op.checkpoint(state=build_state(datasets_state, totals))
         return
 
     # CMS can replace a file while it is being paged. Mark the release complete only if it is still current;
@@ -956,6 +978,7 @@ def finish_release(
             "cms_modified": release["modified"],
             "row_count": offset,
             "api_row_count": paging["count"],
+            "rows_written": paging["rows_written"],
             "loaded_at": datetime.now(timezone.utc).strftime(__LOADED_AT_FORMAT),
         },
     )
@@ -1015,8 +1038,7 @@ def sync_dataset(
         "first_page_signature": saved.get("first_page_signature"),
         "last_page_signature": saved.get("last_page_signature"),
         "previous_key": tuple(saved["last_key"]) if saved.get("last_key") else None,
-        # Progress saved before rows_written was persisted counted only records, so its offset stands in for it
-        "rows_written": int(saved.get("rows_written", saved.get("offset") or 0)),
+        "rows_written": int(saved.get("rows_written") or 0),
     }
     page_release(
         session, dataset, release, paging, datasets_state, page_size, delay_seconds, totals
@@ -1056,6 +1078,7 @@ def schema(configuration: dict):
                 "cms_modified": "STRING",
                 "row_count": "INT",
                 "api_row_count": "INT",
+                "rows_written": "INT",
                 "loaded_at": "UTC_DATETIME",
             },
         }
