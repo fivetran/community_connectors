@@ -695,8 +695,10 @@ def next_load_attempt(release: dict, saved: dict) -> int:
         of the same version that loads again from the start
     """
     if saved.get("release_version") != release["release_version"] or saved.get("complete"):
-        # A new release, or a completed one loaded again after its state was lost: the first attempt, so rows read
-        # again match the attempt its dataset_release row recorded.
+        # A new release, or a completed one loaded again after its state was lost: the first attempt. The connector
+        # cannot read which attempt dataset_release recorded, so rows read again match it only when that was attempt
+        # 1. After a later attempt, rows read again leave the views until the reload is recorded, and rows only the
+        # abandoned attempt 1 read return with it (see the README's Load attempts bullet).
         return 1
     attempt = saved.get("load_attempt")
     # Rows of an attempt saved before attempts were numbered carry no attempt, which the views read as attempt 1
