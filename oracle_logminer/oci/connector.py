@@ -754,15 +754,12 @@ def _split_csv(text: str) -> list[str]:
 
 
 _FORMAT_TOKENS = (
-    ("HH24", "%H"), ("HH12", "%I"), ("RRRR", "%Y"), ("YYYY", "%Y"), ("MON", "%b"),
-    ("HH", "%I"), ("YY", "%y"), ("RR", "%y"), ("MM", "%m"), ("DD", "%d"), ("MI", "%M"),
-    ("SS", "%S"), ("AM", "%p"), ("PM", "%p"),
+   ("HH24", "%H"), ("HH12", "%I"), ("RRRR", "%Y"), ("YYYY", "%Y"),
+   ("MON", "%b"), ("HH", "%I"), ("YY", "%y"), ("RR", "%y"), ("MM", "%m"),
+   ("DD", "%d"), ("MI", "%M"),("SS", "%S"), ("AM", "%p"), ("PM", "%p")
 )
-_FORMAT_TOKEN_RE = re.compile(
-    r"FF\d*|" + "|".join(t for t, _ in _FORMAT_TOKENS), re.IGNORECASE
-)
+_FORMAT_TOKEN_RE = re.compile(r"FF\d*|" + "|".join(t for t, _ in _FORMAT_TOKENS), re.IGNORECASE)
 _FORMAT_MAP = dict(_FORMAT_TOKENS)
-
 
 def _oracle_format_to_strptime(fmt: str) -> str:
     def repl(m: re.Match) -> str:
@@ -1879,7 +1876,6 @@ def _capture_floor(
 _TRACK: dict[str, Any] = {"state": None}  # last state handed to op.checkpoint this update()
 _WARNED: set[tuple[str, str]] = set()
 _PROGRESS_SECONDS = 30
-
 
 class _Progress:
     """Logs a line every ``_PROGRESS_SECONDS`` so a long window never looks hung."""
