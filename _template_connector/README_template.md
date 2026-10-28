@@ -1,7 +1,7 @@
 ---
-name: <Source name, for example GitHub>
-description: <One-sentence description of what the connector syncs>
-category: <One of: Databases, Cloud Data Warehouses, Message Queues & Streaming, AI and Connector SDK, SaaS & APIs>
+name: "<Source name, for example GitHub>"
+description: "<One-sentence description of what the connector syncs>"
+category: "<One of: Databases, Cloud Data Warehouses, Message Queues & Streaming, AI and Connector SDK, SaaS & APIs>"
 ---
 
 # Connector SDK Individual Example README.md Structure Template
