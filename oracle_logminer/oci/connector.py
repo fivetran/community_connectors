@@ -752,6 +752,7 @@ def _split_csv(text: str) -> list[str]:
     return tokens
 
 
+
 _FORMAT_TOKENS = (
     ("HH24", "%H"), ("HH12", "%I"), ("RRRR", "%Y"), ("YYYY", "%Y"), ("MON", "%b"),
     ("HH", "%I"), ("YY", "%y"), ("RR", "%y"), ("MM", "%m"), ("DD", "%d"), ("MI", "%M"),
@@ -1006,12 +1007,7 @@ def _find_top_level(text: str, keyword: str) -> int:
             depth += 1
         elif ch == ")":
             depth -= 1
-        elif (
-            depth == 0 and
-            ch.isspace() and
-            text[i + 1 : i + 1 + n].lower() == kw and
-            text[i + 1 + n : i + 2 + n].isspace()
-        ):
+        elif (depth == 0 and ch.isspace() and text[i + 1 : i + 1 + n].lower() == kw and text[i + 1 + n : i + 2 + n].isspace()):
             return i + 1
         i += 1
     return -1
@@ -1553,12 +1549,7 @@ class LogMinerManager:
                     if rec["csf"]:
                         carry = rec
                         continue
-                    if (
-                        client_filter is not None and
-                        rec["table_name"] and
-                        rec["table_name"] not in client_filter and
-                        (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
-                    ):
+                    if (client_filter is not None and rec["table_name"] and rec["table_name"] not in client_filter and (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")):
                         continue
                     yield rec
 
@@ -1884,6 +1875,7 @@ def _capture_floor(
     ) from last_err
 
 
+
 _TRACK: dict[str, Any] = {"state": None}  # last state handed to op.checkpoint this update()
 _WARNED: set[tuple[str, str]] = set()
 _PROGRESS_SECONDS = 30
@@ -2095,12 +2087,7 @@ def _consume_window(
         elif kind in _UNSUPPORTED_OPERATIONS:
             _warn_unsupported(kind, rec)
         elif kind in _DML_OPERATIONS:
-            if (
-                open_xids is not None and
-                filter_below is not None and
-                scn < filter_below and
-                xid not in open_xids
-            ):
+            if (open_xids is not None and filter_below is not None and scn < filter_below and xid not in open_xids):
                 continue  # belongs to a transaction known to be finished before last_scn
             ts = rec.get("timestamp")
             buffer.add(
@@ -2168,7 +2155,6 @@ def _mine_incremental(
                 raise
             lm.stop_quietly()
             total += applied
-
             pending = buffer.pending()
             new_mine_from = min([end + 1, floor_scn, *pending.values()])
             xids = set(pending) | sample_xids
@@ -2218,7 +2204,6 @@ def _check_supplemental_logging(
     except oracledb.Error as err:
         log.warning(f"Could not verify supplemental logging ({err}); skipping the check")
         return
-
     if minimal not in ("YES", "IMPLICIT"):
         # On Autonomous this view can read NO while table-level logging works, so it is only a
         # note. A real gap shows up as "Primary key ... missing from the redo" with a SQL_REDO sample.
