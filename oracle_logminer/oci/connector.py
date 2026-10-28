@@ -751,6 +751,7 @@ def _split_csv(text: str) -> list[str]:
 
     return tokens
 
+
 _FORMAT_TOKENS = (
     ("HH24", "%H"), ("HH12", "%I"), ("RRRR", "%Y"), ("YYYY", "%Y"), ("MON", "%b"),
     ("HH", "%I"), ("YY", "%y"), ("RR", "%y"), ("MM", "%m"), ("DD", "%d"), ("MI", "%M"),
@@ -1006,10 +1007,10 @@ def _find_top_level(text: str, keyword: str) -> int:
         elif ch == ")":
             depth -= 1
         elif (
-            depth == 0
-            and ch.isspace()
-            and text[i + 1 : i + 1 + n].lower() == kw
-            and text[i + 1 + n : i + 2 + n].isspace()
+            depth == 0 and
+            ch.isspace() and
+            text[i + 1 : i + 1 + n].lower() == kw and
+            text[i + 1 + n : i + 2 + n].isspace()
         ):
             return i + 1
         i += 1
@@ -1553,10 +1554,10 @@ class LogMinerManager:
                         carry = rec
                         continue
                     if (
-                        client_filter is not None
-                        and rec["table_name"]
-                        and rec["table_name"] not in client_filter
-                        and (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
+                        client_filter is not None and
+                        rec["table_name"] and
+                        rec["table_name"] not in client_filter and
+                        (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
                     ):
                         continue
                     yield rec
@@ -1882,6 +1883,7 @@ def _capture_floor(
         "(or set logminer_open_txn_check to 'false' to accept the risk)."
     ) from last_err
 
+
 _TRACK: dict[str, Any] = {"state": None}  # last state handed to op.checkpoint this update()
 _WARNED: set[tuple[str, str]] = set()
 _PROGRESS_SECONDS = 30
@@ -2094,10 +2096,10 @@ def _consume_window(
             _warn_unsupported(kind, rec)
         elif kind in _DML_OPERATIONS:
             if (
-                open_xids is not None
-                and filter_below is not None
-                and scn < filter_below
-                and xid not in open_xids
+                open_xids is not None and
+                filter_below is not None and
+                scn < filter_below and
+                xid not in open_xids
             ):
                 continue  # belongs to a transaction known to be finished before last_scn
             ts = rec.get("timestamp")
@@ -2114,7 +2116,6 @@ def _consume_window(
                 },
             )
     return applied
-
 
 
 def _mine_incremental(
@@ -2194,7 +2195,6 @@ def _mine_incremental(
     finally:
         buffer.close()
     return total
-
 
 
 def _check_supplemental_logging(
