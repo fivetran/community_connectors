@@ -63,7 +63,7 @@ A placeholder or empty value uses the default, so the `configuration.json` in th
 
 ## Requirements file
 
-This connector has no `requirements.txt`: it needs only `requests` and the Connector SDK.
+This connector does not have any dependencies beyond the packages pre-installed in the Connector SDK runtime.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
