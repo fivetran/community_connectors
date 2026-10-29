@@ -1,0 +1,10 @@
+version: 2
+checks:
+  - name: marts_have_descriptions
+    description: "Fails when a mart has no description. Agents answer from these descriptions."
+    config:
+      severity: error
+  - name: unused_sources
+    description: "Warns when a declared source table has no downstream model."
+    config:
+      severity: warn

@@ -1,0 +1,85 @@
+version: 2
+
+# Generic question shapes, no make or model baked in. The dbt MCP server lists these (list_saved_queries) but has no
+# tool that runs one, so the agent runs a saved query by passing its metrics, group_by and where to query_metrics,
+# adding the make or model the question names.
+#
+# A saved query has no row order the agent can rely on: dbt v2 (2.0.9) rejects order_by on a saved query, at the top
+# level and under query_params. So every description that returns more than one row starts with "Order by", and the
+# agent passes that order to query_metrics (order_by), which puts the top row first and makes a row limit drop the
+# smallest rows, never the widest.
+
+saved_queries:
+  - name: campaigns_by_make_component
+    description: >
+      Order by campaign_count descending, then recall_row__component_group. Recall campaigns per make and component
+      group. Filter on recall_row__make for one make; the top component group is then the first row. A campaign
+      covering two makes counts once under each.
+    query_params:
+      metrics:
+        - campaign_count
+      group_by:
+        - "Dimension('recall_row__make')"
+        - "Dimension('recall_row__component_group')"
+
+  - name: campaigns_by_model_year
+    description: >
+      Order by campaign_count descending, then recall_row__model_year descending. Recall campaigns per configured
+      model and model year. Filter on recall_row__model (the configured name). Never
+      add the years up for "the model": a campaign spanning years would count more than once; use campaign_count
+      filtered on the model with no year instead.
+    query_params:
+      metrics:
+        - campaign_count
+      group_by:
+        - "Dimension('recall_row__make')"
+        - "Dimension('recall_row__model')"
+        - "Dimension('recall_row__model_year')"
+
+  - name: flagged_campaigns
+    description: >
+      Order by campaign. Campaigns that advise parking outside or not driving, or carry an over-the-air remedy, one
+      row each.
+    query_params:
+      metrics:
+        - park_outside_campaigns
+        - park_it_campaigns
+        - over_the_air_campaigns
+      group_by:
+        - "Entity('campaign')"
+        - "Dimension('campaign__makes')"
+      where:
+        - "{{ Dimension('campaign__park_outside') }} or {{ Dimension('campaign__park_it') }} or {{ Dimension('campaign__over_the_air_update') }}"
+
+  - name: models_without_campaigns
+    description: >
+      Order by configured_model. Configured models with no recall campaign in the window, one row each with a 1.
+    query_params:
+      metrics:
+        - models_without_campaigns
+      group_by:
+        - "Entity('configured_model')"
+      where:
+        - "{{ Dimension('configured_model__has_campaigns') }} = false"
+
+  - name: multi_model_campaigns
+    description: >
+      Order by campaign__configured_models descending, then campaign. Campaigns covering more than one configured
+      model, widest first.
+    query_params:
+      metrics:
+        - multi_model_campaigns
+      group_by:
+        - "Entity('campaign')"
+        - "Dimension('campaign__configured_models')"
+        - "Dimension('campaign__models')"
+      where:
+        - "{{ Dimension('campaign__configured_models') }} > 1"
+
+  - name: report_window
+    description: The report-date window every answer names, and how many campaigns it holds.
+    query_params:
+      metrics:
+        - first_report_date
+        - last_report_date
+        - campaign_count

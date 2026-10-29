@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: nhtsa
+    description: >
+      The two tables the connector writes in list mode. The snowflake target reads them from var('lake_database') and
+      var('lake_schema'); the local target reads the connector's debug warehouse, attached as nhtsa_wh.
+    database: "{{ var('lake_database') if target.type == 'snowflake' else 'nhtsa_wh' }}"
+    schema: "{{ var('lake_schema') if target.type == 'snowflake' else 'tester' }}"
+    config:
+      # Fivetran stamps every row with _fivetran_synced; quoted on the lake, like every other source column.
+      loaded_at_field: >-
+        {{ '"_fivetran_synced"' if var('quote_lake_identifiers') else '_fivetran_synced' }}
+      freshness:
+        warn_after: {count: 2, period: day}
+        error_after: {count: 7, period: day}
+    quoting:
+      database: false
+      schema: "{{ var('quote_lake_identifiers') }}"
+      identifier: "{{ var('quote_lake_identifiers') }}"
+    tables:
+      - name: recalls
+        description: >
+          One row per NHTSA campaign x make x model x model year the connector queried. count(*) on it counts vehicle
+          rows, not recalls. Deleted rows carry _fivetran_deleted = true.
+      - name: configured_vehicle
+        description: >
+          One row per make x model x model year the connector was configured to query, with the number of campaign
+          rows the connector kept for it (campaigns_returned). The only place that proves a vehicle had no recalls in
+          the window.

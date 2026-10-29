@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: stg_nhtsa__recalls
+    description: >
+      The connector's recalls table, live rows only (_fivetran_deleted dropped), every column cast and named in
+      lowercase. One row per NHTSA campaign x configured make x model x model year: a row count here counts vehicle
+      rows, not recalls. Read nhtsa_recall or nhtsa_campaign instead.
+  - name: stg_nhtsa__configured_vehicle
+    description: >
+      The connector's configured_vehicle table, live rows only: one row per make x model x model year the connector
+      was configured to query, with the number of campaign rows the connector kept for it (not the number the API
+      returned). The only proof that a configured vehicle had no recalls in the window.
