@@ -224,7 +224,9 @@ def get_connection(configuration: dict) -> oracledb.Connection:
                 tcp_connect_timeout=30,
                 expire_time=2,  # TCP keepalive probe every 2 min: survives idle-killing firewalls
             )
-            conn.module = _SESSION_MODULE  # lets a later sync recognise an orphan of this connector
+            conn.module = (
+                _SESSION_MODULE  # lets a later sync recognise an orphan of this connector
+            )
             log.info("Oracle connection established")
             return conn
         except (oracledb.Error, OSError) as err:
@@ -753,9 +755,20 @@ def _split_csv(text: str) -> list[str]:
 
 
 _FORMAT_TOKENS = (
-    ("HH24", "%H"), ("HH12", "%I"), ("RRRR", "%Y"), ("YYYY", "%Y"),
-    ("MON", "%b"), ("HH", "%I"), ("YY", "%y"), ("RR", "%y"), ("MM", "%m"),
-    ("DD", "%d"), ("MI", "%M"), ("SS", "%S"), ("AM", "%p"), ("PM", "%p")
+    ("HH24", "%H"),
+    ("HH12", "%I"),
+    ("RRRR", "%Y"),
+    ("YYYY", "%Y"),
+    ("MON", "%b"),
+    ("HH", "%I"),
+    ("YY", "%y"),
+    ("RR", "%y"),
+    ("MM", "%m"),
+    ("DD", "%d"),
+    ("MI", "%M"),
+    ("SS", "%S"),
+    ("AM", "%p"),
+    ("PM", "%p"),
 )
 _FORMAT_TOKEN_RE = re.compile(r"FF\d*|" + "|".join(t for t, _ in _FORMAT_TOKENS), re.IGNORECASE)
 _FORMAT_MAP = dict(_FORMAT_TOKENS)
@@ -1004,7 +1017,12 @@ def _find_top_level(text: str, keyword: str) -> int:
             depth += 1
         elif ch == ")":
             depth -= 1
-        elif (depth == 0 and ch.isspace() and text[i + 1 : i + 1 + n].lower() == kw and text[i + 1 + n : i + 2 + n].isspace()):
+        elif (
+            depth == 0
+            and ch.isspace()
+            and text[i + 1 : i + 1 + n].lower() == kw
+            and text[i + 1 + n : i + 2 + n].isspace()
+        ):
             return i + 1
         i += 1
     return -1
@@ -1331,9 +1349,7 @@ class LogMinerManager:
                     )
                 log.fine(f"Added log file to LogMiner: {logfile}")
 
-        log.info(
-            f"Added {len(log_files)} redo file(s) for SCN {start_scn}–{end_scn}"
-        )
+        log.info(f"Added {len(log_files)} redo file(s) for SCN {start_scn}–{end_scn}")
         return len(log_files)
 
     def start(
@@ -1360,15 +1376,13 @@ class LogMinerManager:
                     max_archived_logs=max_archived_logs,
                 )
                 with self._conn.cursor() as cur:
-                    cur.execute(
-                        """
+                    cur.execute("""
                         BEGIN
                             DBMS_LOGMNR.START_LOGMNR(
                                 OPTIONS => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
                             );
                         END;
-                        """
-                    )
+                        """)
         except Exception:
             # A failed start (or a half-built non-PDB log list) must not leak a session.
             self.stop_quietly()
@@ -1444,7 +1458,9 @@ class LogMinerManager:
             for stmt in ("KILL", "DISCONNECT"):
                 try:
                     with self._conn.cursor() as cur:
-                        cur.execute(f"ALTER SYSTEM {stmt} SESSION '{int(sid)},{int(serial)}' IMMEDIATE")
+                        cur.execute(
+                            f"ALTER SYSTEM {stmt} SESSION '{int(sid)},{int(serial)}' IMMEDIATE"
+                        )
                     log.warning(
                         f"Ended orphaned connector session sid={sid} serial#={serial} "
                         f"(status={status}, last call {idle}s ago) left by an earlier sync"
@@ -1464,13 +1480,11 @@ class LogMinerManager:
         self._mine_start_scn = None
         self._mine_end_scn = None
         with self._conn.cursor() as cur:
-            cur.execute(
-                """
+            cur.execute("""
                 BEGIN
                     DBMS_LOGMNR.END_LOGMNR();
                 END;
-                """
-            )
+                """)
         self._started = False
         log.info("LogMiner session stopped (END_LOGMNR)")
 
@@ -1546,7 +1560,12 @@ class LogMinerManager:
                     if rec["csf"]:
                         carry = rec
                         continue
-                    if (client_filter is not None and rec["table_name"] and rec["table_name"] not in client_filter and (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")):
+                    if (
+                        client_filter is not None
+                        and rec["table_name"]
+                        and rec["table_name"] not in client_filter
+                        and (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
+                    ):
                         continue
                     yield rec
 
@@ -1832,9 +1851,7 @@ class _TxnBuffer:
             self._dir = None
 
 
-def _capture_floor(
-    conn: oracledb.Connection, check_enabled: bool
-) -> tuple[int, int, set[str]]:
+def _capture_floor(conn: oracledb.Connection, check_enabled: bool) -> tuple[int, int, set[str]]:
     """
     Sample open transactions. Returns ``(boundary_scn, floor_scn, open_xids)``.
 
@@ -1995,7 +2012,10 @@ def _apply_record(
                 undo = record.get("sql_undo") or ""
                 if undo.strip():
                     try:
-                        values = {**values, **_prepare_values(table_name, parse_insert(undo), cm)[0]}
+                        values = {
+                            **values,
+                            **_prepare_values(table_name, parse_insert(undo), cm)[0],
+                        }
                     except (ValueError, TypeError, ArithmeticError):
                         pass
             missing = [c for c in pk_cols if values.get(c) is None]
@@ -2083,7 +2103,12 @@ def _consume_window(
         elif kind in _UNSUPPORTED_OPERATIONS:
             _warn_unsupported(kind, rec)
         elif kind in _DML_OPERATIONS:
-            if (open_xids is not None and filter_below is not None and scn < filter_below and xid not in open_xids):
+            if (
+                open_xids is not None
+                and filter_below is not None
+                and scn < filter_below
+                and xid not in open_xids
+            ):
                 continue  # belongs to a transaction known to be finished before last_scn
             ts = rec.get("timestamp")
             buffer.add(
@@ -2134,8 +2159,15 @@ def _mine_incremental(
             try:
                 lm.start(start_scn=pos, end_scn=end, max_archived_logs=max_archived_logs)
                 applied = _consume_window(
-                    lm, buffer, apply_row, schema, tables_filter, batch_size,
-                    emitted, c_open, c_filter,
+                    lm,
+                    buffer,
+                    apply_row,
+                    schema,
+                    tables_filter,
+                    batch_size,
+                    emitted,
+                    c_open,
+                    c_filter,
                 )
             except oracledb.DatabaseError as err:
                 lm.stop_quietly()
@@ -2249,7 +2281,9 @@ def _snapshot(conn: oracledb.Connection, settings: dict, state: dict) -> None:
             "mine_from": min(floor_scn, snapshot_scn),
             "done_tables": [],
         }
-        log.info(f"Initial sync: snapshot SCN baseline={snapshot_scn}, mine_from={snap['mine_from']}")
+        log.info(
+            f"Initial sync: snapshot SCN baseline={snapshot_scn}, mine_from={snap['mine_from']}"
+        )
     else:
         log.info(
             f"Initial sync: resuming snapshot at SCN {snap['scn']} "
@@ -2261,9 +2295,7 @@ def _snapshot(conn: oracledb.Connection, settings: dict, state: dict) -> None:
     _check_supplemental_logging(conn, schema_name, table_names)
 
     def progress(done: list[str]) -> None:
-        _checkpoint(
-            {"initial_sync_done": False, "snapshot": {**snap, "done_tables": list(done)}}
-        )
+        _checkpoint({"initial_sync_done": False, "snapshot": {**snap, "done_tables": list(done)}})
 
     _run_initial_sync(
         conn=conn,
