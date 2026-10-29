@@ -91,7 +91,7 @@ class RenderError(ValueError):
 
 def check(value: str, pattern: re.Pattern[str], what: str, expected: str) -> str:
     """Return value when pattern matches it in full, otherwise raise RenderError naming what it was for."""
-    if not pattern.match(value):
+    if not pattern.fullmatch(value):
         raise RenderError(f"{what} must be {expected}, got {value!r}")
     return value
 

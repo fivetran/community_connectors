@@ -85,6 +85,10 @@ __BASE_DELAY_SECONDS = 1
 __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 __NHTSA_RATE_LIMIT_DELAY = 0.5
 
+# The SDK accepts at most 10 op.warning() calls per sync. Fixed-list mode sends the first nine and keeps the tenth
+# for a summary of how many more were only logged.
+__MAX_DASHBOARD_WARNINGS = 10
+
 # Discovery Configuration Defaults
 __DEFAULT_DISCOVERY_DEPTH = 2
 __DEFAULT_MAX_DISCOVERIES = 3
@@ -1270,6 +1274,38 @@ def upsert_vehicle_rows(model: dict, row_keys: set, synced_at: str):
         )
 
 
+def _send_warning(message: str, warnings: dict) -> None:
+    """
+    Log a sync warning and surface it in the Fivetran dashboard while the SDK's per-sync limit allows.
+
+    Args:
+        message: the warning text
+        warnings: this sync's counts of warnings sent to the dashboard and warnings only logged
+    """
+    log.warning(message)
+    if warnings["sent"] < __MAX_DASHBOARD_WARNINGS - 1:
+        # Surface the warning in the Fivetran dashboard, not only in the logs.
+        op.warning(message)
+        warnings["sent"] += 1
+    else:
+        warnings["logged_only"] += 1
+
+
+def _send_warning_summary(warnings: dict) -> None:
+    """
+    Use the last dashboard warning to say how many warnings this sync logged without showing them.
+
+    Args:
+        warnings: this sync's counts of warnings sent to the dashboard and warnings only logged
+    """
+    if warnings["logged_only"]:
+        count = warnings["logged_only"]
+        op.warning(
+            f"{count} more sync {'warning was' if count == 1 else 'warnings were'} logged but not shown here, "
+            f"because the SDK accepts at most {__MAX_DASHBOARD_WARNINGS} per sync. See the connector logs."
+        )
+
+
 def _delete_vehicle_rows(label: str, model_years) -> int:
     """
     Delete the configured_vehicle rows for model years of one model that are no longer configured.
@@ -1363,6 +1399,7 @@ def sync_fixed_list(configuration: dict, state: dict):
 
     synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     totals = {"upserted": 0, "deleted": 0, "skipped": 0}
+    warnings = {"sent": 0, "logged_only": 0}
     session = create_list_session()
     try:
         for position, index in enumerate(to_sync):
@@ -1412,9 +1449,7 @@ def sync_fixed_list(configuration: dict, state: dict):
                     f"of deleting {them}. If NHTSA withdrew {them}, run a full re-sync of the connection to clear "
                     f"{them}."
                 )
-                log.warning(message)
-                # Surface the kept campaigns as a sync warning in the Fivetran dashboard, not only in the logs.
-                op.warning(message)
+                _send_warning(message, warnings)
             elif len(no_recall_years) == len(model["years"]):
                 # NHTSA gives the same no-recalls answer for a year with no recalls and for a vehicle it does not
                 # know, so a misspelled make or nhtsa_model looks like a model with no recalls in any year. The
@@ -1424,9 +1459,7 @@ def sync_fixed_list(configuration: dict, state: dict):
                     "configured model year. A misspelled make or nhtsa_model gives the same answer, so check "
                     "them if this model should have recalls. The model is recorded with no campaigns."
                 )
-                log.warning(message)
-                # Surface the model as a sync warning in the Fivetran dashboard, not only in the logs.
-                op.warning(message)
+                _send_warning(message, warnings)
             for key in sorted(rows):
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
@@ -1446,9 +1479,7 @@ def sync_fixed_list(configuration: dict, state: dict):
                     f"{label}: skipped {skipped} API results with no campaign number or an unparseable report "
                     "date; the tracked rows they could stand for were kept."
                 )
-                log.warning(message)
-                # Surface the skip count as a sync warning in the Fivetran dashboard, not only in the logs.
-                op.warning(message)
+                _send_warning(message, warnings)
             synced_keys[label] = sorted(set(rows) | kept)
             synced_years[label] = list(model["years"])
             # Each year's recorded query must have tracked every row the destination holds for that year. A row kept
@@ -1484,6 +1515,7 @@ def sync_fixed_list(configuration: dict, state: dict):
             )
     finally:
         session.close()
+        _send_warning_summary(warnings)
 
     # A full pass is complete: remove rows for models no longer in the configured list.
     for label in sorted(set(synced_keys) - set(labels)):

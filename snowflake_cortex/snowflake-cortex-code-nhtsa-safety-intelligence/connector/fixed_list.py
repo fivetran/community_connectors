@@ -23,6 +23,9 @@ __API_TIMEOUT_SECONDS = 30
 __MAX_RETRIES = 3
 __BASE_DELAY_SECONDS = 2
 __RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
+__RATE_LIMITED_STATUS_CODE = 429
+# The longest Retry-After wait honored, so a large server value cannot stall the sync
+__MAX_RETRY_AFTER_SECONDS = 60
 # The API answers 400, not an empty list, for a vehicle year it lists no recalls for, known or not
 __UNKNOWN_VEHICLE_STATUS_CODE = 400
 # A protected-key campaign placeholder meaning "every campaign of this model year"
@@ -172,6 +175,28 @@ def _is_unknown_vehicle_body(response: requests.Response) -> bool:
     return is_zero_count and payload.get("results") == []
 
 
+def _retry_delay(response: requests.Response, attempt: int) -> int:
+    """
+    Return how long to wait before retrying a retryable HTTP status.
+
+    Args:
+        response: the retryable response
+        attempt: the zero-based attempt that got it
+
+    Returns:
+        for HTTP 429 with a Retry-After of whole seconds, that value capped at __MAX_RETRY_AFTER_SECONDS; otherwise
+        the exponential backoff delay
+    """
+    backoff = __BASE_DELAY_SECONDS * (2**attempt)
+    if response.status_code != __RATE_LIMITED_STATUS_CODE:
+        return backoff
+    retry_after = (response.headers.get("Retry-After") or "").strip()
+    # Only the delay-seconds form is honored; an HTTP date or any other value falls back to the backoff.
+    if not (retry_after.isascii() and retry_after.isdigit()):
+        return backoff
+    return min(int(retry_after), __MAX_RETRY_AFTER_SECONDS)
+
+
 def fetch_vehicle_recalls(
     session: requests.Session, make: str, nhtsa_model: str, model_year: int
 ) -> list:
@@ -227,7 +252,7 @@ def fetch_vehicle_recalls(
                 raise RuntimeError(
                     f"{make} {nhtsa_model} {model_year}: HTTP {response.status_code} after {__MAX_RETRIES} attempts"
                 )
-            delay = __BASE_DELAY_SECONDS * (2**attempt)
+            delay = _retry_delay(response, attempt)
             log.warning(
                 f"{make} {nhtsa_model} {model_year}: HTTP {response.status_code}, retrying in {delay}s "
                 f"(attempt {attempt + 1} of {__MAX_RETRIES})"
