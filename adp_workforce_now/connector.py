@@ -540,6 +540,8 @@ def update(configuration: dict, state: dict):
         state: A dictionary containing state information from previous runs
         The state dictionary is empty for the first sync or for any full re-sync
     """
+    log.warning("Example: API Connector : ADP Workforce Now Connector")
+
     validate_configuration(configuration=configuration)
     cert, cleanup = _materialize_cert_files(configuration)
     try:
