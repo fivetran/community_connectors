@@ -177,8 +177,10 @@ The `dataset_release` table has one row per dataset per release the connector re
 | `load_attempt` | INT | Load attempt that was recorded; the release's rows with this `cms_load_attempt` are the release | No |
 | `loaded_at` | UTC_DATETIME | When the release finished loading | No |
 
-## Additional considerations
+## Additional files
 
 The optional context pack in [`../context_pack/`](../context_pack/) gives AI agents DuckDB views and agent instructions for this connector's tables: the latest recorded CMS release only, CMS text values cast to numbers and dates, and four checked questions with their SQL and answers. The connector does not use it.
+
+## Additional considerations
 
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.

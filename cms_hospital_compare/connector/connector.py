@@ -1207,32 +1207,27 @@ def update(configuration: dict, state: dict):
         message = (
             f"Skipped {skipped} CMS records that had no natural key value or were not objects."
         )
-        log.warning(message)
         op.warning(message)
     if duplicates:
         message = f"{duplicates} CMS records repeated a natural key within one release; the last one was kept."
-        log.warning(message)
         op.warning(message)
     if totals["superseded"]:
         message = (
             f"CMS replaced a release during the sync for {', '.join(totals['superseded'])}; "
             "the partial release was not recorded, and the new release is loaded from offset 0 by the sync after it."
         )
-        log.warning(message)
         op.warning(message)
     if totals["incomplete"]:
         message = (
             f"CMS returned fewer rows than it reported for {'; '.join(totals['incomplete'])}; "
             "those releases stay incomplete and the next sync resumes them."
         )
-        log.warning(message)
         op.warning(message)
     if totals["empty"]:
         message = (
             f"CMS returned no rows that could be loaded for {'; '.join(totals['empty'])}; those releases were not "
             "recorded, so the views keep the earlier release if there is one, and the next sync tries them again."
         )
-        log.warning(message)
         op.warning(message)
     if totals["short"]:
         message = (
@@ -1240,14 +1235,12 @@ def update(configuration: dict, state: dict):
             "those releases are recorded with the rows returned, and dataset_release shows row_count below "
             "api_row_count."
         )
-        log.warning(message)
         op.warning(message)
     if totals["recount"]:
         message = (
             f"CMS reported fewer rows than were already read for {'; '.join(totals['recount'])}; those releases "
             "were not recorded, and the next sync reads them again from the start."
         )
-        log.warning(message)
         op.warning(message)
     log.info(f"Sync complete: {totals['upserted']} rows upserted")
 
