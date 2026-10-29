@@ -52,6 +52,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **JanusGraph** ([janus_graph](https://github.com/fivetran/community_connectors/tree/main/janus_graph)) - Sync data from JanusGraph.
 - **InfluxDB** ([influx_db](https://github.com/fivetran/community_connectors/tree/main/influx_db)) - Sync time-series data from InfluxDB
 - **Neo4j** ([neo4j](https://github.com/fivetran/community_connectors/tree/main/neo4j)) - Extract data from Neo4j graph databases
+- **Oracle** ([oracle_logminer/oci](https://github.com/fivetran/community_connectors/tree/main/oracle_logminer/oci)) - Extract data from Oracle Autonomous AI databases using LogMiner
 - **QuestDB** ([quest_db](https://github.com/fivetran/community_connectors/tree/main/quest_db)) - Sync high-performance time series data from QuestDB
 - **RavenDB** ([raven_db](https://github.com/fivetran/community_connectors/tree/main/raven_db)) - Sync document data from RavenDB NoSQL database
 - **Redis** ([redis](https://github.com/fivetran/community_connectors/tree/main/redis)) - Sync gaming leaderboards and player statistics from Redis
