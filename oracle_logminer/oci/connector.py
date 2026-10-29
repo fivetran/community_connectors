@@ -1017,13 +1017,11 @@ def _find_top_level(text: str, keyword: str) -> int:
             depth += 1
         elif ch == ")":
             depth -= 1
-        elif (
-            depth == 0
-            and ch.isspace()
-            and text[i + 1 : i + 1 + n].lower() == kw
-            and text[i + 1 + n : i + 2 + n].isspace()
-        ):
-            return i + 1
+        elif depth == 0 and ch.isspace():
+            head = text[i + 1 : i + 1 + n].lower()
+            tail = text[i + 1 + n : i + 2 + n]
+            if head == kw and tail.isspace():
+                return i + 1
         i += 1
     return -1
 
@@ -1560,13 +1558,10 @@ class LogMinerManager:
                     if rec["csf"]:
                         carry = rec
                         continue
-                    if (
-                        client_filter is not None
-                        and rec["table_name"]
-                        and rec["table_name"] not in client_filter
-                        and (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
-                    ):
-                        continue
+                    if client_filter is not None and rec["table_name"]:
+                        is_dml = (rec["operation"] or "").upper() not in ("COMMIT", "ROLLBACK")
+                        if rec["table_name"] not in client_filter and is_dml:
+                            continue
                     yield rec
 
         if carry is not None:
@@ -2103,13 +2098,9 @@ def _consume_window(
         elif kind in _UNSUPPORTED_OPERATIONS:
             _warn_unsupported(kind, rec)
         elif kind in _DML_OPERATIONS:
-            if (
-                open_xids is not None
-                and filter_below is not None
-                and scn < filter_below
-                and xid not in open_xids
-            ):
-                continue  # belongs to a transaction known to be finished before last_scn
+            if open_xids is not None and filter_below is not None:
+                if scn < filter_below and xid not in open_xids:
+                    continue  # belongs to a transaction known to be finished before last_scn
             ts = rec.get("timestamp")
             buffer.add(
                 xid,
