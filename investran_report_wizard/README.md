@@ -46,13 +46,13 @@ fivetran init --template investran_report_wizard
   "client_id": "<YOUR_CLIENT_ID>",
   "redirect_uri": "<YOUR_REDIRECT_URI>",
   "refresh_token": "<YOUR_REFRESH_TOKEN>",
-  "base_url": "<YOUR_INVESTRAN_HOST>/api/ReportWizard/v1",
-  "report_ids": "<REPORT_ID_1>,<REPORT_ID_2>",
-  "primary_keys": "",
-  "table_prefix": "report",
-  "poll_interval_seconds": "5",
-  "poll_timeout_seconds": "900",
-  "checkpoint_rows": "2000"
+  "base_url": "<YOUR_INVESTRAN_REPORT_WIZARD_API_BASE_URL>",
+  "report_ids": "<YOUR_COMMA_SEPARATED_REPORT_IDS>",
+  "primary_keys": "<OPTIONAL_COMMA_SEPARATED_PRIMARY_KEY_COLUMNS>",
+  "table_prefix": "<OPTIONAL_TABLE_PREFIX_DEFAULT_REPORT>",
+  "poll_interval_seconds": "<OPTIONAL_POLL_INTERVAL_SECONDS_DEFAULT_5>",
+  "poll_timeout_seconds": "<OPTIONAL_POLL_TIMEOUT_SECONDS_DEFAULT_900>",
+  "checkpoint_rows": "<OPTIONAL_CHECKPOINT_ROWS_DEFAULT_2000>"
 }
 ```
 
@@ -64,12 +64,9 @@ fivetran init --template investran_report_wizard
 - `table_prefix` - Optional prefix of the destination tables. Defaults to `report`.
 - `poll_interval_seconds`, `poll_timeout_seconds`, `checkpoint_rows` - Optional tuning values.
 
+> Note: Optional keys keep an angle-bracket placeholder in `configuration.json`. A value that is empty or starts with `<` is treated as not set and the default is used.
+
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
-
-## Requirements file
-This connector uses only packages that are pre-installed in the Connector SDK runtime, so `requirements.txt` has no entries.
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 The connector uses the OAuth2 refresh token grant. It exchanges the refresh token for an access token, reuses the access token until less than a day of its lifetime is left, and sends it as a bearer token. If the refresh token has been used elsewhere and is rejected, set a new `refresh_token` in the configuration. A newly configured token takes priority over the one stored in state.

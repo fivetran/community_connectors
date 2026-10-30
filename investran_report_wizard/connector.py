@@ -54,6 +54,11 @@ __REQUIRED_KEYS = (
 )
 
 
+def is_unset(value) -> bool:
+    """Treat missing, empty, and '<PLACEHOLDER>' values as not configured."""
+    return value in (None, "") or str(value).strip().startswith("<")
+
+
 def __int_setting(configuration: dict, key: str, default: int) -> int:
     """
     Read an optional positive integer from the configuration.
@@ -65,7 +70,7 @@ def __int_setting(configuration: dict, key: str, default: int) -> int:
         ValueError: if the value is present but is not a positive integer.
     """
     raw = configuration.get(key)
-    if raw in (None, ""):
+    if is_unset(raw):
         return default
     try:
         value = int(raw)
@@ -84,13 +89,14 @@ def __report_ids(configuration: dict) -> list:
 
 def __primary_keys(configuration: dict) -> list:
     """Return the configured primary key columns, or an empty list when none are set."""
-    raw = str(configuration.get("primary_keys") or "")
+    raw = "" if is_unset(configuration.get("primary_keys")) else str(configuration["primary_keys"])
     return [column_name(item) for item in raw.split(",") if item.strip()]
 
 
 def __table_for(configuration: dict, report_id: int) -> str:
     """Name the destination table '<table_prefix>_<report_id>', one table per report."""
-    prefix = (configuration.get("table_prefix") or "report").strip()
+    prefix = configuration.get("table_prefix")
+    prefix = "report" if is_unset(prefix) else prefix.strip()
     return f"{prefix}_{report_id}"
 
 
@@ -108,7 +114,7 @@ def validate_configuration(configuration: dict):
         ValueError: if a required value is missing or a numeric value is invalid.
     """
     for key in __REQUIRED_KEYS:
-        if not configuration.get(key):
+        if is_unset(configuration.get(key)):
             raise ValueError(f"Missing required configuration value: {key}")
     try:
         if not __report_ids(configuration):
@@ -187,7 +193,9 @@ def get_access_token(configuration: dict, state: dict) -> str:
     if state.get("access_token") and expires_ms - __REFRESH_MARGIN_MS > time.time() * 1000:
         return state["access_token"]
 
-    candidates = list(dict.fromkeys(t for t in (state.get("refresh_token"), configured) if t))
+    candidates = list(
+        dict.fromkeys(token for token in (state.get("refresh_token"), configured) if token)
+    )
     resp = None
     for token in candidates:
         resp = __request_token(configuration, token)
@@ -227,12 +235,14 @@ def api_call(method: str, url: str, attempts: int = __RETRY_ATTEMPTS, **kwargs):
             error = type(e).__name__
         if attempt == attempts:
             raise RuntimeError(f"{method} {url} failed after {attempts} attempts: {error}")
-        delay = min(__MAX_BACKOFF_SECONDS, 5 * 2 ** (attempt - 1))
-        log.warning(f"{method} {url} -> {error}; retry {attempt}/{attempts - 1} in {delay}s")
-        time.sleep(delay)
+        delay_seconds = min(__MAX_BACKOFF_SECONDS, 5 * 2 ** (attempt - 1))
+        log.warning(
+            f"{method} {url} -> {error}; retry {attempt}/{attempts - 1} in {delay_seconds}s"
+        )
+        time.sleep(delay_seconds)
 
 
-def start_execution(base: str, headers: dict, report_id: int, timeout: int):
+def start_execution(base: str, headers: dict, report_id: int, timeout_seconds: int):
     """
     Start a report execution and return its id.
     The API allows one identical execution at a time, so when one is already running this waits and
@@ -241,11 +251,11 @@ def start_execution(base: str, headers: dict, report_id: int, timeout: int):
         base: base URL of the Report Wizard API.
         headers: request headers with the bearer token.
         report_id: id of the report to run.
-        timeout: seconds to keep waiting for a running execution to finish.
+        timeout_seconds: seconds to keep waiting for a running execution to finish.
     Raises:
         RuntimeError: if the response has no execution id.
     """
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout_seconds
     while True:
         resp = api_call(
             "POST",
@@ -273,20 +283,22 @@ def start_execution(base: str, headers: dict, report_id: int, timeout: int):
     return exec_id
 
 
-def wait_for_success(base: str, headers: dict, exec_id, interval: int, timeout: int):
+def wait_for_success(
+    base: str, headers: dict, exec_id, poll_interval_seconds: int, timeout_seconds: int
+):
     """
     Poll the execution status until it succeeds.
     Args:
         base: base URL of the Report Wizard API.
         headers: request headers with the bearer token.
         exec_id: execution id.
-        interval: seconds between polls.
-        timeout: seconds to wait before giving up.
+        poll_interval_seconds: seconds between polls.
+        timeout_seconds: seconds to wait before giving up.
     Raises:
         RuntimeError: if the execution fails.
         TimeoutError: if it does not finish in time.
     """
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         resp = api_call("GET", f"{base}/executions/{exec_id}/status", headers=headers, timeout=120)
         resp.raise_for_status()
@@ -302,8 +314,8 @@ def wait_for_success(base: str, headers: dict, exec_id, interval: int, timeout: 
             return
         if str(status).lower() in __FAILED_STATUSES:
             raise RuntimeError(f"Report execution {exec_id} ended with status {status}")
-        time.sleep(interval)
-    raise TimeoutError(f"Report execution {exec_id} did not succeed within {timeout}s")
+        time.sleep(poll_interval_seconds)
+    raise TimeoutError(f"Report execution {exec_id} did not succeed within {timeout_seconds}s")
 
 
 def download_result(base: str, headers: dict, exec_id, attempts: int = 4) -> str:
@@ -319,9 +331,9 @@ def download_result(base: str, headers: dict, exec_id, attempts: int = 4) -> str
         attempts: maximum number of download attempts.
     """
     for attempt in range(1, attempts + 1):
-        tmp = tempfile.NamedTemporaryFile(prefix="report_", suffix=".csv", delete=False)
+        temp_file = tempfile.NamedTemporaryFile(prefix="report_", suffix=".csv", delete=False)
         try:
-            with tmp, requests.get(
+            with temp_file, requests.get(
                 f"{base}/executions/{exec_id}/result",
                 headers={**headers, "Accept": "application/csv"},
                 timeout=(30, 300),
@@ -329,14 +341,14 @@ def download_result(base: str, headers: dict, exec_id, attempts: int = 4) -> str
             ) as resp:
                 resp.raise_for_status()
                 for chunk in resp.iter_content(chunk_size=__DOWNLOAD_CHUNK_BYTES):
-                    tmp.write(chunk)
-            return tmp.name
+                    temp_file.write(chunk)
+            return temp_file.name
         except (
             requests.ConnectionError,
             requests.Timeout,
             requests.exceptions.ChunkedEncodingError,
         ) as e:
-            os.unlink(tmp.name)
+            os.unlink(temp_file.name)
             if attempt == attempts:
                 raise
             log.warning(
@@ -347,7 +359,7 @@ def download_result(base: str, headers: dict, exec_id, attempts: int = 4) -> str
 
 def row_hash(row: dict) -> str:
     """Build a stable key from every column of a row, used when no primary key is configured."""
-    payload = "\x1f".join(f"{k}={v}" for k, v in row.items())
+    payload = "\x1f".join(f"{key}={value}" for key, value in row.items())
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -362,15 +374,17 @@ def load_report(configuration: dict, state: dict, base: str, headers: dict, repo
         report_id: id of the report to run.
     """
     table = __table_for(configuration, report_id)
-    interval = __int_setting(
+    poll_interval_seconds = __int_setting(
         configuration, "poll_interval_seconds", __DEFAULT_POLL_INTERVAL_SECONDS
     )
-    timeout = __int_setting(configuration, "poll_timeout_seconds", __DEFAULT_POLL_TIMEOUT_SECONDS)
-    batch = __int_setting(configuration, "checkpoint_rows", __DEFAULT_CHECKPOINT_ROWS)
+    timeout_seconds = __int_setting(
+        configuration, "poll_timeout_seconds", __DEFAULT_POLL_TIMEOUT_SECONDS
+    )
+    checkpoint_rows = __int_setting(configuration, "checkpoint_rows", __DEFAULT_CHECKPOINT_ROWS)
     use_hash = not __primary_keys(configuration)
 
-    exec_id = start_execution(base, headers, report_id, timeout)
-    wait_for_success(base, headers, exec_id, interval, timeout)
+    exec_id = start_execution(base, headers, report_id, timeout_seconds)
+    wait_for_success(base, headers, exec_id, poll_interval_seconds, timeout_seconds)
 
     path = download_result(base, headers, exec_id)
     count = 0
@@ -378,7 +392,11 @@ def load_report(configuration: dict, state: dict, base: str, headers: dict, repo
         # The CSV is read row by row from disk, so the whole report is never held in memory.
         with open(path, encoding="utf-8-sig", newline="") as stream:
             for raw_row in csv.DictReader(stream):
-                row = {column_name(k): (v if v != "" else None) for k, v in raw_row.items() if k}
+                row = {
+                    column_name(key): (value if value != "" else None)
+                    for key, value in raw_row.items()
+                    if key
+                }
                 if use_hash:
                     row["row_hash"] = row_hash(row)
 
@@ -388,7 +406,7 @@ def load_report(configuration: dict, state: dict, base: str, headers: dict, repo
                 op.upsert(table=table, data=row)
                 count += 1
 
-                if count % batch == 0:
+                if count % checkpoint_rows == 0:
                     # Save the progress by checkpointing the state. This is important for ensuring that
                     # the sync process can resume after the last committed batch in case of interruptions.
                     # Learn more about how and where to checkpoint by reading our best practices documentation

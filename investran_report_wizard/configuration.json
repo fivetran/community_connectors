@@ -3,11 +3,11 @@
   "client_id": "<YOUR_CLIENT_ID>",
   "redirect_uri": "<YOUR_REDIRECT_URI>",
   "refresh_token": "<YOUR_REFRESH_TOKEN>",
-  "base_url": "<YOUR_INVESTRAN_HOST>/api/ReportWizard/v1",
-  "report_ids": "<REPORT_ID_1>,<REPORT_ID_2>",
-  "primary_keys": "",
-  "table_prefix": "report",
-  "poll_interval_seconds": "5",
-  "poll_timeout_seconds": "900",
-  "checkpoint_rows": "2000"
+  "base_url": "<YOUR_INVESTRAN_REPORT_WIZARD_API_BASE_URL>",
+  "report_ids": "<YOUR_COMMA_SEPARATED_REPORT_IDS>",
+  "primary_keys": "<OPTIONAL_COMMA_SEPARATED_PRIMARY_KEY_COLUMNS>",
+  "table_prefix": "<OPTIONAL_TABLE_PREFIX_DEFAULT_REPORT>",
+  "poll_interval_seconds": "<OPTIONAL_POLL_INTERVAL_SECONDS_DEFAULT_5>",
+  "poll_timeout_seconds": "<OPTIONAL_POLL_TIMEOUT_SECONDS_DEFAULT_900>",
+  "checkpoint_rows": "<OPTIONAL_CHECKPOINT_ROWS_DEFAULT_2000>"
 }
