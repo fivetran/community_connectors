@@ -1,0 +1,5 @@
+{
+  "proxy_url": "<YOUR_PROXY_URL>",
+  "proxy_username": "<OPTIONAL_PROXY_USERNAME>",
+  "proxy_password": "<OPTIONAL_PROXY_PASSWORD>"
+}
