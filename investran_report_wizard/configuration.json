@@ -1,0 +1,13 @@
+{
+  "token_url": "<YOUR_IDENTITY_PROVIDER_TOKEN_URL>",
+  "client_id": "<YOUR_CLIENT_ID>",
+  "redirect_uri": "<YOUR_REDIRECT_URI>",
+  "refresh_token": "<YOUR_REFRESH_TOKEN>",
+  "base_url": "<YOUR_INVESTRAN_HOST>/api/ReportWizard/v1",
+  "report_ids": "<REPORT_ID_1>,<REPORT_ID_2>",
+  "primary_keys": "",
+  "table_prefix": "report",
+  "poll_interval_seconds": "5",
+  "poll_timeout_seconds": "900",
+  "checkpoint_rows": "2000"
+}
