@@ -78,7 +78,16 @@ def validate_configuration(configuration: dict):
 
 
 def _validate_int_option(configuration: dict, key: str, default: int, minimum: int) -> int:
-    """Return an integer option from configuration, raising ValueError if it is invalid."""
+    """
+    Return an integer option from configuration, raising ValueError if it is invalid.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        key: the configuration key to read.
+        default: the value used when the key is absent.
+        minimum: the smallest accepted value.
+    Returns:
+        The validated integer value.
+    """
     raw = configuration.get(key, default)
     if isinstance(raw, bool):
         raise ValueError(f"Invalid {key} value: {raw!r}")
@@ -97,7 +106,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -110,7 +119,14 @@ def schema(configuration: dict):
 
 
 def _safe_get(payload: Dict[str, Any], path: List[str]) -> Optional[Any]:
-    """Traverse a nested dict safely, returning None if any key along the path is missing."""
+    """
+    Traverse a nested dict safely, returning None if any key along the path is missing.
+    Args:
+        payload: the dictionary to traverse.
+        path: the ordered list of keys to follow.
+    Returns:
+        The value at the end of the path, or None if any key is missing.
+    """
     current: Any = payload
     for key in path:
         if not isinstance(current, dict) or key not in current:
@@ -120,7 +136,13 @@ def _safe_get(payload: Dict[str, Any], path: List[str]) -> Optional[Any]:
 
 
 def _first_truthy(*values: Any) -> Optional[Any]:
-    """Return the first truthy value among the arguments, or None if all are falsy."""
+    """
+    Return the first truthy value among the arguments, or None if all are falsy.
+    Args:
+        *values: the candidate values, in priority order.
+    Returns:
+        The first truthy value, or None.
+    """
     for value in values:
         if value:
             return value
@@ -247,7 +269,14 @@ def get_access_token(configuration: dict, cert: Tuple[str, str]) -> str:
 
 
 def _resolve_next_link(payload: Any, current_url: str) -> Optional[str]:
-    """Extract the next page link if provided by ADP; non-dict payloads have none."""
+    """
+    Extract the next page link if provided by ADP; non-dict payloads have none.
+    Args:
+        payload: the parsed JSON response body.
+        current_url: the URL of the current request, used to resolve relative links.
+    Returns:
+        The absolute URL of the next page, or None if there is none.
+    """
     if not isinstance(payload, dict):
         return None
     links = payload.get("links") or payload.get("_links")
@@ -272,10 +301,31 @@ def _resolve_next_link(payload: Any, current_url: str) -> Optional[str]:
     return None
 
 
+def _is_single_department(payload: Dict[str, Any]) -> bool:
+    """
+    Check whether a payload looks like a single department record.
+    Args:
+        payload: the parsed JSON object to inspect.
+    Returns:
+        True if the payload carries a department code in a known location.
+    """
+    return bool(
+        _first_truthy(
+            _safe_get(payload, ["departmentCode", "codeValue"]),
+            payload.get("code"),
+            _safe_get(payload, ["nameCode", "code"]),
+        )
+    )
+
+
 def _extract_departments(payload: Any) -> List[Dict[str, Any]]:
     """
     Pull department records from various possible ADP response shapes.
     Falls back to returning the payload as a single record if no obvious list is found.
+    Args:
+        payload: the parsed JSON response body.
+    Returns:
+        A list of raw department records.
     """
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
@@ -299,11 +349,15 @@ def _extract_departments(payload: Any) -> List[Dict[str, Any]]:
         if isinstance(candidate, list):
             return [item for item in candidate if isinstance(item, dict)]
 
+    # A payload that is itself one department (for example, with a sibling "links" array) must
+    # not be replaced by an unrelated list found among its values.
+    if _is_single_department(payload):
+        return [payload]
+
     # Fallback: search for the first list of dicts in values
-    if isinstance(payload, dict):
-        for value in payload.values():
-            if isinstance(value, list) and any(isinstance(item, dict) for item in value):
-                return [item for item in value if isinstance(item, dict)]
+    for value in payload.values():
+        if isinstance(value, list) and any(isinstance(item, dict) for item in value):
+            return [item for item in value if isinstance(item, dict)]
 
     # Fallback to single record if nothing else matches
     return [payload] if payload else []
@@ -329,6 +383,13 @@ def _materialize_cert_files(configuration: dict) -> Tuple[Tuple[str, str], Calla
         created: List[str] = []
 
         def _cleanup():
+            """
+            Remove the temporary certificate/key files created for inline PEM strings.
+            Args:
+                None.
+            Returns:
+                None.
+            """
             for path in created:
                 try:
                     os.remove(path)
@@ -361,6 +422,13 @@ def _materialize_cert_files(configuration: dict) -> Tuple[Tuple[str, str], Calla
     if has_paths:
 
         def _noop():
+            """
+            Do nothing; no temporary files exist when cert_path/key_path are used.
+            Args:
+                None.
+            Returns:
+                None.
+            """
             return None
 
         return (configuration["cert_path"], configuration["key_path"]), _noop
@@ -369,7 +437,13 @@ def _materialize_cert_files(configuration: dict) -> Tuple[Tuple[str, str], Calla
 
 
 def _normalize_pem(pem_text: str) -> str:
-    """Normalize a PEM string to properly line-wrapped PEM with LF line endings."""
+    """
+    Normalize a PEM string to properly line-wrapped PEM with LF line endings.
+    Args:
+        pem_text: the raw PEM text, possibly containing a certificate chain.
+    Returns:
+        The normalized PEM text.
+    """
     if not pem_text:
         raise ValueError("Empty PEM data provided.")
     cleaned = textwrap.dedent(pem_text).replace("\r", "").strip()
@@ -399,7 +473,13 @@ def _normalize_pem(pem_text: str) -> str:
 
 
 def _get_timeout(configuration: dict) -> Optional[float]:
-    """Normalize the configured request_timeout to a float, or None to disable it."""
+    """
+    Normalize the configured request_timeout to a float, or None to disable it.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Returns:
+        The timeout in seconds, or None if the timeout is disabled.
+    """
     timeout = configuration.get("request_timeout", __DEFAULT_TIMEOUT)
     if timeout is None or timeout == "":
         return None
@@ -517,7 +597,7 @@ def _flatten_department(record: Dict[str, Any]) -> Dict[str, Any]:
     )
     # payroll_group_code is part of the table's composite primary key alongside
     # department_code, since ADP scopes department codes per payroll group.
-    payroll_group_code = record.get("payrollGroupCode", "").strip()
+    payroll_group_code = str(record.get("payrollGroupCode") or "").strip()
 
     return {
         "department_code": department_code,
@@ -534,7 +614,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
@@ -553,7 +633,9 @@ def update(configuration: dict, state: dict):
             for record in page:
                 flattened = _flatten_department(record)
                 if not flattened["department_code"]:
-                    log.warning(f"Skipping department without code: {record}")
+                    log.warning(
+                        f"Skipping department without code; available keys: {sorted(record.keys())}"
+                    )
                     continue
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
@@ -561,15 +643,22 @@ def update(configuration: dict, state: dict):
                 op.upsert(table="departments", data=flattened)
                 upserted += 1
 
-            # Save the progress by checkpointing the state after every page. This is important for ensuring that the sync process can resume
+            # Note: no pagination offset is stored in state, so the next sync still rereads all rows.
+            # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
-            # No pagination offset is stored in state, so the next sync still rereads all rows.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+            # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+            # Learn more about how and where to checkpoint by reading our best practices documentation
+            # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
             op.checkpoint(state)
 
         log.info(f"Upserted {upserted} departments")
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
         # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state)
     finally:
         cleanup()
@@ -589,6 +678,9 @@ connector = Connector(update=update, schema=schema)
 # Note: This method is not called by Fivetran when executing your connector in production.
 # Always test using 'fivetran debug' prior to finalizing and deploying your connector.
 if __name__ == "__main__":
+    # Open the configuration.json file and load its contents
     with open("configuration.json", "r", encoding="utf-8") as f:
         configuration = json.load(f)
+
+    # Test the connector locally
     connector.debug(configuration=configuration)

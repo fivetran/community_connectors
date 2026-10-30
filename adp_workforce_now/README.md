@@ -1,3 +1,9 @@
+---
+name: "ADP Workforce Now"
+description: "Sync the departments validation table from the ADP Workforce Now HCM API using OAuth2 client credentials over mutual TLS"
+category: "SaaS & APIs"
+---
+
 # ADP Workforce Now Connector Example
 
 ## Connector overview
@@ -11,15 +17,15 @@ This connector syncs the departments validation table from the ADP Workforce Now
   - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 
 ## Getting started
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
-```bash
+```
 fivetran init --template adp_workforce_now
 ```
 
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
@@ -40,17 +46,17 @@ fivetran init --template adp_workforce_now
 }
 ```
 
-- `client_id` - OAuth2 client ID for your ADP API application.
-- `client_secret` - OAuth2 client secret for the same application.
-- `cert_string` - the PEM-encoded client certificate content for mutual TLS, as a single string. Alternatively, provide `cert_path` with a filesystem path to the certificate file.
-- `key_string` - the PEM-encoded private key content for mutual TLS, as a single string. Alternatively, provide `key_path` with a filesystem path to the key file.
+- `client_id` (required) - OAuth2 client ID for your ADP API application.
+- `client_secret` (required) - OAuth2 client secret for the same application.
+- `cert_string` (required unless `cert_path` and `key_path` are provided) - the PEM-encoded client certificate content for mutual TLS, as a single string. Alternatively, provide `cert_path` with a filesystem path to the certificate file.
+- `key_string` (required unless `cert_path` and `key_path` are provided) - the PEM-encoded private key content for mutual TLS, as a single string. Alternatively, provide `key_path` with a filesystem path to the key file.
 
-The following optional keys are also read from configuration, falling back to defaults if omitted:
-- `token_url` - the OAuth2 token endpoint. Defaults to `https://api.adp.com/auth/oauth/v2/token`.
-- `departments_url` - the departments validation-table endpoint. Defaults to `https://api.adp.com/hcm/v1/validation-tables/departments`.
-- `start_skip` - the initial OData `$skip` value to start pagination from. Must be a non-negative integer. Defaults to `0`.
-- `page_size` - the OData `$top` page size. Must be a positive integer. Defaults to `1000`.
-- `request_timeout` - the per-request timeout in seconds. Must be a finite positive number; set to an empty value or null to disable the timeout. Defaults to `30`.
+The following keys are optional are also read from configuration, falling back to defaults if omitted:
+- `token_url` (optional) - the OAuth2 token endpoint. Defaults to `https://api.adp.com/auth/oauth/v2/token`.
+- `departments_url` (optional) - the departments validation-table endpoint. Defaults to `https://api.adp.com/hcm/v1/validation-tables/departments`.
+- `start_skip` (optional) - the initial OData `$skip` value to start pagination from. Must be a non-negative integer. Defaults to `0`.
+- `page_size` (optional) - the OData `$top` page size. Must be a positive integer. Defaults to `1000`.
+- `request_timeout` (optional) - the per-request timeout in seconds. Must be a finite positive number; set to an empty value or null to disable the timeout. Defaults to `30`.
 
 Numeric options are validated before any certificate files are created. Inline PEM strings may contain a full certificate chain; each block is normalized separately, and temporary files are removed even if setup fails.
 
@@ -80,6 +86,15 @@ Refer to `def _request_with_backoff` in `connector.py`. Connection errors and ti
 | Table | Primary key | Description |
 | --- | --- | --- |
 | `departments` | `department_code`, `payroll_group_code` | ADP Workforce Now departments validation table. |
+
+The `departments` table has the following columns. Only the primary key columns are declared in `schema()`; Fivetran infers the types of the other columns.
+- `department_code` (primary key) - the department code.
+- `payroll_group_code` (primary key) - the payroll group code; an empty string when ADP provides none.
+- `short_name` - the department short name.
+- `long_name` - the department long name or description.
+- `status` - the department status, `ACTIVE` or `INACTIVE` when ADP provides no explicit status.
+- `updated_at` - the last update timestamp reported by ADP.
+- `raw_json` - the full original record serialized as JSON.
 
 ## Additional considerations
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
