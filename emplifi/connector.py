@@ -24,10 +24,10 @@ import requests
 
 # Per-network endpoints, metric names, and post field lists
 from constants import (
-    AGGREGATED_METRICS,
-    POST_FIELDS_BY_NETWORK,
-    POSTS_ENDPOINT,
-    PROFILE_METRICS,
+    __AGGREGATED_METRICS,
+    __POST_FIELDS_BY_NETWORK,
+    __POSTS_ENDPOINT,
+    __PROFILE_METRICS,
 )
 
 # Import required classes from fivetran_connector_sdk
@@ -48,7 +48,7 @@ __MAX_ATTEMPTS = 4
 __MAX_METRICS_PER_REQUEST = 25
 
 # Networks whose profiles/metrics/posts this connector syncs.
-NETWORKS = [
+__NETWORKS = [
     "facebook",
     "instagram",
     "twitter",
@@ -61,17 +61,17 @@ NETWORKS = [
 ]
 
 # 1-year backfill on first run; override via lookback_days in configuration.json.
-DEFAULT_LOOKBACK_DAYS = 365
+__DEFAULT_LOOKBACK_DAYS = 365
 
 # Metrics calls are limited to a 12-month date range per the Emplifi API; chunk every sync
 # window into 30-day slices so a large backfill never exceeds that limit in one call.
-METRICS_CHUNK_DAYS = 30
+__METRICS_CHUNK_DAYS = 30
 
 # Emplifi's posts endpoints page at up to 100 posts per request.
-POSTS_PAGE_SIZE = 100
+__POSTS_PAGE_SIZE = 100
 
 # Emplifi allows up to 100 profiles per /3/aggregated-metrics request.
-AGGREGATED_METRICS_BATCH_SIZE = 100
+__AGGREGATED_METRICS_BATCH_SIZE = 100
 
 
 def _optional_value(configuration: dict, key: str, default):
@@ -104,7 +104,7 @@ def validate_configuration(configuration: dict):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: '{key}'")
 
-    lookback = _optional_value(configuration, "lookback_days", DEFAULT_LOOKBACK_DAYS)
+    lookback = _optional_value(configuration, "lookback_days", __DEFAULT_LOOKBACK_DAYS)
     try:
         lookback_int = int(lookback)
     except (TypeError, ValueError) as exc:
@@ -274,7 +274,7 @@ def _post(url: str, payload: dict, configuration: dict) -> dict:
     return _parse_body(response.json(), url, payload)
 
 
-def _date_chunks(date_start: str, date_end: str, chunk_days: int = METRICS_CHUNK_DAYS):
+def _date_chunks(date_start: str, date_end: str, chunk_days: int = __METRICS_CHUNK_DAYS):
     """Split a date range into chunks of at most chunk_days days, inclusive of both ends."""
     start = datetime.strptime(date_start, "%Y-%m-%d").date()
     end = datetime.strptime(date_end, "%Y-%m-%d").date()
@@ -369,7 +369,7 @@ def _fetch_all_profiles(configuration: dict) -> dict:
     """
     base_url = _optional_value(configuration, "base_url", __BASE_URL)
     result = {}
-    for network in NETWORKS:
+    for network in __NETWORKS:
         url = f"{base_url}/3/{network}/profiles"
         try:
             body = _get(url, configuration)
@@ -418,7 +418,7 @@ def _sync_profile_metrics(configuration, state, profiles_by_network, date_start,
     for network, profiles in profiles_by_network.items():
         if not profiles:
             continue
-        all_metrics = PROFILE_METRICS.get(network, [])
+        all_metrics = __PROFILE_METRICS.get(network, [])
         if not all_metrics:
             continue
         if len(all_metrics) > __MAX_METRICS_PER_REQUEST:
@@ -477,7 +477,7 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
     """Fetch and upsert posts for every profile, paginating with Emplifi's cursor.
 
     Key requirements from the Emplifi API:
-      - "fields" must be present (per-network valid fields only, from POST_FIELDS_BY_NETWORK).
+      - "fields" must be present (per-network valid fields only, from __POST_FIELDS_BY_NETWORK).
       - "after" must NOT be present on the first page request (omit it entirely).
       - Subsequent pages send ONLY {"after": "<cursor>"}, no other fields.
 
@@ -491,11 +491,11 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
     for network, profiles in profiles_by_network.items():
         if not profiles:
             continue
-        endpoint = POSTS_ENDPOINT.get(network)
+        endpoint = __POSTS_ENDPOINT.get(network)
         if not endpoint:
             continue
 
-        all_fields = POST_FIELDS_BY_NETWORK.get(network, ["id", "created_time"])
+        all_fields = __POST_FIELDS_BY_NETWORK.get(network, ["id", "created_time"])
         url = f"{base_url}{endpoint}"
         log.info(f"  posts [{network}] - {len(profiles)} profiles")
 
@@ -528,7 +528,7 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
                     "date_start": date_start,
                     "date_end": date_end,
                     "fields": fields,
-                    "limit": POSTS_PAGE_SIZE,
+                    "limit": __POSTS_PAGE_SIZE,
                 }
 
             while True:
@@ -587,11 +587,11 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
     POST /3/aggregated-metrics requires:
       - "metric" (singular string), one metric per request.
       - profiles items are {"id": pid, "platform": network} objects.
-      - up to AGGREGATED_METRICS_BATCH_SIZE profiles per request, to save rate-limit quota.
+      - up to __AGGREGATED_METRICS_BATCH_SIZE profiles per request, to save rate-limit quota.
 
     The response is a header+data matrix; a profile dimension is added when more than one
     profile is requested. This batches all profiles across all networks into groups of
-    AGGREGATED_METRICS_BATCH_SIZE, issuing one call per metric per batch per date chunk.
+    __AGGREGATED_METRICS_BATCH_SIZE, issuing one call per metric per batch per date chunk.
     Checkpoints after each metric/batch pair.
     """
     base_url = _optional_value(configuration, "base_url", __BASE_URL)
@@ -606,16 +606,16 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
         return
 
     batches = [
-        all_profile_objs[i : i + AGGREGATED_METRICS_BATCH_SIZE]
-        for i in range(0, len(all_profile_objs), AGGREGATED_METRICS_BATCH_SIZE)
+        all_profile_objs[i : i + __AGGREGATED_METRICS_BATCH_SIZE]
+        for i in range(0, len(all_profile_objs), __AGGREGATED_METRICS_BATCH_SIZE)
     ]
 
     log.info(
         f"  aggregated_post_metrics - {len(all_profile_objs)} profiles, {len(batches)} "
-        f"batch(es), {len(AGGREGATED_METRICS)} metrics"
+        f"batch(es), {len(__AGGREGATED_METRICS)} metrics"
     )
 
-    for metric in AGGREGATED_METRICS:
+    for metric in __AGGREGATED_METRICS:
         for batch in batches:
             progress_key = f"aggregated:{metric}:{_batch_key(batch)}"
             if _is_done(state, progress_key):
@@ -778,7 +778,7 @@ def update(configuration: dict, state: dict):
         ).strftime("%Y-%m-%d")
         log.info(f"Incremental from {sync_start} (last: {last_synced})")
     else:
-        lookback = int(_optional_value(configuration, "lookback_days", DEFAULT_LOOKBACK_DAYS))
+        lookback = int(_optional_value(configuration, "lookback_days", __DEFAULT_LOOKBACK_DAYS))
         sync_start = (today - timedelta(days=lookback)).strftime("%Y-%m-%d")
         log.info(f"Initial backfill - {lookback} days from {sync_start}")
 

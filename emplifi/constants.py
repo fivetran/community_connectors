@@ -1,7 +1,7 @@
 """Emplifi per-network endpoint paths, metric names, and post field lists."""
 
 # Per-network post endpoint paths.
-POSTS_ENDPOINT = {
+__POSTS_ENDPOINT = {
     "facebook": "/3/facebook/page/posts",
     "instagram": "/3/instagram/profile/posts",
     "twitter": "/3/twitter/profile/tweets",
@@ -15,7 +15,7 @@ POSTS_ENDPOINT = {
 # Per-network valid profile metrics, from the Emplifi API docs metric table. A network not
 # listed here (e.g. snapchat, whatsapp) has no supported profile metrics and is skipped in
 # step 2.
-PROFILE_METRICS = {
+__PROFILE_METRICS = {
     "facebook": [
         "fans_lifetime",
         "fans_change",
@@ -66,7 +66,7 @@ PROFILE_METRICS = {
 
 # Per-network valid post fields, sourced from the Emplifi API docs per-network posts section.
 # Only confirmed-valid fields are included per network to avoid Code-3 validation errors.
-POST_FIELDS_BY_NETWORK = {
+__POST_FIELDS_BY_NETWORK = {
     # /3/facebook/page/posts - reactions, comments, shares, interactions, post_attribution
     # are all documented as valid.
     "facebook": [
@@ -164,7 +164,7 @@ POST_FIELDS_BY_NETWORK = {
 # from the Emplifi API docs metric table. Invalid names that cause Code-3 errors: reactions,
 # comments, video_views, reach, shares - the correct equivalents are number_of_comments,
 # page_shares, insights_video_views, etc.
-AGGREGATED_METRICS = [
+__AGGREGATED_METRICS = [
     "interactions",
     "likes",
     "number_of_comments",
