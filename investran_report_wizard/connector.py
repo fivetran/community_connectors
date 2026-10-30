@@ -433,8 +433,10 @@ def update(configuration: dict, state: dict):
 
     validate_configuration(configuration)
     base = configuration["base_url"].rstrip("/")
+    log.info(f"Syncing {len(__report_ids(configuration))} report(s)")
 
     token = get_access_token(configuration, state)
+    log.info("Access token ready")
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     # The refresh token rotates on every exchange, so persist the new one before doing anything else.
     op.checkpoint(state)

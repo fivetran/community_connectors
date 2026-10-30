@@ -7,7 +7,7 @@ category: "SaaS & APIs"
 # Investran Report Wizard Connector Example
 
 ## Connector overview
-This connector runs one or more saved Investran (FIS) Report Wizard reports through the Report Wizard REST API and loads the CSV result of each report into its own destination table. It suits teams that already maintain reports in Investran and want those results, such as journal entries or transaction data, replicated to a warehouse on a schedule.
+This connector runs one or more saved Investran (FIS) Report Wizard reports through the Report Wizard REST API and loads the CSV result of each report into its own destination table. It suits teams that already maintain reports in Investran and want those results replicated to a warehouse on a schedule.
 
 For each report, the connector starts an execution, polls its status until it succeeds, streams the CSV to a temporary file, and upserts the rows. Because the report columns are defined in Investran, the connector infers them from the CSV header instead of hard-coding them.
 
