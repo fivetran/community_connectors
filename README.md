@@ -144,6 +144,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Microsoft Excel** ([microsoft_excel](https://github.com/fivetran/community_connectors/tree/main/microsoft_excel)) - Sync data from Microsoft Excel files
 - **Microsoft Intune** ([microsoft_intune](https://github.com/fivetran/community_connectors/tree/main/microsoft_intune)) - Retrieve managed devices from Microsoft Intune
 - **n8n** ([n8n](https://github.com/fivetran/community_connectors/tree/main/n8n)) - Sync workflow automation data from n8n
+- **Native Library With Ctypes** ([ctypes_native_library](https://github.com/fivetran/community_connectors/tree/main/ctypes_native_library)) - Sync rows transformed by a compiled C library loaded with ctypes
 - **Netlify** ([netlify](https://github.com/fivetran/community_connectors/tree/main/netlify)) - Sync sites, deploys, and forms from Netlify API
 - **News API** ([newsapi](https://github.com/fivetran/community_connectors/tree/main/newsapi)) - Sync news articles from NewsAPI
 - **NOAA** ([noaa](https://github.com/fivetran/community_connectors/tree/main/noaa)) - Sync weather observations from National Weather Service
