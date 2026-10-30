@@ -102,12 +102,22 @@ def should_run_full_resync(state, configuration):
     hasn't already completed that same calendar month. A sync that runs a few days late (or isn't
     scheduled daily) still catches up on the next sync at or after that day - it just runs once
     per month, not on a fixed rolling countdown that could drift.
+    Also returns True unconditionally whenever a cycle is already in progress (state has a
+    "full_resync_cycle_month" set by connector.py's update() but not yet cleared), regardless of
+    the calendar trigger day - this is what lets an interrupted cycle resume correctly even when
+    the interruption spans a calendar-month boundary. Without this, a cycle interrupted right at
+    month-end could otherwise fall back to lenient incremental-only handling on its next sync for
+    tables that are mid-resync and already truncated, silently reporting incomplete data as
+    successful.
     Args:
         state: a dictionary that holds the state of the connector.
         configuration: a dictionary that holds the configuration settings for the connector.
     Returns:
         bool: True if a full truncate-and-resync should run this sync.
     """
+    if state.get("full_resync_cycle_month"):
+        return True
+
     last_full_resync_month = state.get("last_full_resync_month")
     if not last_full_resync_month:
         return True
@@ -177,8 +187,13 @@ def sync_table(
     """
     table_name = table_config["table"]
     endpoint = table_config["endpoint"]
+    # get_initial_cursor() is used for every force_full cursor, not just the very first sync ever:
+    # "initial_sync_start_date" bounds how much history this connector ever cares about, so a
+    # later monthly resync re-pulling from that same bound (rather than unconditionally from the
+    # epoch) stays consistent with that choice instead of pulling in a surprising amount of
+    # additional history every month.
     cursor = (
-        __DEFAULT_CURSOR
+        get_initial_cursor(configuration)
         if force_full
         else cursors.get(table_name, get_initial_cursor(configuration))
     )
@@ -318,13 +333,18 @@ def sync_children_for_record(
     once per parent record returned by sync_table(), so children are only fetched for parents that
     are new or changed in this sync - see the ASSUMPTION note on __HUB_CHILDREN about what this does
     and doesn't catch.
-    A child table that fails with an unrecoverable error (e.g. a 403 - the service account isn't
+    A child table that fails with a confirmed, persistent 403 (the service account isn't
     authorized for that specific sub-resource, confirmed live even when the parent Hub itself is
     accessible) is logged once, added to failed_tables, and skipped for every subsequent record
     this sync - one denied permission should not abort the whole sync, and shouldn't be retried
-    (and re-logged) once per parent record either. EXCEPTION: during force_full, this child table
-    was already truncated (see truncate_table_and_details()), so the same failure now means its
-    destination data is incomplete, not just stale - this raises instead, failing the whole sync.
+    (and re-logged) once per parent record either. Any other unrecoverable error (an unexpected
+    status code, or retries exhausted on a 5xx/timeout/connection error) is not a confirmed,
+    persistent condition, so it raises instead of being swallowed - this stops the parent cursor
+    from advancing past a record whose children may only have failed transiently, so the next
+    sync retries that same parent and its children rather than silently skipping them. During
+    force_full, every error (403 and the 400/404 case below included) raises unconditionally:
+    this child table was already truncated (see truncate_table_and_details()), so any failure now
+    means its destination data is incomplete, not just stale.
     Args:
         base_url: The Vantagepoint API base URL.
         access_token: OAuth2 bearer access token.
@@ -362,37 +382,53 @@ def sync_children_for_record(
                     )
                 except RuntimeError as error:
                     error_msg = str(error)
+                    # rest_client.py's get_api_response() raises this exact "API error: {status}
+                    # for {url}" format - match on that fixed prefix, not a substring search of the
+                    # whole message, so a URL that happens to contain the digits 400/403/404 (e.g.
+                    # a project code) can never be misclassified as one of these specific statuses.
+                    is_permission_denied = error_msg.startswith("API error: 403 for")
+                    is_bad_request = error_msg.startswith(
+                        "API error: 400 for"
+                    ) or error_msg.startswith("API error: 404 for")
 
-                    # 400 = ASP.NET request validation (e.g., ampersand & character in path
-                    # like: R&KDE200600000000490)
-                    # 404 = ASP.NET routing failure (e.g., ID pattern ending in a period in
-                    # path like: JR.)
-                    # NOTE: left lenient here even during force_full - this is a one-off malformed-ID
-                    # issue on a single parent record, not a systemic failure of the whole child
-                    # table, so treating it as fatal would make the monthly resync fragile against
-                    # known-odd IDs. It does mean this one parent's children stay incomplete after
-                    # the truncate, which is a real (if narrow) accuracy gap - flagging as a judgment
-                    # call rather than deciding it's fine unilaterally.
-                    if "400" in error_msg or "404" in error_msg:
-                        log.warning(
-                            f"Skipping children for {hub_name} '{parent_id}' - "
-                            f"API returned error: {error_msg}"
-                        )
-                        break  # Skip all remaining children for this parent, move to next parent
-                    elif force_full:
+                    if force_full:
                         raise RuntimeError(
                             f"Table '{child_table}' was truncated for the monthly full resync but "
                             f"failed while re-syncing - its destination data may now be incomplete. "
                             f"Failing the sync rather than reporting it as successful. Underlying "
                             f"error: {error}"
                         ) from error
-                    else:
+
+                    if is_bad_request:
+                        # 400 = ASP.NET request validation (e.g., ampersand & character in path
+                        # like: R&KDE200600000000490)
+                        # 404 = ASP.NET routing failure (e.g., ID pattern ending in a period in
+                        # path like: JR.)
+                        # This is a one-off malformed-ID issue on a single parent record, not a
+                        # systemic failure of the whole child table, so only this parent's
+                        # remaining children are skipped, not the whole child table.
+                        log.warning(
+                            f"Skipping children for {hub_name} '{parent_id}' - "
+                            f"API returned error: {error_msg}"
+                        )
+                        break  # Skip all remaining children for this parent, move to next parent
+
+                    if is_permission_denied:
                         log.warning(
                             f"Table '{child_table}' failed with an unrecoverable error; skipping it "
                             f"for the rest of this sync: {error}"
                         )
                         failed_tables.add(child_table)
                         continue  # Skip this child table for ALL remaining parents
+
+                    # Not a confirmed permission gap or known malformed-ID case - could be
+                    # transient (retries exhausted on a 5xx/timeout/connection error), so don't
+                    # silently advance the parent cursor past it. Raise and let the next sync
+                    # retry this same parent and its children.
+                    raise RuntimeError(
+                        f"Table '{child_table}' failed while syncing children for {hub_name} "
+                        f"'{parent_id}': {error}"
+                    ) from error
 
                 for child_record in normalize_records(payload):
                     # The 'upsert' operation is used to insert or update data in the destination
@@ -416,7 +452,10 @@ def sync_invoice_header_for_project(
     Fetch Billing invoice header records for a single top-level project. Only runs for "main"
     project records (WBS2 and WBS3 blank), since the underlying endpoint is scoped by :WBS1 alone,
     not the full WBS1/WBS2/WBS3 key - phase/task rows within the same project would just repeat the
-    same invoices.
+    same invoices. CONFIRMED LIVE (see the id_template note on "project" in __HUB_CHILDREN): a
+    "main" project's WBS2/WBS3 come back as a single space character, not an empty string, so the
+    blank check below strips whitespace before testing truthiness - a bare `.get("WBS2")` check
+    would treat every project as a phase/task row and never sync any invoice headers at all.
     Args:
         base_url: The Vantagepoint API base URL.
         access_token: OAuth2 bearer access token.
@@ -429,7 +468,7 @@ def sync_invoice_header_for_project(
     Returns:
         str: The current (possibly-refreshed) access_token.
     """
-    if project_record.get("WBS2") or project_record.get("WBS3"):
+    if (project_record.get("WBS2") or "").strip() or (project_record.get("WBS3") or "").strip():
         return access_token
 
     table_name = __INVOICE_HEADER_TABLE["table"]
@@ -452,12 +491,24 @@ def sync_invoice_header_for_project(
                 f"re-syncing - its destination data may now be incomplete. Failing the sync rather "
                 f"than reporting it as successful. Underlying error: {error}"
             ) from error
-        log.warning(
-            f"Table '{table_name}' failed with an unrecoverable error; skipping it for the rest "
-            f"of this sync: {error}"
-        )
-        failed_tables.add(table_name)
-        return access_token
+
+        # Same precise-match rationale as sync_children_for_record(): only a confirmed, persistent
+        # 403 is safe to log-and-skip-for-the-rest-of-this-sync. Anything else (an unexpected
+        # status code, or retries exhausted on a 5xx/timeout/connection error) is not confirmed to
+        # be persistent, so it raises instead - this stops the project's cursor from advancing
+        # past a record whose invoice header may only have failed transiently.
+        if str(error).startswith("API error: 403 for"):
+            log.warning(
+                f"Table '{table_name}' failed with an unrecoverable error; skipping it for the "
+                f"rest of this sync: {error}"
+            )
+            failed_tables.add(table_name)
+            return access_token
+
+        raise RuntimeError(
+            f"Table '{table_name}' failed while syncing the invoice header for project "
+            f"'{wbs1}': {error}"
+        ) from error
 
     for record in normalize_records(payload):
         # The 'upsert' operation is used to insert or update data in the destination table.

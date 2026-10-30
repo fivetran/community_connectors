@@ -82,6 +82,18 @@ def update(configuration: dict, state: dict):
     # succeeded. Cleared once every table has completed (see the end of this function).
     full_resync_completed_tables = set(state.get("full_resync_completed_tables", []))
 
+    if force_full and not state.get("full_resync_cycle_month"):
+        # Mark that a monthly full-resync cycle has started, independent of the calendar trigger
+        # day, and checkpoint it immediately - before any table is truncated - so that
+        # should_run_full_resync() can recognize and resume this exact cycle on every subsequent
+        # sync, even if an interruption spans a calendar-month boundary (which would otherwise let
+        # the calendar check fall back to lenient incremental-only handling for tables that are
+        # mid-resync and already truncated).
+        state["full_resync_cycle_month"] = datetime.now(timezone.utc).strftime(
+            __STATE_MONTH_FORMAT
+        )
+        op.checkpoint(state)
+
     if force_full:
         remaining = [
             t["table"] for t in __TABLES if t["table"] not in full_resync_completed_tables
@@ -171,9 +183,12 @@ def update(configuration: dict, state: dict):
         # unconditionally) is what guarantees a partially-failed resync gets retried next sync
         # instead of being treated as done for this calendar month. Clearing the per-table tracking
         # here (rather than leaving stale entries around) is what lets next month's cycle start
-        # clean instead of thinking every table is already done.
+        # clean instead of thinking every table is already done. Clearing full_resync_cycle_month
+        # here too is what lets should_run_full_resync() fall back to the calendar check again for
+        # next month, instead of treating this now-finished cycle as still in progress.
         state["last_full_resync_month"] = datetime.now(timezone.utc).strftime(__STATE_MONTH_FORMAT)
         state["full_resync_completed_tables"] = []
+        state.pop("full_resync_cycle_month", None)
 
         # Save the progress by checkpointing the state. This is important for ensuring that the
         # sync process can resume from the correct position in case of next sync or

@@ -28,11 +28,14 @@ def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
     This function is called at the start of the update method to ensure that the connector has
-    all necessary configuration values.
+    all necessary configuration values. Checks that each required value is present AND a
+    non-blank string, not just that the key exists - a present-but-null or whitespace-only value
+    (e.g. "base_url": null) would otherwise pass validation here and then fail later with a
+    confusing AttributeError instead of this descriptive configuration error.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing.
+        ValueError: if any required configuration parameter is missing or blank.
     """
     required_configs = [
         "base_url",
@@ -43,7 +46,8 @@ def validate_configuration(configuration: dict):
         "client_secret",
     ]
     for key in required_configs:
-        if key not in configuration:
+        value = configuration.get(key)
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: {key}")
 
 
