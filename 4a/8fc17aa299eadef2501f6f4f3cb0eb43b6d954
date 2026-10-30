@@ -1,0 +1,25 @@
+http_proxy/connector.py
+  cfda847c62b6b039 11,45,47,49-50,54,57,59,73-78,80-85,89-94,97-98,100-101,144-145,147
+http_proxy/tests/test_connector.py
+  cfda847c62b6b039 20,188-190,474-484,486,488-534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "4a8fc17aa299eadef2501f6f4f3cb0eb43b6d954",
+  "prompts": {
+    "cfda847c62b6b039": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce184b6e-2b0e-42c2-b976-d24d4be56abe",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Ameet Pyati <ameet.pyati@fivetran.com>",
+      "messages": [],
+      "total_additions": 112,
+      "total_deletions": 24,
+      "accepted_lines": 96,
+      "overriden_lines": 2
+    }
+  }
+}
