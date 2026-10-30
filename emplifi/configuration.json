@@ -1,4 +1,6 @@
 {
   "token": "<YOUR_EMPLIFI_API_TOKEN>",
-  "secret": "<YOUR_EMPLIFI_API_SECRET>"
+  "secret": "<YOUR_EMPLIFI_API_SECRET>",
+  "base_url": "<OPTIONAL_EMPLIFI_API_BASE_URL>",
+  "lookback_days": "<OPTIONAL_LOOKBACK_DAYS_DEFAULT_365>"
 }

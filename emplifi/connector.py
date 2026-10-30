@@ -13,6 +13,9 @@ import json
 # For sleeping between retry attempts
 import time
 
+# For building a stable key for each aggregated-metrics batch
+import hashlib
+
 # For computing the incremental sync window and chunking it into date ranges
 from datetime import date, datetime, timedelta
 
@@ -71,6 +74,22 @@ POSTS_PAGE_SIZE = 100
 AGGREGATED_METRICS_BATCH_SIZE = 100
 
 
+def _optional_value(configuration: dict, key: str, default):
+    """Return an optional configuration value, treating missing, blank, or <PLACEHOLDER> values as unset.
+
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        key: the optional configuration key to read.
+        default: the value to use when the key is not set.
+    """
+    value = configuration.get(key)
+    if value is None:
+        return default
+    if isinstance(value, str) and (not value.strip() or value.strip().startswith("<")):
+        return default
+    return value
+
+
 def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
@@ -85,7 +104,7 @@ def validate_configuration(configuration: dict):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: '{key}'")
 
-    lookback = configuration.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
+    lookback = _optional_value(configuration, "lookback_days", DEFAULT_LOOKBACK_DAYS)
     try:
         lookback_int = int(lookback)
     except (TypeError, ValueError) as exc:
@@ -98,7 +117,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -206,10 +225,11 @@ def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
 
     Returns:
         The original body if successful, or an empty header/data body for a recoverable
-        application-level error (Code-3, 6, or 7).
+        application-level error (Code-6 or 7).
 
     Raises:
-        RuntimeError: on a rate-limit error code (10/11) or any other unrecognized error.
+        RuntimeError: on a validation error (Code-3), a rate-limit error code (10/11), or
+            any other unrecognized error.
     """
     if body.get("success", True):
         return body
@@ -226,8 +246,10 @@ def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
         return {"success": True, "header": [], "data": []}
 
     if 3 in err_codes:
-        log.warning(f"Code-3 validation error at {url}: {json.dumps(errors)}")
-        return {"success": True, "header": [], "data": []}
+        # A validation error is not recoverable by skipping: returning an empty result would
+        # mark the work complete and advance last_synced_date, so the history would never
+        # be backfilled after the configuration or request is fixed.
+        raise RuntimeError(f"Code-3 validation error at {url}: {json.dumps(errors)}")
 
     if 7 in err_codes:
         log.warning(
@@ -272,8 +294,10 @@ def _mark_done(state: dict, key: str):
     state["progress"]["done"].append(key)
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
 
@@ -343,7 +367,7 @@ def _fetch_all_profiles(configuration: dict) -> dict:
     Returns:
         A dict mapping network name to its list of profile dicts.
     """
-    base_url = configuration.get("base_url", __BASE_URL)
+    base_url = _optional_value(configuration, "base_url", __BASE_URL)
     result = {}
     for network in NETWORKS:
         url = f"{base_url}/3/{network}/profiles"
@@ -389,17 +413,17 @@ def _sync_profile_metrics(configuration, state, profiles_by_network, date_start,
 
     Checkpoints after each profile so an interruption resumes at the next profile.
     """
-    base_url = configuration.get("base_url", __BASE_URL)
+    base_url = _optional_value(configuration, "base_url", __BASE_URL)
 
     for network, profiles in profiles_by_network.items():
         if not profiles:
             continue
-        metrics = PROFILE_METRICS.get(network, [])
-        if not metrics:
+        all_metrics = PROFILE_METRICS.get(network, [])
+        if not all_metrics:
             continue
-        if len(metrics) > __MAX_METRICS_PER_REQUEST:
+        if len(all_metrics) > __MAX_METRICS_PER_REQUEST:
             log.warning(
-                f"profile_metrics [{network}]: {len(metrics)} metrics configured but Emplifi "
+                f"profile_metrics [{network}]: {len(all_metrics)} metrics configured but Emplifi "
                 f"allows {__MAX_METRICS_PER_REQUEST} per call; truncating the rest"
             )
 
@@ -412,12 +436,22 @@ def _sync_profile_metrics(configuration, state, profiles_by_network, date_start,
             if _is_done(state, progress_key):
                 continue
 
+            metrics = all_metrics
+            if not profile.get("insights_enabled", False):
+                # insights_ metrics raise Code-7 when the profile has insights disabled, which
+                # would drop the otherwise accessible public metrics for the whole profile.
+                metrics = [m for m in all_metrics if not m.startswith("insights_")]
+            metrics = metrics[:__MAX_METRICS_PER_REQUEST]
+            if not metrics:
+                _mark_done(state, progress_key)
+                continue
+
             for d_start, d_end in _date_chunks(date_start, date_end):
                 payload = {
                     "date_start": d_start,
                     "date_end": d_end,
                     "profiles": [pid],
-                    "metrics": metrics[:__MAX_METRICS_PER_REQUEST],
+                    "metrics": metrics,
                     "dimensions": [{"type": "date.day"}],
                 }
                 body = _post(url, payload, configuration)
@@ -452,7 +486,7 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
 
     Checkpoints after each profile so an interruption resumes at the next profile.
     """
-    base_url = configuration.get("base_url", __BASE_URL)
+    base_url = _optional_value(configuration, "base_url", __BASE_URL)
 
     for network, profiles in profiles_by_network.items():
         if not profiles:
@@ -477,18 +511,25 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
                 # would drop the otherwise accessible basic fields for the whole profile.
                 fields = [f for f in all_fields if not f.startswith("insights_")]
 
-            # First-page payload has no "after" key at all. Emplifi uses a oneOf schema:
-            # branch A (first page) requires profiles + date_start + date_end + fields, no
-            # after; branch B (pagination) requires ONLY the after cursor from the previous
-            # response. Sending after:"" or after:null breaks branch A validation with a
-            # 400 Bad Request.
-            payload = {
-                "profiles": [pid],
-                "date_start": date_start,
-                "date_end": date_end,
-                "fields": fields,
-                "limit": POSTS_PAGE_SIZE,
-            }
+            # Emplifi uses a oneOf schema: branch A (first page) requires profiles +
+            # date_start + date_end + fields, no after (the first-page payload has no "after"
+            # key at all); branch B (pagination) requires ONLY the after cursor from the
+            # previous response. Sending after:"" or after:null breaks branch A validation
+            # with a 400 Bad Request. When an interrupted run saved a cursor, resume with a
+            # branch B payload; otherwise send the branch A payload.
+            cursors = state["progress"].setdefault("cursors", {})
+            saved_cursor = cursors.get(progress_key, {}).get("after")
+            if saved_cursor:
+                log.info(f"  posts [{network}] profile {pid}: resuming from saved cursor")
+                payload = {"after": saved_cursor}
+            else:
+                payload = {
+                    "profiles": [pid],
+                    "date_start": date_start,
+                    "date_end": date_end,
+                    "fields": fields,
+                    "limit": POSTS_PAGE_SIZE,
+                }
 
             while True:
                 body = _post(url, payload, configuration)
@@ -523,8 +564,20 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
                 if not next_cursor:
                     break
 
+                # Save the cursor so a retry resumes from the next page, then checkpoint.
+                cursors[progress_key] = {"after": next_cursor}
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+                # from the correct position in case of next sync or interruptions.
+                # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+                # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+                op.checkpoint(state)
+
                 # Branch B: subsequent pages send only the cursor string.
                 payload = {"after": next_cursor}
+            # The profile is finished: drop its saved cursor and mark it done in one checkpoint.
+            cursors.pop(progress_key, None)
             _mark_done(state, progress_key)
 
 
@@ -541,7 +594,7 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
     AGGREGATED_METRICS_BATCH_SIZE, issuing one call per metric per batch per date chunk.
     Checkpoints after each metric/batch pair.
     """
-    base_url = configuration.get("base_url", __BASE_URL)
+    base_url = _optional_value(configuration, "base_url", __BASE_URL)
     url = f"{base_url}/3/aggregated-metrics"
 
     all_profile_objs = [
@@ -563,8 +616,8 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
     )
 
     for metric in AGGREGATED_METRICS:
-        for batch_index, batch in enumerate(batches):
-            progress_key = f"aggregated:{metric}:{batch_index}"
+        for batch in batches:
+            progress_key = f"aggregated:{metric}:{_batch_key(batch)}"
             if _is_done(state, progress_key):
                 continue
 
@@ -587,6 +640,17 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
 
                 _upsert_aggregated_metrics_response(body, metric, batch)
             _mark_done(state, progress_key)
+
+
+def _batch_key(batch: list) -> str:
+    """Return a stable key for a batch based on its members, not its position.
+
+    Profiles are refetched on every run, so batch membership and order can change between
+    retries; keying completion by membership keeps finished work valid only for the exact
+    same set of profiles.
+    """
+    members = sorted(f"{obj['platform']}:{obj['id']}" for obj in batch)
+    return hashlib.sha256("|".join(members).encode()).hexdigest()[:16]
 
 
 def _resolve_network(pid_obj, pid_str: str, batch: list) -> str:
@@ -686,7 +750,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
@@ -699,26 +763,34 @@ def update(configuration: dict, state: dict):
     today = date.today()
     yesterday = today - timedelta(days=1)
 
+    saved_window = state.get("progress", {}).get("window")
     last_synced = state.get("last_synced_date")
-    if last_synced:
+    if saved_window:
+        # Finish the interrupted window first, even on a later calendar day, so completed
+        # work and cursors stay valid. last_synced_date advances to its end only when it is
+        # complete; the next run then computes a fresh window.
+        sync_start, sync_end = saved_window
+        log.info(f"Resuming saved window {sync_start} -> {sync_end}")
+    elif last_synced:
         # Re-sync from 2 days before the last checkpoint to absorb any late-arriving data.
         sync_start = (
             datetime.strptime(last_synced, "%Y-%m-%d").date() - timedelta(days=2)
         ).strftime("%Y-%m-%d")
         log.info(f"Incremental from {sync_start} (last: {last_synced})")
     else:
-        lookback = int(configuration.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
+        lookback = int(_optional_value(configuration, "lookback_days", DEFAULT_LOOKBACK_DAYS))
         sync_start = (today - timedelta(days=lookback)).strftime("%Y-%m-%d")
         log.info(f"Initial backfill - {lookback} days from {sync_start}")
 
-    sync_end = yesterday.strftime("%Y-%m-%d")
+    if not saved_window:
+        sync_end = yesterday.strftime("%Y-%m-%d")
     log.info(f"Window: {sync_start} -> {sync_end}")
 
-    # Resume partially completed work only if it belongs to the same window; otherwise start
-    # fresh. last_synced_date is advanced only after the full window has succeeded.
-    window = [sync_start, sync_end]
-    if state.get("progress", {}).get("window") != window:
-        state["progress"] = {"window": window, "done": []}
+    # Record the window with the progress so an interrupted run resumes exactly this window.
+    # last_synced_date is advanced only after the full window has succeeded.
+    if not saved_window:
+        state["progress"] = {"window": [sync_start, sync_end], "done": [], "cursors": {}}
+    state["progress"].setdefault("done", [])
 
     log.info("STEP 1 - Fetching all connected profiles ...")
     profiles_by_network = _fetch_all_profiles(configuration)
@@ -732,8 +804,10 @@ def update(configuration: dict, state: dict):
     _sync_profiles(profiles_by_network)
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
 
     log.info("STEP 2 - Profile metrics ...")
@@ -749,8 +823,10 @@ def update(configuration: dict, state: dict):
     state.pop("progress", None)
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
     # from the correct position in case of next sync or interruptions.
+    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
     # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connectors/connector-sdk/best-practices#largedatasetrecommendation).
+    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
     op.checkpoint(state)
     log.info(f"Done. Checkpointed last_synced_date={sync_end}")
 
