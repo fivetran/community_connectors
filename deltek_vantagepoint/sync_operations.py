@@ -175,11 +175,25 @@ def sync_table(
     record elsewhere in Vantagepoint gets touched by another user): a record moving to a later
     position in that ordering can drift out of the still-to-be-fetched offset window and be
     skipped entirely, with the cursor then saved past it. Re-anchoring after every page shrinks
-    the vulnerable window to only the records that currently share the exact same ModDate as the
-    boundary; a primary-key dedup set (seen_keys_at_cursor) tracks which of those exact-tie records
-    have already been upserted, so a tie cluster spanning more than one page can still be paged
-    through (via plain page-number increments at that fixed boundary value) without re-upserting
-    already-processed records or mistaking "no new records this page" for "nothing left to sync".
+    the vulnerable window from the whole remaining result set down to just one ModDate tie cluster
+    at a time; a primary-key dedup set (seen_keys_at_cursor, rebuilt from only the most recent page
+    - never accumulated across the whole cluster - to keep memory bounded) tracks which of those
+    exact-tie records have already been upserted, so a tie cluster spanning more than one page can
+    still be paged through (via plain page-number increments at that fixed boundary value) without
+    re-upserting already-processed records or mistaking "no new records this page" for "nothing
+    left to sync".
+    KNOWN RESIDUAL LIMITATION (confirmed with a targeted test, not just theoretical): offset
+    pagination is still used *within* a single tie cluster that spans more than one page, so it
+    inherits that scheme's fundamental weakness in a narrower form - if an ALREADY-FETCHED record
+    in that cluster is modified again (moving its ModDate forward, out of the cluster) before the
+    next page of that same cluster is fetched, the remaining not-yet-fetched records shift behind
+    the fixed page offset and exactly one record can still be skipped (lost until that record's own
+    ModDate changes again, or the next monthly full resync). Eliminating this completely would
+    need either a source-supported snapshot/consistent-read mode, or true keyset pagination with a
+    secondary tie-breaker field in the filter/sort (e.g. (ModDate, PrimaryKey) > (lastModDate,
+    lastKey)) - neither has been confirmed as a capability of this API. In practice this residual
+    gap only matters for a Hub table with more than __PAGE_SIZE records sharing the exact same
+    ModDate timestamp, which is uncommon but not impossible (e.g. a bulk update).
     Args:
         base_url: The Vantagepoint API base URL.
         access_token: OAuth2 bearer access token.
@@ -275,14 +289,21 @@ def sync_table(
         )
 
         page_max_cursor = cursor
+        # Keys seen at the current boundary on THIS page only - replaces (never accumulates onto)
+        # seen_keys_at_cursor once the page finishes, so memory is bounded by one page's worth of
+        # keys regardless of how large the tie cluster is. This only dedupes an exact repeat from
+        # the immediately preceding page; a repeat from further back could in principle slip
+        # through and be upserted again, which op.upsert() tolerates safely (idempotent) - see the
+        # function docstring.
+        next_seen_keys_at_cursor = set()
         for record in records:
             record_cursor = record.get(__CURSOR_FIELD)
             record_key = tuple(record.get(field) for field in primary_key_fields)
 
             if record_cursor == cursor and record_key in seen_keys_at_cursor:
-                # Already upserted this exact record on an earlier page while paging through a
-                # ModDate tie at this same boundary - skip it so re-querying the tie cluster
-                # doesn't duplicate work or mask whether this page made real progress.
+                # Already upserted this exact record on the immediately preceding page while
+                # paging through a ModDate tie at this same boundary - skip it so re-querying the
+                # tie cluster doesn't duplicate work or mask whether this page made real progress.
                 continue
 
             # The 'upsert' operation is used to insert or update data in the destination table.
@@ -292,7 +313,7 @@ def sync_table(
             total_synced += 1
 
             if record_cursor == cursor:
-                seen_keys_at_cursor.add(record_key)
+                next_seen_keys_at_cursor.add(record_key)
             elif record_cursor and record_cursor > page_max_cursor:
                 page_max_cursor = record_cursor
 
@@ -324,7 +345,9 @@ def sync_table(
         else:
             # The entire page shared the current boundary's ModDate (a tie cluster larger than one
             # page) - keep paging through it at the same filter value instead of advancing the
-            # cursor past records not yet seen.
+            # cursor past records not yet seen. Replace (not accumulate) the dedup set with just
+            # this page's keys, bounding memory to one page regardless of cluster size.
+            seen_keys_at_cursor = next_seen_keys_at_cursor
             page += 1
 
         cursors[table_name] = cursor
