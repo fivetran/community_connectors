@@ -222,6 +222,7 @@ def sync_report(report: dict, base_url: str, headers: dict, configuration: dict,
     total = 0
 
     while True:
+        log.info(f"Report {report_name}: fetching rows from offset {params['$skip']}")
         rows = extract_rows(get_page(url, headers, params, configuration), report_name)
         for row in rows:
             # The 'upsert' operation is used to insert or update data in the destination table.
@@ -259,6 +260,7 @@ def update(configuration: dict, state: dict):
         "Accept": "application/json",
     }
     base_url = configuration["base_url"].rstrip("/")
+    log.info("Authenticated with Accolade")
 
     for report in get_reports(configuration):
         log.info(f"Processing report {report['report_name']}")
