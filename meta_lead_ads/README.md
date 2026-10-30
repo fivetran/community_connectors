@@ -1,3 +1,9 @@
+---
+name: Meta Lead Ads
+description: Connect and sync Facebook (Meta) Lead Ads leads from the Meta Graph API
+category: SaaS & APIs
+---
+
 # Meta Lead Ads Connector Example
 
 ## Connector overview
@@ -29,7 +35,7 @@ fivetran init --template meta_lead_ads
 - Discovers pages and lead-generation forms automatically, or restricts the sync to explicit `page_ids` / `form_ids`.
 - Single `leads` table with an explicit schema; the raw `field_data` array is preserved as a JSON string column for flexible downstream parsing.
 - Cursor advanced only after a form's pagination completes (newest-first ordering), with a 1-second query overlap and idempotent lead_id upserts.
-- Retries transient HTTP errors (429, 5xx) with exponential backoff, and fails the sync on unrecoverable request errors instead of silently truncating data.
+- Retries transient HTTP errors (429, 5xx) and HTTP 400 responses carrying Graph API throttling error codes (4, 17, 32, 341, 613) with exponential backoff, and fails the sync on unrecoverable request errors instead of silently truncating data.
 
 ## Configuration file
 ```json
@@ -46,15 +52,15 @@ fivetran init --template meta_lead_ads
 }
 ```
 
-- `system_user_access_token` - a Meta system user access token with permissions to list pages and read lead-gen forms/leads.
-- `page_ids` - comma-separated page IDs to sync, or `ALL` to auto-discover every page the token can access.
-- `form_ids` - comma-separated form IDs to sync, or `ALL` to sync every (non-archived, unless `include_archived_forms` is `true`) form on each page. If an explicit ID is not found on any selected page, the sync fails with an error instead of silently completing with missing data.
-- `initial_start_time` - optional `YYYY-MM-DD` or full ISO8601 timestamp with a timezone offset; used as the starting cursor only when no prior state exists. If omitted, the first sync starts from the earliest available leads.
-- `graph_version` - the Graph API version to call.
-- `include_archived_forms` - `true` or `false`; whether archived forms are included when `form_ids` is `ALL`.
-- `request_timeout_seconds` - HTTP request timeout, in seconds.
-- `fetch_limit` - page size when requesting leads; lower this if you observe timeouts.
-- `check_point_limit` - number of rows accumulated per form before a checkpoint is written.
+- `system_user_access_token` (required) - a Meta system user access token with the `pages_show_list`, `ads_management`, and `leads_retrieval` permissions to list pages and read lead-gen forms and leads.
+- `page_ids` (required) - comma-separated page IDs to sync, or `ALL` to auto-discover every page the token can access.
+- `form_ids` (required) - comma-separated form IDs to sync, or `ALL` to sync every (non-archived, unless `include_archived_forms` is `true`) form on each page. If an explicit ID is not found on any selected page, the sync fails with an error instead of silently completing with missing data.
+- `initial_start_time` (optional) - `YYYY-MM-DD` or full ISO8601 timestamp with a timezone offset; used as the starting cursor only when no prior state exists. If omitted, the first sync starts from the earliest available leads.
+- `graph_version` (optional) - the Graph API version to call; defaults to `v26.0`.
+- `include_archived_forms` (optional) - `true` or `false`; whether archived forms are included when `form_ids` is `ALL`; defaults to `false`.
+- `request_timeout_seconds` (optional) - HTTP request timeout, in seconds; defaults to `30`.
+- `fetch_limit` (optional) - page size when requesting leads; defaults to `1000` (maximum `1000`); lower this if you observe timeouts.
+- `check_point_limit` (optional) - number of rows accumulated per form before a checkpoint is written; defaults to `1000`.
 
 Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
@@ -65,7 +71,7 @@ To set up authentication:
 
 1. In Meta Business Manager, create or open a system user under Business settings > Users > System users.
 2. Assign the system user access to every page whose lead ads you want to sync.
-3. Generate a system user access token with the `pages_show_list` and `leads_retrieval` permissions.
+3. Generate a system user access token with the `pages_show_list`, `ads_management`, and `leads_retrieval` permissions.
 4. Provide the generated token as `system_user_access_token` in `configuration.json`.
 
 ## Pagination
@@ -75,10 +81,29 @@ Page and form listings are paginated using the Graph API's `paging.next` cursor.
 Each lead is transformed into a single row with page and form metadata, `ad_id`, `created_time`, and a `field_data` column containing the raw list of field objects from the source, serialized as JSON. Refer to `def _process_leads` in `connector.py`. Parsing individual form fields into columns is left to downstream transformation (for example, in a warehouse view or dbt model), since new fields may be added to forms without requiring a connector change.
 
 ## Error handling
-Refer to `def request_with_retries` in `http_helpers.py`. Transient HTTP errors (429 and 5xx) are retried with exponential backoff. A request that exhausts its retries, receives a non-retryable non-2xx status, or returns an invalid JSON body raises a `RuntimeError`, which fails the sync instead of silently treating the failure as the end of pagination. Sensitive query-string values such as `access_token` are redacted before any URL is logged, and a network exception is logged and re-raised by its type name only, since the exception itself (and its chained traceback) can otherwise embed the request URL.
+Refer to `def request_with_retries` in `http_helpers.py`. Transient HTTP errors (429 and 5xx), and HTTP 400 responses carrying Graph API throttling error codes 4, 17, 32, 341, and 613, are retried with exponential backoff. A request that exhausts its retries, receives a non-retryable non-2xx status, or returns an invalid JSON body raises a `RuntimeError`, which fails the sync instead of silently treating the failure as the end of pagination. Sensitive query-string values such as `access_token` are redacted before any URL is logged, and a network exception is logged and re-raised by its type name only, since the exception itself (and its chained traceback) can otherwise embed the request URL.
 
 ## Tables created
-The connector creates a single `leads` table (primary key: `lead_id`) with the following columns: `lead_id`, `page_id`, `page_name`, `form_id`, `form_name`, `created_time`, `ad_id`, and `field_data` (JSON array of `{"name": <str>, "values": [<str>, ...]}` objects).
+The connector creates a single table named `leads` with the following schema (refer to the `schema()` function in `connector.py`):
+
+```json
+{
+  "table": "leads",
+  "primary_key": ["lead_id"],
+  "columns": {
+    "lead_id": "STRING",
+    "page_id": "STRING",
+    "page_name": "STRING",
+    "form_id": "STRING",
+    "form_name": "STRING",
+    "created_time": "UTC_DATETIME",
+    "ad_id": "STRING",
+    "field_data": "STRING"
+  }
+}
+```
+
+`field_data` holds a JSON array of `{"name": <str>, "values": [<str>, ...]}` objects serialized as a string.
 
 ## Additional files
 - **`http_helpers.py`** - HTTP request helper with retry/backoff and URL redaction for Graph API calls.

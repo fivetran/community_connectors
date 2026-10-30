@@ -38,13 +38,16 @@ import validator
 # Configuration Contract
 # ---------------------------------------------------------------------------
 # Required keys in configuration.json:
-#   system_user_access_token : str   (Meta system user token with pages_show_list, leads access)
+#   system_user_access_token : str   (Meta system user token with pages_show_list, ads_management, leads retrieval)
 #   page_ids                 : str   (Comma-separated list or "ALL" to auto-discover)
 #   form_ids                 : str   (Comma-separated list or "ALL" to fetch all forms of each page)
+# Optional keys in configuration.json:
 #   initial_start_time       : str   (ISO8601 timestamp or date; used when no prior state exists)
-#   graph_version            : str   (Optional override for the default Graph API version)
-#   include_archived_forms   : str   ("true"/"false") Include archived forms
+#   graph_version            : str   (Override for the default Graph API version)
+#   include_archived_forms   : str   ("true"/"false", default "false") Include archived forms
 #   request_timeout_seconds  : str   (Default 30)
+#   fetch_limit              : str   (Leads page size, default 1000, max 1000)
+#   check_point_limit        : str   (Rows per checkpoint within a form, default 1000)
 
 
 def _process_leads(
@@ -136,6 +139,7 @@ def _process_form(
             # The form cursor is intentionally not advanced here (see docstring).
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
+            # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
             # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
             # Learn more about how and where to checkpoint by reading our best practices documentation
             # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
@@ -159,7 +163,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -185,7 +189,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
