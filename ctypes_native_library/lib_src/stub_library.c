@@ -1,4 +1,4 @@
-/* Synthetic stand-in for a vendor-supplied native library with an init / process / free API.
+/* Synthetic stand-in for a native library with an init / process / free API.
  * No real cryptography or sensitive data is involved. It exists only to show that a compiled
  * C library can be loaded and called through ctypes inside a Connector SDK connector.
  */

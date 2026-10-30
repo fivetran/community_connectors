@@ -7,9 +7,9 @@ category: "SaaS & APIs"
 # Native Library With Ctypes Connector Example
 
 ## Connector overview
-This example shows how a connector can load a compiled native C library with Python's `ctypes` module and call it for every row it syncs. This pattern applies when a vendor ships a proprietary shared library, for example for detokenization, decryption, or decoding of a binary format, that must run inside the connector process.
+This example shows how a connector can load a compiled native C library with Python's `ctypes` module and call it for every row it syncs. This pattern applies when a vendor ships a proprietary shared library that must run inside the connector process.
 
-To keep the example self-contained, it uses a synthetic stub library (`lib_src/stub_token.c`) that reverses a string in place. The stub follows the common init, process, free API shape. The connector initializes the library once per sync, calls it for each generated row, and frees it when the sync ends. It also records the average per-call overhead in the logs, which makes it a useful smoke test before you wire in a real library.
+To keep the example self-contained, it uses a synthetic stub library (`lib_src/stub_library.c`) that reverses a string in place. The stub follows the common init, process, free API shape. The connector initializes the library once per sync, calls it for each generated row, and frees it when the sync ends. It also records the average per-call overhead in the logs, which makes it a useful smoke test before you wire in a real library.
 
 ## Requirements
 - [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
@@ -33,7 +33,7 @@ fivetran init --template ctypes_native_library
 Build the stub library before running the connector:
 
 ```
-gcc -shared -fPIC -o lib_src/libstubtoken.so lib_src/stub_token.c
+gcc -shared -fPIC -o lib_src/libstublibrary.so lib_src/stub_library.c
 ```
 
 > Note: Fivetran runs connectors on Linux (amd64). Build the library on, or cross-compile it for, Linux amd64 before running `fivetran deploy`, and place the resulting `.so` file in `lib_src/`. A library built on macOS only works for local `fivetran debug` runs.
@@ -52,7 +52,7 @@ All configuration keys are optional. Placeholder values in angle brackets, such 
 
 ```
 {
-  "library_path": "<OPTIONAL_LIBRARY_PATH_DEFAULT_lib_src/libstubtoken.so>",
+  "library_path": "<OPTIONAL_LIBRARY_PATH_DEFAULT_lib_src/libstublibrary.so>",
   "total_rows": "<OPTIONAL_TOTAL_ROWS_DEFAULT_50000>",
   "batch_size": "<OPTIONAL_BATCH_SIZE_DEFAULT_1000>"
 }
@@ -65,7 +65,7 @@ All configuration keys are optional. Placeholder values in angle brackets, such 
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Data handling
-For each row id, the connector builds a token-like value (`TOK` followed by a 12-digit number), passes it through `stub_transform`, and upserts both the original and the transformed value. Rows are processed in batches of `batch_size`, and the cursor is stored in state as `last_row`. After the last batch the cursor resets to 0 so the next sync starts again from the first row.
+For each row id, the connector builds a value (`ROW` followed by a 12-digit number), passes it through `stub_transform`, and upserts both the original and the transformed value. Rows are processed in batches of `batch_size`, and the cursor is stored in state as `last_row`. After the last batch the cursor resets to 0 so the next sync starts again from the first row.
 
 ## Error handling
 - `validate_configuration` checks that numeric values are positive integers and that the shared library file exists, and raises a `ValueError` with a build hint if it does not.
@@ -88,7 +88,7 @@ The connector creates the `transformed_rows` table:
 ```
 
 ## Additional files
-- `lib_src/stub_token.c` - Source of the synthetic native library used to demonstrate the `ctypes` calls. Replace it with your own library and update the function names and signatures in `__load_library`.
+- `lib_src/stub_library.c` - Source of the synthetic native library used to demonstrate the `ctypes` calls. Replace it with your own library and update the function names and signatures in `__load_library`.
 
 ## Additional considerations
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.

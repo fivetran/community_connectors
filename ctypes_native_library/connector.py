@@ -26,7 +26,7 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
-__DEFAULT_LIBRARY_PATH = "lib_src/libstubtoken.so"
+__DEFAULT_LIBRARY_PATH = "lib_src/libstublibrary.so"
 __DEFAULT_TOTAL_ROWS = 50000
 __DEFAULT_BATCH_SIZE = 1000
 __INIT_DIRECTORY = b"/tmp/stub-init-dir"
@@ -66,7 +66,7 @@ def validate_configuration(configuration: dict):
     __positive_int(configuration, "batch_size", __DEFAULT_BATCH_SIZE)
     if not os.path.exists(__library_path(configuration)):
         raise ValueError(
-            "Native library not found. Build it from lib_src/stub_token.c as described in the README."
+            "Native library not found. Build it from lib_src/stub_library.c as described in the README."
         )
 
 
@@ -167,7 +167,7 @@ def update(configuration: dict, state: dict):
             batch_end = min(batch_start + batch_size, total_rows)
 
             for row_id in range(batch_start, batch_end):
-                raw_value = f"TOK{row_id:012d}"
+                raw_value = f"ROW{row_id:012d}"
 
                 started = time.perf_counter()
                 transformed = transform_value(lib, raw_value)
