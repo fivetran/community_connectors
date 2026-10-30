@@ -265,11 +265,8 @@ def start_execution(base: str, headers: dict, report_id: int, timeout_seconds: i
             json={"reportId": report_id, "outputFormat": "application/csv"},
             timeout=300,
         )
-        if (
-            resp.status_code == 400
-            and "already in progress" in resp.text
-            and time.time() < deadline
-        ):
+        is_already_running = resp.status_code == 400 and "already in progress" in resp.text
+        if is_already_running and time.time() < deadline:
             log.warning(f"Report {report_id} already has an execution in progress; waiting")
             time.sleep(15)
             continue
