@@ -42,13 +42,13 @@ fivetran init --template sopheon_accolade
 ## Configuration file
 ```
 {
-  "auth_url": "<YOUR_ACCOLADE_HOST>/Token",
-  "base_url": "<YOUR_ACCOLADE_HOST>/api/v2",
-  "refresh_token": "<YOUR_REFRESH_TOKEN>",
+  "auth_url": "<YOUR_ACCOLADE_TOKEN_URL>",
+  "base_url": "<YOUR_ACCOLADE_API_BASE_URL>",
+  "refresh_token": "<YOUR_ACCOLADE_REFRESH_TOKEN>",
   "reports": "[{\"report_name\": \"<YOUR_REPORT_NAME>\", \"primary_key\": [\"<PRIMARY_KEY_COLUMN>\"]}]",
-  "ca_bundle_path": "",
-  "page_size": "10000",
-  "request_timeout_seconds": "300"
+  "ca_bundle_path": "<OPTIONAL_CA_BUNDLE_PATH>",
+  "page_size": "<OPTIONAL_PAGE_SIZE_DEFAULT_10000>",
+  "request_timeout_seconds": "<OPTIONAL_REQUEST_TIMEOUT_SECONDS_DEFAULT_300>"
 }
 ```
 
@@ -59,12 +59,9 @@ fivetran init --template sopheon_accolade
 - `ca_bundle_path` - Optional path of a CA bundle file for private certificates. TLS verification is always on.
 - `page_size`, `request_timeout_seconds` - Optional tuning values.
 
+> Note: Optional keys keep an angle-bracket placeholder in `configuration.json`. A value that is empty or starts with `<` is treated as not set and the default is used.
+
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
-
-## Requirements file
-This connector uses only packages that are pre-installed in the Connector SDK runtime, so `requirements.txt` has no entries.
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 The connector posts the refresh token to `auth_url` with the `refresh_token` grant and uses the returned access token as a bearer token for the whole sync. Ask your Accolade administrator to create an API user with access to the reports you want to sync and to issue a refresh token for it.

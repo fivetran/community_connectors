@@ -1,9 +1,9 @@
 {
-  "auth_url": "<YOUR_ACCOLADE_HOST>/Token",
-  "base_url": "<YOUR_ACCOLADE_HOST>/api/v2",
-  "refresh_token": "<YOUR_REFRESH_TOKEN>",
+  "auth_url": "<YOUR_ACCOLADE_TOKEN_URL>",
+  "base_url": "<YOUR_ACCOLADE_API_BASE_URL>",
+  "refresh_token": "<YOUR_ACCOLADE_REFRESH_TOKEN>",
   "reports": "[{\"report_name\": \"<YOUR_REPORT_NAME>\", \"primary_key\": [\"<PRIMARY_KEY_COLUMN>\"]}]",
-  "ca_bundle_path": "",
-  "page_size": "10000",
-  "request_timeout_seconds": "300"
+  "ca_bundle_path": "<OPTIONAL_CA_BUNDLE_PATH>",
+  "page_size": "<OPTIONAL_PAGE_SIZE_DEFAULT_10000>",
+  "request_timeout_seconds": "<OPTIONAL_REQUEST_TIMEOUT_SECONDS_DEFAULT_300>"
 }

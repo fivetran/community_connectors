@@ -34,6 +34,11 @@ __REQUIRED_KEYS = ("auth_url", "base_url", "refresh_token", "reports")
 __ROW_CONTAINER_KEYS = ("value", "results", "table", "data", "items")
 
 
+def is_unset(value) -> bool:
+    """Treat missing, empty, and '<PLACEHOLDER>' values as not configured."""
+    return value in (None, "") or str(value).strip().startswith("<")
+
+
 def __int_setting(configuration: dict, key: str, default: int) -> int:
     """
     Read an optional positive integer from the configuration.
@@ -45,7 +50,7 @@ def __int_setting(configuration: dict, key: str, default: int) -> int:
         ValueError: if the value is present but is not a positive integer.
     """
     raw = configuration.get(key)
-    if raw in (None, ""):
+    if is_unset(raw):
         return default
     try:
         value = int(raw)
@@ -71,8 +76,10 @@ def get_reports(configuration: dict) -> list:
     if not isinstance(reports, list) or not reports:
         raise ValueError("reports must be a non-empty JSON list")
     for report in reports:
-        keys = report.get("primary_key") if isinstance(report, dict) else None
-        if not report.get("report_name") or not isinstance(keys, list) or not keys:
+        if not isinstance(report, dict):
+            raise ValueError("each report must be a JSON object")
+        keys = report.get("primary_key")
+        if is_unset(report.get("report_name")) or not isinstance(keys, list) or not keys:
             raise ValueError("each report needs a report_name and a non-empty primary_key list")
     return reports
 
@@ -86,7 +93,7 @@ def validate_configuration(configuration: dict):
         ValueError: if a required value is missing or invalid.
     """
     for key in __REQUIRED_KEYS:
-        if not configuration.get(key):
+        if is_unset(configuration.get(key)):
             raise ValueError(f"Missing required configuration value: {key}")
     get_reports(configuration)
     __int_setting(configuration, "page_size", __DEFAULT_PAGE_SIZE)
@@ -95,7 +102,8 @@ def validate_configuration(configuration: dict):
 
 def __verify(configuration: dict):
     """Return the TLS verification setting: the CA bundle path if set, otherwise True."""
-    return configuration.get("ca_bundle_path") or True
+    ca_bundle_path = configuration.get("ca_bundle_path")
+    return True if is_unset(ca_bundle_path) else ca_bundle_path
 
 
 def schema(configuration: dict):
@@ -151,7 +159,7 @@ def get_page(url: str, headers: dict, params: dict, configuration: dict):
         RuntimeError: if every attempt fails.
         requests.HTTPError: on a non-retryable HTTP error.
     """
-    timeout = __int_setting(
+    request_timeout_seconds = __int_setting(
         configuration, "request_timeout_seconds", __DEFAULT_REQUEST_TIMEOUT_SECONDS
     )
     for attempt in range(1, __RETRY_ATTEMPTS + 1):
@@ -160,7 +168,7 @@ def get_page(url: str, headers: dict, params: dict, configuration: dict):
                 url,
                 headers=headers,
                 params=params,
-                timeout=timeout,
+                timeout=request_timeout_seconds,
                 verify=__verify(configuration),
             )
             if response.status_code not in __RETRY_STATUS_CODES:
@@ -171,9 +179,9 @@ def get_page(url: str, headers: dict, params: dict, configuration: dict):
             error = type(e).__name__
         if attempt == __RETRY_ATTEMPTS:
             raise RuntimeError(f"Request failed after {__RETRY_ATTEMPTS} attempts: {error}")
-        delay = min(__MAX_BACKOFF_SECONDS, 2**attempt)
-        log.warning(f"{error}; retry {attempt}/{__RETRY_ATTEMPTS - 1} in {delay}s")
-        time.sleep(delay)
+        delay_seconds = min(__MAX_BACKOFF_SECONDS, 2**attempt)
+        log.warning(f"{error}; retry {attempt}/{__RETRY_ATTEMPTS - 1} in {delay_seconds}s")
+        time.sleep(delay_seconds)
 
 
 def extract_rows(payload, report_name: str) -> list:
