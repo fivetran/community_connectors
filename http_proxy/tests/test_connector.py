@@ -17,10 +17,10 @@ the connector in isolation:
 Run: python -m pytest tests/ -v
 """
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
 import pytest
 import requests
 
@@ -185,7 +185,9 @@ class TestValidateConfiguration:
 # ======================================================== fetch_with_retry
 class TestFetchWithRetry:
     def _session(self):
-        return MagicMock(spec=requests.Session)
+        session = MagicMock(spec=requests.Session)
+        session.proxies = {}  # fetch_with_retry passes session.proxies explicitly
+        return session
 
     def test_successful_fetch_returns_json(self):
         session = self._session()
@@ -469,3 +471,64 @@ class TestBuildAuthenticatedProxyUrl:
         url = c._build_authenticated_proxy_url("https://secure-proxy.corp.com:3128", "bob", "pass")
         assert url.startswith("https://")
         assert "bob:pass@" in url
+
+    def test_reserved_characters_in_credentials_are_percent_encoded(self):
+        """Credentials containing /, @, #, or : are percent-encoded so the URL stays valid.
+
+        urlparse does not decode percent-encoded components, so assert on the raw URL
+        and verify the encoded forms are present rather than the raw special characters.
+        """
+        url = c._build_authenticated_proxy_url(
+            "http://proxy.example.com:8080", "alice/corp", "p@ss#w:rd"
+        )
+        # The literal / @ # : characters must be encoded so they do not break URL structure.
+        assert (
+            "/" not in url.split("@")[0].split("//", 1)[1]
+        ), "unencoded '/' in username would corrupt the URL path"
+        # Confirm the encoded forms are present
+        assert "%2F" in url  # '/' → %2F
+        assert "%40" in url  # '@' → %40
+        assert "%23" in url  # '#' → %23
+
+    def test_ipv6_host_brackets_are_preserved(self):
+        """IPv6 proxy addresses retain their brackets in the constructed URL."""
+        url = c._build_authenticated_proxy_url("http://[::1]:8080", "alice", "pass")
+        assert "[::1]" in url
+        assert url == "http://alice:pass@[::1]:8080"
+
+
+# ======================================================== validation errors do not expose credentials
+class TestValidationErrorsRedactCredentials:
+    def test_scheme_error_does_not_expose_password(self):
+        """ValueError for bad scheme must not include embedded credentials."""
+        with pytest.raises(ValueError) as exc_info:
+            c.validate_configuration({"proxy_url": "ftp://user:s3cr3t@proxy.example.com:21"})
+        assert "s3cr3t" not in str(exc_info.value)
+
+    def test_missing_port_error_does_not_expose_password(self):
+        """ValueError for missing port must not include embedded credentials."""
+        with pytest.raises(ValueError) as exc_info:
+            c.validate_configuration({"proxy_url": "http://user:s3cr3t@proxy.example.com"})
+        assert "s3cr3t" not in str(exc_info.value)
+
+
+# ======================================================== env proxy override
+class TestEnvProxyOverride:
+    def test_fetch_passes_session_proxies_explicitly_to_session_get(self):
+        """fetch_with_retry passes proxies=session.proxies to session.get so the configured
+        proxy takes precedence over HTTP_PROXY / HTTPS_PROXY environment variables."""
+        session = MagicMock(spec=requests.Session)
+        session.proxies = {
+            "http": "http://proxy.example.com:8080",
+            "https": "http://proxy.example.com:8080",
+        }
+        session.get.return_value = _ok_response([_post()])
+
+        with patch.dict(os.environ, {"HTTP_PROXY": "http://evil-proxy.corp:9999"}):
+            c.fetch_with_retry(session, "https://example.invalid/posts")
+
+        _, call_kwargs = session.get.call_args
+        assert call_kwargs.get("proxies") == session.proxies, (
+            "fetch_with_retry must forward session.proxies explicitly so env HTTP_PROXY "
+            "cannot override the configured proxy"
+        )

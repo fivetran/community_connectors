@@ -8,7 +8,7 @@ and the Best Practices documentation (https://fivetran.com/docs/connector-sdk#co
 
 import json
 import time
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 import requests
 
@@ -41,19 +41,22 @@ def validate_configuration(configuration: dict):
 
     try:
         parsed = urlparse(proxy_url)
-    except Exception as exc:
-        raise ValueError(f"Invalid proxy_url {proxy_url!r}: {exc}") from exc
+    except Exception:
+        # Do not include the raw URL in the message — it may contain credentials.
+        raise ValueError(
+            "proxy_url could not be parsed — check that it is a valid URL with scheme and port"
+        )
+
+    redacted = _proxy_label(proxy_url)
 
     if parsed.scheme not in _VALID_PROXY_SCHEMES:
         raise ValueError(
-            f"proxy_url must use http:// or https://, got scheme {parsed.scheme!r}: {proxy_url!r}"
+            f"proxy_url must use http:// or https://, got scheme {parsed.scheme!r}: {redacted}"
         )
     if not parsed.hostname:
-        raise ValueError(f"proxy_url must include a hostname: {proxy_url!r}")
+        raise ValueError(f"proxy_url must include a hostname: {redacted}")
     if not parsed.port:
-        raise ValueError(
-            f"proxy_url must include an explicit port number: {proxy_url!r}"
-        )
+        raise ValueError(f"proxy_url must include an explicit port number: {redacted}")
 
     proxy_username = configuration.get("proxy_username", "")
     proxy_password = configuration.get("proxy_password", "")
@@ -67,21 +70,35 @@ def validate_configuration(configuration: dict):
 
 
 def _build_authenticated_proxy_url(proxy_url: str, username: str, password: str) -> str:
-    """Embed credentials into the proxy URL."""
+    """Embed percent-encoded credentials into the proxy URL.
+
+    Credentials are percent-encoded so reserved characters (/, @, #, :) do not
+    corrupt the URL. The original host:port authority is preserved verbatim so
+    IPv6 brackets (e.g. [::1]) are not stripped.
+    """
     parsed = urlparse(proxy_url)
-    return urlunparse(
-        parsed._replace(netloc=f"{username}:{password}@{parsed.hostname}:{parsed.port}")
-    )
+    encoded_username = quote(username, safe="")
+    encoded_password = quote(password, safe="")
+    # Extract host:port from the raw netloc to preserve IPv6 brackets and strip
+    # any pre-existing userinfo without touching the host authority.
+    host_port = parsed.netloc.split("@", 1)[-1]
+    return urlunparse(parsed._replace(netloc=f"{encoded_username}:{encoded_password}@{host_port}"))
 
 
 def _proxy_label(proxy_url: str) -> str:
-    """Return a proxy URL string safe for logging (credentials redacted)."""
-    parsed = urlparse(proxy_url)
-    if parsed.username:
-        return urlunparse(
-            parsed._replace(netloc=f"***:***@{parsed.hostname}:{parsed.port}")
-        )
-    return proxy_url
+    """Return a proxy URL string safe for logging (credentials redacted).
+
+    Never raises — falls back to '<proxy>' if the URL cannot be parsed, so it
+    is safe to call inside validation error messages.
+    """
+    try:
+        parsed = urlparse(proxy_url)
+        if parsed.username:
+            host_port = parsed.netloc.split("@", 1)[-1]
+            return urlunparse(parsed._replace(netloc=f"***:***@{host_port}"))
+        return proxy_url
+    except Exception:
+        return "<proxy>"
 
 
 def build_session(configuration: dict) -> requests.Session:
@@ -124,7 +141,11 @@ def fetch_with_retry(session: requests.Session, url: str, params: dict = None):
     """
     for attempt in range(__MAX_RETRIES):
         try:
-            resp = session.get(url, params=params, timeout=__API_TIMEOUT_SECONDS)
+            # Pass proxies explicitly so session.proxies takes precedence over any
+            # HTTP_PROXY / HTTPS_PROXY environment variables set in the runtime.
+            resp = session.get(
+                url, params=params, timeout=__API_TIMEOUT_SECONDS, proxies=session.proxies
+            )
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.ProxyError as exc:
@@ -136,9 +157,7 @@ def fetch_with_retry(session: requests.Session, url: str, params: dict = None):
                     f"Proxy connection failed after {__MAX_RETRIES} attempts: {exc}"
                 ) from exc
         except requests.exceptions.ConnectionError as exc:
-            log.warning(
-                f"Connection error on attempt {attempt + 1}/{__MAX_RETRIES}: {exc}"
-            )
+            log.warning(f"Connection error on attempt {attempt + 1}/{__MAX_RETRIES}: {exc}")
             if attempt < __MAX_RETRIES - 1:
                 time.sleep(2**attempt)
             else:
