@@ -79,24 +79,30 @@ def _build_authenticated_proxy_url(proxy_url: str, username: str, password: str)
     parsed = urlparse(proxy_url)
     encoded_username = quote(username, safe="")
     encoded_password = quote(password, safe="")
-    # Extract host:port from the raw netloc to preserve IPv6 brackets and strip
-    # any pre-existing userinfo without touching the host authority.
-    host_port = parsed.netloc.split("@", 1)[-1]
+    # Split at the LAST '@' — the URL spec places userinfo before the final '@';
+    # splitting at the first '@' truncates passwords that contain '@'.
+    host_port = parsed.netloc.rsplit("@", 1)[-1]
     return urlunparse(parsed._replace(netloc=f"{encoded_username}:{encoded_password}@{host_port}"))
 
 
 def _proxy_label(proxy_url: str) -> str:
-    """Return a proxy URL string safe for logging (credentials redacted).
+    """Return a log-safe proxy label containing only scheme, host, and port.
 
-    Never raises — falls back to '<proxy>' if the URL cannot be parsed, so it
-    is safe to call inside validation error messages.
+    Never returns the raw input. Credentials embedded in the userinfo component
+    or in malformed forms (empty username, unescaped '@' in password, missing
+    scheme colon) cannot leak into log output this way. Falls back to '<proxy>'
+    when the URL cannot be parsed or yields no usable hostname.
     """
     try:
         parsed = urlparse(proxy_url)
-        if parsed.username:
-            host_port = parsed.netloc.split("@", 1)[-1]
-            return urlunparse(parsed._replace(netloc=f"***:***@{host_port}"))
-        return proxy_url
+        hostname = parsed.hostname  # None when parsing fails or host is absent
+        if not hostname:
+            return "<proxy>"
+        scheme = parsed.scheme or "?"
+        # Re-add brackets that urlparse strips from IPv6 addresses.
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        port = f":{parsed.port}" if parsed.port else ""
+        return f"{scheme}://{host}{port}"
     except Exception:
         return "<proxy>"
 
@@ -104,8 +110,10 @@ def _proxy_label(proxy_url: str) -> str:
 def build_session(configuration: dict) -> requests.Session:
     """Create a requests.Session with proxy configured from configuration.
 
-    Setting session.proxies once applies the proxy to every request made through
-    the session without requiring per-call configuration.
+    Sets session.proxies so the configured proxy is available on the session.
+    Callers must still pass proxies=session.proxies explicitly to each
+    session.get call (as fetch_with_retry does) to make the configured proxy
+    authoritative over HTTP_PROXY / HTTPS_PROXY environment variables.
     """
     session = requests.Session()
 

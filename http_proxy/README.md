@@ -17,7 +17,7 @@ The connector syncs posts and users from [JSONPlaceholder](https://jsonplacehold
 Key patterns demonstrated:
 
 - Reading proxy URL and optional credentials from `configuration.json`.
-- Creating a `requests.Session` with `session.proxies` set so all requests through the session use the proxy without per-call configuration.
+- Creating a `requests.Session` with `session.proxies` set, then passing `proxies=session.proxies` explicitly to each `session.get` call so the configured proxy takes precedence over any `HTTP_PROXY` or `HTTPS_PROXY` environment variables.
 - Supporting authenticated proxies by embedding credentials directly in the proxy URL.
 - Validating proxy URL format at startup to fail fast on misconfiguration.
 - Retrying `ProxyError`, `ConnectionError`, and `Timeout` with exponential backoff.
@@ -91,7 +91,9 @@ When adapting this pattern to an authenticated API, add your API key or token to
 
 ## How the proxy works
 
-The core pattern is in `build_session`:
+The pattern spans two functions: `build_session` and `fetch_with_retry`.
+
+`build_session` records the proxy on the session:
 
 ```python
 session = requests.Session()
@@ -101,12 +103,18 @@ session.proxies = {
 }
 ```
 
-Setting `session.proxies` once applies the proxy to every request made through that session:
+`fetch_with_retry` then passes `proxies=session.proxies` explicitly to every request:
+
+```python
+session.get(url, proxies=session.proxies, timeout=...)
+```
+
+The explicit `proxies=` argument is required. Without it, `requests` merges `session.proxies` with any `HTTP_PROXY` or `HTTPS_PROXY` environment variables present in the runtime, and environment values can override the configured proxy. Passing `proxies=session.proxies` as a per-request argument makes the connector's configuration authoritative.
 
 - HTTP requests are forwarded to the proxy, which fetches the resource on the connector's behalf.
 - HTTPS requests use an HTTP CONNECT tunnel through the proxy, preserving end-to-end TLS encryption.
 
-For authenticated proxies, credentials are embedded directly in the proxy URL:
+For authenticated proxies, credentials are percent-encoded and embedded in the proxy URL:
 
 ```python
 session.proxies = {
@@ -115,7 +123,7 @@ session.proxies = {
 }
 ```
 
-To adapt this to your own connector, replace `__BASE_URL` with your API's base URL. The `build_session` function does not need to change.
+To adapt this to your own connector, replace `__BASE_URL` with your API's base URL. The `build_session` and `fetch_with_retry` functions do not need to change.
 
 
 ## Pagination

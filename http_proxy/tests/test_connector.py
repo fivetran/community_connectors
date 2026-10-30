@@ -130,6 +130,17 @@ class TestBuildSession:
         assert "pass" not in label
         assert "proxy.corp.com:8080" in label
 
+    def test_proxy_label_empty_username_does_not_expose_password(self):
+        """Empty username (':secret@host') must not cause the raw URL to be returned."""
+        label = c._proxy_label("http://:secret@proxy.corp.com:8080")
+        assert "secret" not in label
+
+    def test_proxy_label_malformed_url_returns_placeholder(self):
+        """A URL missing the scheme colon ('http//...') must not expose credentials."""
+        label = c._proxy_label("http//alice:secret@proxy.corp.com:8080")
+        assert "secret" not in label
+        assert "alice" not in label
+
 
 # ======================================================== configuration validation
 class TestValidateConfiguration:
@@ -495,6 +506,14 @@ class TestBuildAuthenticatedProxyUrl:
         url = c._build_authenticated_proxy_url("http://[::1]:8080", "alice", "pass")
         assert "[::1]" in url
         assert url == "http://alice:pass@[::1]:8080"
+
+    def test_at_sign_in_password_does_not_corrupt_host(self):
+        """A password containing '@' must be encoded; splitting at the first '@' would
+        truncate the password and leave a stray '@' in the host authority."""
+        url = c._build_authenticated_proxy_url("http://proxy.example.com:8080", "alice", "p@ss")
+        # The host must be intact and the '@' in the password must be encoded.
+        assert url.endswith("@proxy.example.com:8080")
+        assert "%40" in url  # '@' → %40
 
 
 # ======================================================== validation errors do not expose credentials
