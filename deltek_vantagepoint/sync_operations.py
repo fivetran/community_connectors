@@ -164,11 +164,22 @@ def sync_table(
     base_url, access_token, configuration, state, cursors, table_config, failed_tables, force_full
 ):
     """
-    Sync a single Hubs table using page-number pagination and server-side incremental filtering
-    on the ModDate audit column. For Hubs with child collections configured (see __HUB_CHILDREN in
-    table_registry.py), also fans out to those children for every record returned by this sync -
-    i.e. only parents that are new or changed since the last cursor, not the full parent roster
-    every time.
+    Sync a single Hubs table using server-side incremental filtering on the ModDate audit column.
+    For Hubs with child collections configured (see __HUB_CHILDREN in table_registry.py), also
+    fans out to those children for every record returned by this sync - i.e. only parents that are
+    new or changed since the last cursor, not the full parent roster every time.
+    Pagination re-anchors the ModDate filter value to the highest ModDate seen so far after every
+    page, instead of only incrementing the page number against a filter value fixed for the whole
+    sync. A fixed filter value with an incrementing page number is pure offset pagination over a
+    result set ordered by a column (ModDate) that can change while the sync is in progress (a
+    record elsewhere in Vantagepoint gets touched by another user): a record moving to a later
+    position in that ordering can drift out of the still-to-be-fetched offset window and be
+    skipped entirely, with the cursor then saved past it. Re-anchoring after every page shrinks
+    the vulnerable window to only the records that currently share the exact same ModDate as the
+    boundary; a primary-key dedup set (seen_keys_at_cursor) tracks which of those exact-tie records
+    have already been upserted, so a tie cluster spanning more than one page can still be paged
+    through (via plain page-number increments at that fixed boundary value) without re-upserting
+    already-processed records or mistaking "no new records this page" for "nothing left to sync".
     Args:
         base_url: The Vantagepoint API base URL.
         access_token: OAuth2 bearer access token.
@@ -187,6 +198,7 @@ def sync_table(
     """
     table_name = table_config["table"]
     endpoint = table_config["endpoint"]
+    primary_key_fields = table_config["primary_key"]
     # get_initial_cursor() is used for every force_full cursor, not just the very first sync ever:
     # "initial_sync_start_date" bounds how much history this connector ever cares about, so a
     # later monthly resync re-pulling from that same bound (rather than unconditionally from the
@@ -212,8 +224,11 @@ def sync_table(
 
     url = f"{base_url}/{endpoint}"
     page = 1
-    max_cursor_seen = cursor
     total_synced = 0
+    # Primary-key tuples already upserted at the exact current cursor boundary (a ModDate tie), so
+    # paging through a tie cluster larger than one page can't re-upsert the same record or stall on
+    # "no new records" - see the function docstring.
+    seen_keys_at_cursor = set()
 
     log.info(f"Starting sync for table '{table_name}' from cursor: {cursor} with GET {url}")
 
@@ -259,14 +274,27 @@ def sync_table(
             f"for each of {number_response_records} records"
         )
 
+        page_max_cursor = cursor
         for record in records:
+            record_cursor = record.get(__CURSOR_FIELD)
+            record_key = tuple(record.get(field) for field in primary_key_fields)
+
+            if record_cursor == cursor and record_key in seen_keys_at_cursor:
+                # Already upserted this exact record on an earlier page while paging through a
+                # ModDate tie at this same boundary - skip it so re-querying the tie cluster
+                # doesn't duplicate work or mask whether this page made real progress.
+                continue
+
             # The 'upsert' operation is used to insert or update data in the destination table.
             # The first argument is the name of the destination table.
             # The second argument is a dictionary containing the record to be upserted.
             op.upsert(table=table_name, data=record)
-            record_cursor = record.get(__CURSOR_FIELD)
-            if record_cursor and record_cursor > max_cursor_seen:
-                max_cursor_seen = record_cursor
+            total_synced += 1
+
+            if record_cursor == cursor:
+                seen_keys_at_cursor.add(record_key)
+            elif record_cursor and record_cursor > page_max_cursor:
+                page_max_cursor = record_cursor
 
             access_token = sync_children_for_record(
                 base_url,
@@ -278,10 +306,28 @@ def sync_table(
                 force_full,
             )
 
-        total_synced += number_response_records
         log.info(f"Table '{table_name}', records synced: {total_synced}")
 
-        cursors[table_name] = max_cursor_seen
+        if page_max_cursor > cursor:
+            # This page advanced past the previous boundary - re-anchor the filter value there and
+            # reset pagination, shrinking the window pure offset pagination (page-number increments
+            # at a fixed filter value) would otherwise be vulnerable to a mutable ModDate reordering
+            # records within. The new dedup set only needs this page's records at the new boundary,
+            # since anything earlier is already fully behind the new cursor.
+            cursor = page_max_cursor
+            seen_keys_at_cursor = {
+                tuple(record.get(field) for field in primary_key_fields)
+                for record in records
+                if record.get(__CURSOR_FIELD) == cursor
+            }
+            page = 1
+        else:
+            # The entire page shared the current boundary's ModDate (a tie cluster larger than one
+            # page) - keep paging through it at the same filter value instead of advancing the
+            # cursor past records not yet seen.
+            page += 1
+
+        cursors[table_name] = cursor
         state["cursors"] = cursors
 
         # Save the progress by checkpointing the state. This is important for ensuring that the
@@ -295,7 +341,6 @@ def sync_table(
 
         if number_response_records < __PAGE_SIZE:
             break
-        page += 1
 
     log.info(f"Completed sync for table '{table_name}'. Records synced: {total_synced}")
     return access_token

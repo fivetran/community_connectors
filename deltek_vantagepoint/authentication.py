@@ -14,6 +14,9 @@ sharing rest_client.py's retry helpers.
 # For sleeping between retry attempts
 import time
 
+# For validating the optional "initial_sync_start_date" configuration value's format
+from datetime import datetime
+
 # For making the OAuth2 token request
 import requests
 
@@ -28,14 +31,21 @@ def validate_configuration(configuration: dict):
     """
     Validate the configuration dictionary to ensure it contains all required parameters.
     This function is called at the start of the update method to ensure that the connector has
-    all necessary configuration values. Checks that each required value is present AND a
-    non-blank string, not just that the key exists - a present-but-null or whitespace-only value
-    (e.g. "base_url": null) would otherwise pass validation here and then fail later with a
-    confusing AttributeError instead of this descriptive configuration error.
+    all necessary configuration values, before any network calls or table truncation happen.
+    Checks that each required value is present AND a non-blank string, not just that the key
+    exists - a present-but-null or whitespace-only value (e.g. "base_url": null) would otherwise
+    pass validation here and then fail later with a confusing AttributeError instead of this
+    descriptive configuration error.
+    Also validates the optional "initial_sync_start_date" value's format, if set: it's used
+    directly as a filterHash value and passed through sync_table()'s cursor on every force_full
+    resync (not just the first sync ever - see sync_table() in sync_operations.py), so an invalid
+    value (a typo, or an impossible date like "2026-02-30T00:00:00") must be caught here, before
+    a monthly resync truncates real data and only then fails on the first page request.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing or blank.
+        ValueError: if any required configuration parameter is missing or blank, or if
+            "initial_sync_start_date" is set but not a valid "YYYY-MM-DDTHH:MM:SS" timestamp.
     """
     required_configs = [
         "base_url",
@@ -49,6 +59,16 @@ def validate_configuration(configuration: dict):
         value = configuration.get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: {key}")
+
+    initial_sync_start_date = configuration.get("initial_sync_start_date")
+    if initial_sync_start_date:
+        try:
+            datetime.strptime(initial_sync_start_date, "%Y-%m-%dT%H:%M:%S")
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Invalid configuration value for initial_sync_start_date: "
+                f"{initial_sync_start_date!r} - expected format YYYY-MM-DDTHH:MM:SS"
+            ) from error
 
 
 def get_access_token(base_url, configuration):
