@@ -48,13 +48,13 @@ gcc -shared -fPIC -o lib_src/libstubtoken.so lib_src/stub_token.c
 - Logs the average per-call overhead of the native function.
 
 ## Configuration file
-The configuration keys are all optional.
+All configuration keys are optional. Placeholder values in angle brackets, such as `<OPTIONAL_TOTAL_ROWS_DEFAULT_50000>`, are treated as not set and the default is used.
 
 ```
 {
-  "library_path": "lib_src/libstubtoken.so",
-  "total_rows": "50000",
-  "batch_size": "1000"
+  "library_path": "<OPTIONAL_LIBRARY_PATH_DEFAULT_lib_src/libstubtoken.so>",
+  "total_rows": "<OPTIONAL_TOTAL_ROWS_DEFAULT_50000>",
+  "batch_size": "<OPTIONAL_BATCH_SIZE_DEFAULT_1000>"
 }
 ```
 
@@ -63,11 +63,6 @@ The configuration keys are all optional.
 - `batch_size` - Number of rows to process between checkpoints.
 
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
-
-## Requirements file
-This connector has no third-party dependencies, so `requirements.txt` has no entries.
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Data handling
 For each row id, the connector builds a token-like value (`TOK` followed by a 12-digit number), passes it through `stub_transform`, and upserts both the original and the transformed value. Rows are processed in batches of `batch_size`, and the cursor is stored in state as `last_row`. After the last batch the cursor resets to 0 so the next sync starts again from the first row.

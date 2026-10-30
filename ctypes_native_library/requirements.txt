@@ -1,2 +1,0 @@
-# This connector uses only pre-installed packages (fivetran_connector_sdk and requests).
-# Do not declare them here.

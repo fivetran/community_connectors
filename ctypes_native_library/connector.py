@@ -43,7 +43,7 @@ def __positive_int(configuration: dict, key: str, default: int) -> int:
         ValueError: if the value is present but is not a positive integer.
     """
     raw = configuration.get(key)
-    if raw in (None, ""):
+    if raw in (None, "") or str(raw).strip().startswith("<"):
         return default
     try:
         value = int(raw)
@@ -72,7 +72,9 @@ def validate_configuration(configuration: dict):
 
 def __library_path(configuration: dict) -> str:
     """Resolve the shared library path relative to this file."""
-    relative = configuration.get("library_path") or __DEFAULT_LIBRARY_PATH
+    relative = configuration.get("library_path")
+    if relative in (None, "") or relative.startswith("<"):
+        relative = __DEFAULT_LIBRARY_PATH
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative)
 
 
