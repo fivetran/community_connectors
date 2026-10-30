@@ -308,6 +308,7 @@ class PassProgress:
         self.rows = 0
         self.fields = None
         self.is_watching = False  # True once a position event matches the stop position
+        self.is_target_complete = False  # True once the transaction at the stop position has ended
         self.latest_position = (
             cursor.position
         )  # Newest position seen, which a finished copy resumes from
@@ -878,6 +879,18 @@ def has_key_changed(before: dict, after: dict, primary_key: list) -> bool:
     return any(before[key] != after[key] for key in primary_key)
 
 
+def has_partial_json(change) -> bool:
+    """
+    Tell whether a row change carries a partial JSON value. VStream then sends a JSON patch expression, such as
+    JSON_REPLACE(...), in place of the whole JSON document.
+    Args:
+        change: The binlog.RowChange from the stream.
+    Returns:
+        True if any JSON column of the after image is a partial value.
+    """
+    return change.HasField("json_partial_values") and any(change.json_partial_values.cols)
+
+
 def delete_row(table: str, before: dict, primary_key: list):
     """
     Delete the row that the before image describes.
@@ -902,11 +915,18 @@ def emit_row_changes(row_event, fields: list, table: str, primary_key: list) -> 
         primary_key: The primary key column names.
     Returns:
         The number of row changes handled.
+    Raises:
+        RuntimeError: if a row change carries a partial JSON value.
     """
     if strip_keyspace(row_event.table_name) != table:
         return 0
     count = 0
     for change in row_event.row_changes:
+        if has_partial_json(change):
+            raise RuntimeError(
+                f"Table '{table}' sent an update with a partial JSON value, which this connector cannot "
+                "apply. The sync stops instead of writing an incomplete JSON document."
+            )
         before = to_record(fields, change.before) if change.HasField("before") else None
         after = to_record(fields, change.after) if change.HasField("after") else None
         if before is not None and (after is None or has_key_changed(before, after, primary_key)):
@@ -1015,6 +1035,17 @@ def read_fields(field_event, table: str) -> list:
     return fields
 
 
+def is_transaction_end(event_type) -> bool:
+    """
+    Tell whether a VStream event ends a transaction.
+    Args:
+        event_type: The type of the binlog.VEvent.
+    Returns:
+        True for COMMIT, DDL, and OTHER events.
+    """
+    return event_type in (binlog.COMMIT, binlog.DDL, binlog.OTHER)
+
+
 def process_response(
     response,
     progress: PassProgress,
@@ -1052,6 +1083,9 @@ def process_response(
             progress.cursor = apply_vgtid(progress.cursor, event.vgtid, database, table, shard)
         elif event.type == binlog.LASTPK:
             progress.cursor = apply_last_primary_key(progress.cursor, event.last_p_k_event, table)
+        elif is_transaction_end(event.type):
+            # All rows of the transaction at the stop position are applied once that transaction ends
+            progress.is_target_complete = progress.is_target_complete or progress.is_watching
         elif event.type == binlog.COPY_COMPLETED:
             # Only now is the table up to date as of the newest position VStream reported
             progress.cursor = Cursor(progress.latest_position, None, False)
@@ -1137,7 +1171,10 @@ def stream_pass(
                 outcome = __OUTCOME_COPY_COMPLETED
                 break
             is_past_stop = progress.cursor.position != stop_position
-            if progress.is_watching and not progress.cursor.is_copy_in_progress and is_past_stop:
+            is_target_reached = progress.is_target_complete or (
+                progress.is_watching and is_past_stop
+            )
+            if is_target_reached and not progress.cursor.is_copy_in_progress:
                 break
         else:
             # The server closed the stream before the copy finished or the stop position was reached
@@ -1207,8 +1244,9 @@ def sync_shard(
     checkpointer: Checkpointer,
 ) -> int:
     """
-    Bring one table's shard up to the position it has when the pass starts. A copy or catch-up that times out or
-    drops after making progress carries on from the saved cursor, however many passes that takes.
+    Bring one table's shard up to the position it had when its sync started. The target position is read once and
+    kept across passes, so a source that keeps writing cannot move it further away. A copy or catch-up that times out
+    or drops after advancing the saved cursor carries on from that cursor, however many passes that takes.
     Args:
         stub: The VStream client stub.
         configuration: a dictionary that holds the configuration settings for the connector.
@@ -1222,8 +1260,10 @@ def sync_shard(
     """
     total_rows = 0
     stalled_passes = 0
+    stop_position = None
     while True:
-        stop_position = peek_position(stub, configuration, table, shard)
+        if stop_position is None:
+            stop_position = peek_position(stub, configuration, table, shard)
         is_up_to_date = not cursor.is_copy_in_progress and cursor.position == stop_position
         if is_up_to_date and cursor.position:
             return total_rows
@@ -1235,7 +1275,8 @@ def sync_shard(
         checkpointer.save(table, shard, cursor)
         if outcome in (__OUTCOME_CAUGHT_UP, __OUTCOME_COPY_COMPLETED):
             return total_rows
-        has_made_progress = rows > 0 or cursor.to_state() != cursor_before
+        # Replayed rows do not count: a stream that drops before it sends a resumable position would repeat them forever
+        has_made_progress = cursor.to_state() != cursor_before
         stalled_passes = 0 if has_made_progress else stalled_passes + 1
         if stalled_passes >= __MAX_STALLED_PASSES:
             handle_stalled_passes(table, shard, outcome, detail, stalled_passes)

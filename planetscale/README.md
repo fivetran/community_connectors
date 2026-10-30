@@ -97,7 +97,7 @@ To get the credentials:
 
 ## Pagination
 
-The connector does not page through a table with queries and never runs a table scan. Vitess copies each table through VStream in primary key order and reports the last primary key it copied, which the `Cursor` class saves. A pass lasts up to 15 minutes. If a pass ends before the table is finished, the `sync_shard()` function starts another pass from the saved key within the same sync, and the `stream_pass()` function reads each pass one response at a time. After three passes in a row without progress, the connector gives up on that table (refer to the Error handling section).
+The connector does not page through a table with queries and never runs a table scan. Vitess copies each table through VStream in primary key order and reports the last primary key it copied, which the `Cursor` class saves. A pass lasts up to 15 minutes. If a pass ends before the table is finished, the `sync_shard()` function starts another pass from the saved key within the same sync, and the `stream_pass()` function reads each pass one response at a time. After three passes in a row in which the saved cursor does not advance, the connector gives up on that table (refer to the Error handling section).
 
 ## Data handling
 
@@ -105,7 +105,7 @@ The connector reads each table through VStream and sends the changes to Fivetran
 
 - Discovery – The `discover_source()` function connects over the MySQL protocol, lists the shards with `discover_shards()`, and lists the base tables with their primary keys with `discover_tables()`. Views and Vitess internal tables are excluded. Tables without a primary key are skipped with a warning (refer to `describe_skipped_tables()`), because deletes cannot be applied without a key. The `select_tables()` function applies the `tables` parameter.
 - First sync of a table – The `sync_table()` function truncates the table in the destination, which marks the existing rows as deleted, and then copies it. Vitess reads the table in primary key order and reports the last primary key it copied. The `Cursor` class saves that key with the GTID position, so an interrupted copy resumes where it stopped. It also saves a flag that stays set until VStream reports the copy as complete, so a table counts as up to date only after its copy has finished. A copy that was interrupted before the first row starts over.
-- Later syncs – The `peek_position()` function reads the shard's current position, and the `stream_pass()` function applies the changes from the saved position up to it. Anything newer waits for the next sync, so a sync can finish slightly behind the source.
+- Later syncs – The `peek_position()` function reads the shard's current position once, when the sync of a table and shard starts. The `stream_pass()` function applies the changes from the saved position until the transaction at that position has ended, however many passes that takes. Anything newer waits for the next sync, so a sync can finish slightly behind the source.
 - Row changes – The `emit_row_changes()` function turns inserts and updates into upserts and deletes into delete operations. A change to a primary key deletes the old key with `delete_row()` and upserts the new row. The destination marks deleted rows with `_fivetran_deleted`.
 - Data types – The `to_python()` function converts integers to `int`, floats to `float`, and binary values to `bytes`. Everything else arrives as text, decoded as UTF-8 with a Latin-1 fallback. For example, decimals, dates, times, and JSON values arrive as text, and ENUM values arrive as their text label.
 - Schema – The `schema()` function declares only the type of each primary key column, using `primary_key_sdk_type()`. A sync whose first operation is a delete has no upsert to infer the key type from. All other columns are inferred.
@@ -137,7 +137,8 @@ The state has this structure:
 - Proto compilation – The `load_vitess_modules()` function raises a `RuntimeError` when the connector starts if `protoc` cannot compile the proto files.
 - Table selection – The `select_tables()` function raises a `RuntimeError` if a listed table is missing, is a view, or has no primary key, or if no table can be replicated.
 - Expired saved position – The `classify_stream_error()` function raises a `RuntimeError` that asks you to run **Resync All Data** when the PlanetScale binary logs that hold the saved position have expired. This happens when a connection is paused for longer than PlanetScale keeps its logs.
-- Interrupted and stalled streams – A pass that times out, drops, or ends before the table is up to date continues from the saved cursor. If three passes in a row make no progress, the `handle_stalled_passes()` function raises an error when the stream keeps dropping. If the passes keep timing out, it logs a warning, keeps the saved position, and the next sync continues.
+- Partial JSON updates – The `emit_row_changes()` function raises a `RuntimeError` when a row change carries a partial JSON value, because VStream then sends a JSON patch expression instead of the whole document. The sync stops instead of writing an incomplete JSON document.
+- Interrupted and stalled streams – A pass that times out, drops, or ends before the table is up to date continues from the saved cursor. A pass counts as progress only if the saved cursor advanced, so rows that a dropped stream replays do not count. If three passes in a row make no progress, the `handle_stalled_passes()` function raises an error when the stream keeps dropping. If the passes keep timing out, it logs a warning, keeps the saved position, and the next sync continues.
 
 ## Limitations
 
@@ -146,6 +147,7 @@ The state has this structure:
 - `SET` and `GEOMETRY` values are passed through unconverted, and the connector logs a warning.
 - The connector does not provide the replica, shard selection, or starting GTID options of the Go connector.
 - A table that is dropped from the database or removed from `tables` stops syncing. Its rows stay in the destination.
+- Partial JSON updates, where a JSON column is changed in place and VStream reports a patch expression instead of the whole document, are not supported. The sync fails with an error.
 - `TRUNCATE TABLE` and other DDL statements on the source are not propagated, because the connector ignores DDL events. After a `TRUNCATE TABLE`, the destination keeps the old rows until you run **Resync All Data**.
 - Primary key values of a `bigint unsigned` column that are 2^63 or larger are not supported, because the SDK `LONG` type is a signed 64-bit integer.
 - The connector does not declare the type of primary key columns of other types, such as `datetime`, `decimal`, and `enum`. If a sync deletes a row of such a table before it upserts any row of that table, the SDK fails the sync because the primary key data type is unknown.
