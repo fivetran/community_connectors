@@ -1,0 +1,9 @@
+{
+  "auth_url": "<YOUR_ACCOLADE_HOST>/Token",
+  "base_url": "<YOUR_ACCOLADE_HOST>/api/v2",
+  "refresh_token": "<YOUR_REFRESH_TOKEN>",
+  "reports": "[{\"report_name\": \"<YOUR_REPORT_NAME>\", \"primary_key\": [\"<PRIMARY_KEY_COLUMN>\"]}]",
+  "ca_bundle_path": "",
+  "page_size": "10000",
+  "request_timeout_seconds": "300"
+}
