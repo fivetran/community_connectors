@@ -116,6 +116,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Courier** ([courier](https://github.com/fivetran/community_connectors/tree/main/courier)) - Sync notifications data from Courier multi-channel platform
 - **Customer Thermometer** ([customer_thermometer](https://github.com/fivetran/community_connectors/tree/main/customer_thermometer)) - Sync customer feedback from Customer Thermometer
 - **DataCamp** ([data_camp](https://github.com/fivetran/community_connectors/tree/main/data_camp)) - Sync course catalog from DataCamp LMS
+- **Deltek Vantagepoint** ([deltek_vantagepoint](https://github.com/fivetran/community_connectors/tree/main/deltek_vantagepoint)) - Sync Hubs master data, detail/child collections, billing invoice headers, and reference data from the Deltek Vantagepoint REST API, including a monthly full truncate-and-resync so source deletions are reflected in the destination
 - **Discord** ([discord](https://github.com/fivetran/community_connectors/tree/main/discord)) - Sync data from Discord
 - **Docusign eSignature** ([docusign](https://github.com/fivetran/community_connectors/tree/main/docusign)) - Sync data from Docusign eSignature API
 - **Elastic Email** ([elastic_email](https://github.com/fivetran/community_connectors/tree/main/elastic_email)) - Sync email marketing data from Elastic Email
