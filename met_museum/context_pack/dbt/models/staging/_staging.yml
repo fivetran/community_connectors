@@ -1,0 +1,104 @@
+version: 2
+
+models:
+  - name: stg_met__department
+    description: The connector's department table, live rows only, every column cast and named in lowercase.
+    columns:
+      - name: department_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: stg_met__object
+    description: >
+      The connector's object table, live rows only (_fivetran_deleted dropped), every column cast and named in
+      lowercase. One row per public-domain object. metadata_date keeps the source timestamp type for the stamp joins.
+    columns:
+      - name: object_id
+        data_tests:
+          - unique
+          - not_null
+      - name: metadata_date
+        data_tests:
+          - not_null
+
+  - name: stg_met__object_constituent
+    description: >
+      The constituents credited on a live object, current rows only: a row is kept when its object_metadata_date
+      equals the object's metadata_date.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "cast(object_id as varchar) || '|' || cast(constituent_id as varchar) || '|' || coalesce(role, '')"
+    columns:
+      - name: object_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_met__object')
+                field: object_id
+
+  - name: stg_met__object_tag
+    description: >
+      The curator tags on a live object, current rows only: a row is kept when its object_metadata_date equals the
+      object's metadata_date.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "cast(object_id as varchar) || '|' || term"
+    columns:
+      - name: object_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_met__object')
+                field: object_id
+
+  - name: stg_met__object_visual_attribute
+    description: >
+      The Cortex vision enrichment of a live object, one row per enriched object. Live rows come from the join to
+      stg_met__object.
+    columns:
+      - name: object_id
+        data_tests:
+          - unique
+          - not_null
+      - name: enrichment_hash
+        data_tests:
+          - not_null
+      - name: subject_category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['landscape', 'portrait', 'religious', 'mythological', 'history', 'genre_scene',
+                         'still_life', 'animal', 'architecture', 'marine', 'abstract', 'other']
+      - name: scene_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['outdoor', 'indoor', 'mixed', 'none']
+      - name: style_period
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['medieval', 'renaissance', 'baroque', 'rococo', 'neoclassical', 'romantic', 'realist',
+                         'impressionist', 'post_impressionist', 'symbolist', 'modern', 'other']
+
+  - name: stg_met__object_depicted_element
+    description: >
+      The elements the model saw in a live object's image, current rows only: a row is kept when its enrichment_hash
+      equals the object's current enrichment_hash.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "cast(object_id as varchar) || '|' || element"
+    columns:
+      - name: object_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_met__object_visual_attribute')
+                field: object_id

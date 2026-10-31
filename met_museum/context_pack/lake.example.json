@@ -1,0 +1,6 @@
+{
+  "endpoint": "https://<polaris host>/api/catalog",
+  "catalog": "<destination id>",
+  "client_id": "<catalog client id>",
+  "region": "<aws region>"
+}

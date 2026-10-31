@@ -1,0 +1,44 @@
+version: 2
+
+# Generic question shapes. The dbt MCP server lists these (list_saved_queries) but has no tool that runs one, so an
+# agent runs a saved query by passing its metrics, group_by and where to query_metrics.
+#
+# dbt v2 (2.0.9) rejects order_by on a saved query, so every description that returns more than one row starts with
+# "Order by", and the agent passes that order to query_metrics.
+
+saved_queries:
+  - name: objects_by_subject
+    description: >
+      Order by public_domain_object_count descending. Public-domain objects per subject category, as the Cortex model
+      classified each image, with how many are enriched. Objects that were not enriched fall in the null category;
+      report them as not classified, never as "other".
+    query_params:
+      metrics:
+        - public_domain_object_count
+        - enriched_object_count
+      group_by:
+        - "Dimension('object__subject_category')"
+
+  - name: curator_agreement_by_subject
+    description: >
+      Order by curator_tag_agreement descending. How far the model's depicted elements match the curators' tags,
+      per subject category, over enriched objects with at least one tag.
+    query_params:
+      metrics:
+        - curator_tag_agreement
+        - curator_tags_scored_total
+      group_by:
+        - "Dimension('object__subject_category')"
+      where:
+        - "{{ Dimension('object__is_enriched') }} = true"
+
+  - name: objects_by_department_decade
+    description: >
+      Order by object__department_name, then object__object_decade. Public-domain objects per department and decade
+      of object_begin_date.
+    query_params:
+      metrics:
+        - public_domain_object_count
+      group_by:
+        - "Dimension('object__department_name')"
+        - "Dimension('object__object_decade')"

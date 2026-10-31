@@ -1,0 +1,296 @@
+version: 2
+
+# Access: the marts an agent reads are public with enforced contracts, so a type change fails the build instead of
+# the agent. Every column is cast in staging or here to a type both engines name the same way. Set the owner to
+# whoever answers for the pack.
+groups:
+  - name: met_museum_context
+    owner:
+      name: Met Museum context pack owner
+
+# Every live row is a public-domain object: the connector deletes an object that stops being public domain. So
+# public_domain_object_count counts rows of fct_objects_enriched with no filter. The AI columns describe the image as
+# the Cortex model saw it; they are null when the object was not enriched (is_enriched = false), which is not the same
+# as the model seeing nothing.
+
+models:
+  - name: fct_objects_enriched
+    description: >
+      One row per live public-domain object in the departments the connector syncs: the Met's record, its current
+      curator tags, and the Cortex vision enrichment of its image. Every row is public domain. The AI columns
+      (subject_category, scene_type, style_period, dominant_colors, materials_visible, visual_description,
+      depicted_elements, curator agreement) are null when is_enriched is false: unknown, never "none". To find objects
+      by what the image shows, filter fct_object_depicted_element and join here on object_id; depicted_elements is a
+      ' | '-separated list for reading, not for filtering. For "from the 1880s", filter object_begin_date between 1880
+      and 1889 and say so in the answer.
+    config:
+      group: met_museum_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: object_id
+        data_type: integer
+        description: The Met's object id. Unique. The object's page is object_url.
+        data_tests:
+          - unique
+          - not_null
+        entity:
+          type: primary
+          name: object
+      - name: department_id
+        data_type: integer
+        description: The configured department whose object list returned the object.
+      - name: department_name
+        data_type: varchar
+        description: The department's name, for example European Paintings.
+        dimension:
+          type: categorical
+      - name: title
+        data_type: varchar
+        description: The title, as the Met writes it.
+      - name: object_name
+        data_type: varchar
+        description: The type of object, for example Painting.
+        dimension:
+          type: categorical
+      - name: classification
+        data_type: varchar
+        description: The Met's classification, for example Paintings.
+        dimension:
+          type: categorical
+      - name: artist_display_name
+        data_type: varchar
+        description: The primary artist's name, for example Vincent van Gogh. Null for anonymous works.
+        dimension:
+          type: categorical
+      - name: artist_nationality
+        data_type: varchar
+        description: The primary artist's nationality, as the Met records it.
+        dimension:
+          type: categorical
+      - name: culture
+        data_type: varchar
+        description: The culture the object comes from.
+      - name: object_date
+        data_type: varchar
+        description: The date as the Met writes it, for example 1889 or ca. 1665. Quote this in answers.
+      - name: object_begin_date
+        data_type: integer
+        description: The earliest year the object could date from. Filter date ranges on this.
+      - name: object_end_date
+        data_type: integer
+        description: The latest year the object could date from.
+      - name: object_decade
+        data_type: integer
+        description: The decade of object_begin_date, for example 1880 for 1880 to 1889.
+        dimension:
+          type: categorical
+      - name: medium
+        data_type: varchar
+        description: The materials, for example Oil on canvas.
+      - name: credit_line
+        data_type: varchar
+        description: How the object entered the collection.
+      - name: is_highlight
+        data_type: boolean
+        description: The Met lists the object as a highlight of its collection.
+        dimension:
+          type: categorical
+      - name: is_timeline_work
+        data_type: boolean
+        description: The object appears in the Heilbrunn Timeline of Art History.
+      - name: accession_number
+        data_type: varchar
+        description: The Met's identifying number for the object.
+      - name: gallery_number
+        data_type: varchar
+        description: The gallery where the object is on view; null when it is not on view.
+      - name: object_url
+        data_type: varchar
+        description: The object's page on metmuseum.org. Cite it in answers.
+      - name: primary_image_small
+        data_type: varchar
+        description: URL of the web-size image the Cortex model read.
+      - name: metadata_day
+        data_type: date
+        description: The UTC date the Met last updated the record.
+        data_tests:
+          - not_null
+        granularity: day
+        dimension:
+          type: time
+          name: metadata_day
+      - name: curator_tag_count
+        data_type: integer
+        description: The number of current curator tags on the object; 0 when it has none.
+      - name: curator_tags
+        data_type: varchar
+        description: The current curator tags, sorted and separated by ' | '. Null when the object has none.
+      - name: is_enriched
+        data_type: boolean
+        description: The Cortex vision enrichment ran for this object. When false, every AI column is null.
+        dimension:
+          type: categorical
+      - name: subject_category
+        data_type: varchar
+        description: >
+          What the image is of, as the model classified it: landscape, portrait, religious, mythological, history,
+          genre_scene, still_life, animal, architecture, marine, abstract or other. Null when not enriched.
+        dimension:
+          type: categorical
+      - name: scene_type
+        data_type: varchar
+        description: outdoor, indoor, mixed or none, as the model classified the image. Null when not enriched.
+        dimension:
+          type: categorical
+      - name: style_period
+        data_type: varchar
+        description: >
+          The style period the model assigned, for example impressionist or post_impressionist. A model judgment from
+          the image, not the Met's own period field.
+        dimension:
+          type: categorical
+      - name: dominant_colors
+        data_type: varchar
+        description: A JSON array of up to five dominant colors from a fixed set of thirteen.
+      - name: materials_visible
+        data_type: varchar
+        description: A JSON array of materials the model saw, from a fixed set of seventeen.
+      - name: visual_description
+        data_type: varchar
+        description: Two or three sentences describing what the image shows, written as alt text by the model.
+      - name: depicted_element_count
+        data_type: integer
+        description: The number of current depicted elements; 0 when not enriched.
+      - name: depicted_elements
+        data_type: varchar
+        description: >
+          The things the model saw, sorted and separated by ' | ', for reading. Filter on fct_object_depicted_element
+          instead.
+      - name: curator_tag_agreement
+        data_type: double
+        description: >
+          The share of the object's curator tags that match a depicted element, from 0 to 1, ignoring case and
+          regular plurals. Null when the object has no tags or was not enriched. Average it only through the
+          curator_tag_agreement metric, which weights by tag count.
+      - name: curator_tags_matched
+        data_type: integer
+        description: The number of curator tags that match a depicted element.
+      - name: curator_tags_missed
+        data_type: integer
+        description: The number of curator tags that match none.
+      - name: enrichment_model
+        data_type: varchar
+        description: The Cortex model that produced the enrichment, for example claude-sonnet-5.
+        dimension:
+          type: categorical
+      - name: enriched_date
+        data_type: date
+        description: The UTC date the enrichment ran.
+    semantic_model:
+      enabled: true
+    agg_time_dimension: metadata_day
+    metrics:
+      - name: public_domain_object_count
+        type: simple
+        agg: count
+        expr: object_id
+        label: Public-domain objects
+        description: >
+          Public-domain objects the connector synced. Every row is public domain, so this is the row count. Group by
+          object__department_name, object__subject_category or object__object_decade.
+      - name: enriched_object_count
+        type: simple
+        agg: sum
+        expr: case when is_enriched then 1 else 0 end
+        label: Enriched objects
+        description: Objects with a Cortex vision enrichment. Compare with public_domain_object_count for coverage.
+      - name: curator_tags_matched_total
+        type: simple
+        agg: sum
+        expr: curator_tags_matched
+        label: Curator tags matched
+        description: Curator tags, summed over enriched objects, that match a depicted element.
+      - name: curator_tags_scored_total
+        type: simple
+        agg: sum
+        expr: curator_tags_matched + curator_tags_missed
+        label: Curator tags scored
+        description: Curator tags, summed over enriched objects, that were compared with the depicted elements.
+      - name: curator_tag_agreement
+        type: ratio
+        numerator: curator_tags_matched_total
+        denominator: curator_tags_scored_total
+        label: Curator tag agreement
+        description: >
+          The share of curator tags the model's depicted elements match, over every scored tag (each tag weighs the
+          same, so an object with ten tags counts ten times one with one). A measure of how far the model and the
+          Met's curators describe the same things, not of correctness: a curator tag such as Women names what the
+          model may describe as figure.
+
+  - name: fct_object_depicted_element
+    description: >
+      One row per element the Cortex model saw in a live object's image, current enrichment only. Filter here to find
+      objects by what they show, for example element like '%cypress%', then join fct_objects_enriched on object_id.
+      Elements are lowercase noun phrases chosen by the model: match on a word, not on an exact phrase.
+    config:
+      group: met_museum_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: object_element_key
+        data_type: varchar
+        description: object_id|element, unique.
+        data_tests:
+          - unique
+          - not_null
+      - name: object_id
+        data_type: integer
+        description: The object id.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_objects_enriched')
+                field: object_id
+      - name: element
+        data_type: varchar
+        description: A lowercase noun phrase, for example cypress or wheat field.
+        data_tests:
+          - not_null
+
+  - name: fct_object_tag
+    description: >
+      One row per current curator tag on a live object: the Met's own subject terms, for example Landscapes or
+      Cypresses. Compare with fct_object_depicted_element to see where the model and the curators agree.
+    config:
+      group: met_museum_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: object_tag_key
+        data_type: varchar
+        description: object_id|term, unique.
+        data_tests:
+          - unique
+          - not_null
+      - name: object_id
+        data_type: integer
+        description: The object id.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_objects_enriched')
+                field: object_id
+      - name: term
+        data_type: varchar
+        description: The curator tag, for example Landscapes.
+        data_tests:
+          - not_null
+      - name: aat_url
+        data_type: varchar
+        description: The tag's Getty Art and Architecture Thesaurus URL.

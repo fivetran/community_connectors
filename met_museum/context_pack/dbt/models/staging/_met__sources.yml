@@ -1,0 +1,48 @@
+version: 2
+
+sources:
+  - name: met
+    description: >
+      The six tables the Met Museum connector writes. The snowflake target reads them from var('lake_database') and
+      var('lake_schema'), the lake target from var('lake_catalog') and var('lake_schema'), and the local target from
+      the connector's debug warehouse, attached as met_wh.
+    database: >-
+      {{ var('lake_database') if target.type == 'snowflake'
+         else (var('lake_catalog') if target.name == 'lake' else 'met_wh') }}
+    schema: "{{ 'tester' if target.name == 'local' else var('lake_schema') }}"
+    config:
+      # Fivetran stamps every row with _fivetran_synced; quoted on the lake, like every other source column.
+      loaded_at_field: >-
+        {{ '"_fivetran_synced"' if var('quote_lake_identifiers') else '_fivetran_synced' }}
+      freshness:
+        warn_after: {count: 2, period: day}
+        error_after: {count: 7, period: day}
+    quoting:
+      database: false
+      schema: "{{ var('quote_lake_identifiers') }}"
+      identifier: "{{ var('quote_lake_identifiers') }}"
+    tables:
+      - name: department
+        description: Every department of the Met, one row each. Deleted rows carry _fivetran_deleted = true.
+      - name: object
+        description: >
+          One row per public-domain object in the configured departments. The connector deletes an object that the
+          API no longer returns or that stops being public domain, so a live row is always public domain.
+      - name: object_constituent
+        description: >
+          The people and organizations credited on an object. The API returns only an object's current
+          constituents, so a removed one stays here with an older object_metadata_date. Read stg_met__object_constituent,
+          which keeps only the current rows.
+      - name: object_tag
+        description: >
+          The curator subject tags on an object. Same stamp rule as object_constituent: a row is current only when its
+          object_metadata_date equals the object's metadata_date.
+      - name: object_visual_attribute
+        description: >
+          The Cortex vision enrichment of an object's image, one row per enriched object. Empty unless the connector
+          ran with enable_cortex. The connector deletes the row with its object.
+      - name: object_depicted_element
+        description: >
+          The things the model saw in an object's image, one row each. A row is current only when its enrichment_hash
+          equals the object's row in object_visual_attribute: a re-enrichment that no longer sees an element leaves
+          the old row behind with the old hash.

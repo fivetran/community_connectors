@@ -1,0 +1,48 @@
+# AI context for the pack's OSI model, merged by publish_agents_schema.py osi into the model that metricflow's
+# MSI-to-OSI converter builds from the dbt Semantic Layer. Rules and synonyms only: no counts, which change with
+# every sync. Every metric and dataset named here must exist in the semantic manifest.
+model:
+  instructions: >-
+    Definitions only. Every count comes from the dbt Semantic Layer (query_metrics), never from running these
+    expressions yourself. Every row is a public-domain object, so never filter on public domain. A null AI column
+    (subject_category, scene_type, style_period and the curator agreement columns) means the object was not
+    enriched, never "none" or "other": give the enriched count with every answer that uses one. The AI columns
+    are the vision model's reading of the image, not the Met's catalog.
+
+datasets:
+  fct_objects_enriched:
+    synonyms: [artworks, objects, works, paintings, collection objects]
+    instructions: >-
+      One row per live public-domain object in the departments the connector syncs. To find objects by what the
+      image shows, filter fct_object_depicted_element on element with a lowercase word match and join on
+      object_id; depicted_elements here is a list for reading. Filter date ranges on object_begin_date and quote
+      object_date. department_name keeps the Met's spelling, such as European Paintings.
+
+metrics:
+  public_domain_object_count:
+    synonyms: [artworks, number of artworks, objects, object count, paintings, works in the collection]
+    instructions: >-
+      The answer to every "how many objects" question. Every row is public domain, so this is the row count.
+      It covers only the departments the connector syncs, not the Met's whole collection.
+  enriched_object_count:
+    synonyms: [enriched objects, classified objects, objects with AI tags, objects the model described]
+    instructions: >-
+      Objects the vision model enriched. Give it next to public_domain_object_count whenever an answer uses an AI
+      column, as the denominator of what was classified.
+  curator_tags_matched_total:
+    synonyms: [matched curator tags, tags the model matched]
+    instructions: >-
+      Curator tags that match one of the model's depicted elements (AI tags), over enriched objects. The
+      numerator of curator_tag_agreement.
+  curator_tags_scored_total:
+    synonyms: [scored curator tags, curator tags compared]
+    instructions: >-
+      Curator tags compared with the model's depicted elements (AI tags), over enriched objects. The denominator
+      of curator_tag_agreement.
+  curator_tag_agreement:
+    synonyms: [tag agreement, curator agreement, AI tag agreement, match rate between AI tags and curator tags]
+    instructions: >-
+      Matched curator tags over scored curator tags, so each tag weighs the same. Never average the per-object
+      curator_tag_agreement column instead: that weighs an object with one tag the same as an object with ten.
+      Agreement measures how far the model's depicted elements (AI tags) and the curators name the same things,
+      not whether the model is right: a curator tag such as Women can name what the model calls figure.
