@@ -78,6 +78,7 @@ __NOT_FOUND_STATUS_CODE = 404
 
 # How much of an error response body goes into the error message.
 __ERROR_BODY_PREVIEW_CHARS = 300
+__MALFORMED_ID_PREVIEW = 10
 
 # Objects processed between checkpoints. At three requests a second this is under ten seconds of work.
 __CHECKPOINT_EVERY_OBJECTS = 25
@@ -97,6 +98,7 @@ __DEFAULT_CORTEX_MODEL = "claude-sonnet-5"
 __MAX_IMAGE_BYTES = 10 * 1024 * 1024
 __IMAGE_CONTENT_TYPE_PREFIX = "image/"
 __IMAGE_ACCEPT = "image/*"
+__IMAGE_CHUNK_BYTES = 64 * 1024
 
 # metadataDate takes a date, not a time, and returns objects changed on or after it. The cursor is the
 # day before the pass started, which re-reads a day of changes and absorbs the daily update batch.
@@ -118,6 +120,7 @@ __STATE_KEYS = (
     "department_ids_synced",
     "enrichment_hashes",
     "pending_enrichment",
+    "retry_after_object_id",
 )
 
 
@@ -424,6 +427,7 @@ def send_request(
     not_found_ok: bool = False,
     accept=None,
     error_status_ok: bool = False,
+    stream: bool = False,
 ):
     """
     Send a GET request, retrying HTTP 403 (the CDN's rate block), 429 and 5xx, connection errors
@@ -436,6 +440,7 @@ def send_request(
         accept: an Accept header to send instead of the session's application/json.
         error_status_ok: return the error response to the caller instead of failing, at once for a
             non-retryable status and after the last attempt for a retryable one.
+        stream: leave the body unread, so the caller reads it in bounded chunks and closes the response.
     Returns:
         The response, with status 200, 404 when not_found_ok is true, or any status when
         error_status_ok is true.
@@ -450,7 +455,11 @@ def send_request(
         try:
             headers = {"Accept": accept} if accept else None
             response = client["session"].get(
-                url, params=params, headers=headers, timeout=__REQUEST_TIMEOUT_SECONDS
+                url,
+                params=params,
+                headers=headers,
+                timeout=__REQUEST_TIMEOUT_SECONDS,
+                stream=stream,
             )
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
             # A transport failure on the last attempt fails even with error_status_ok: it is no status.
@@ -471,6 +480,9 @@ def send_request(
                     f"{response.text[:__ERROR_BODY_PREVIEW_CHARS]}"
                 )
             failure = f"HTTP {status}"
+            # A streamed response holds its connection until it is closed.
+            if last_response is not None:
+                last_response.close()
             last_response = response
         if attempt < __MAX_RETRIES:
             log.warning(f"Met request failed ({failure}); retrying in {delay:.0f}s")
@@ -524,23 +536,38 @@ def get_image(client: dict, url: str):
         client: the API client.
         url: the primaryImageSmall URL.
     Returns:
-        A tuple (bytes, content_type), or None when the image host answers with an error status, or
-        the file is not an image or is too large. The caller keeps the object pending.
+        A tuple (bytes, content_type), or None when the image host answers with an error status,
+        the file is not an image or is too large, or the body breaks off. The caller keeps the
+        object pending.
     Raises:
         RuntimeError: if every attempt failed with a connection error or a timeout.
     """
     # The image host answers some files with HTTP 406 when the request asks only for JSON.
     # Any error status is one object's broken image, not an outage: failing on it would stop this
     # sync and every later one at the same object.
-    response = send_request(client, url, accept=__IMAGE_ACCEPT, error_status_ok=True)
-    if response.status_code != 200:
+    response = send_request(client, url, accept=__IMAGE_ACCEPT, error_status_ok=True, stream=True)
+    try:
+        if response.status_code != 200:
+            return None
+        content_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if not content_type.startswith(__IMAGE_CONTENT_TYPE_PREFIX):
+            return None
+        declared = str(response.headers.get("Content-Length", "")).strip()
+        if declared.isdecimal() and int(declared) > __MAX_IMAGE_BYTES:
+            return None
+        # The body is read in chunks and abandoned past the limit, so an oversized file is never
+        # held in memory whole, whatever Content-Length said.
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=__IMAGE_CHUNK_BYTES):
+            body.extend(chunk)
+            if len(body) > __MAX_IMAGE_BYTES:
+                return None
+        return bytes(body), content_type
+    except requests.exceptions.RequestException as error:
+        log.warning(f"Image download from {url} broke off: {error}")
         return None
-    content_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
-    if not content_type.startswith(__IMAGE_CONTENT_TYPE_PREFIX):
-        return None
-    if len(response.content) > __MAX_IMAGE_BYTES:
-        return None
-    return response.content, content_type
+    finally:
+        response.close()
 
 
 def retry_delay(attempt: int) -> float:
@@ -585,7 +612,8 @@ def fetch_object_ids(client: dict, department_id: int, metadata_date) -> list:
     Returns:
         The distinct ids, sorted, so the walk can resume after the last processed id.
     Raises:
-        RuntimeError: if the response does not have the documented total and objectIDs shape.
+        RuntimeError: if the response does not have the documented total and objectIDs shape, has
+            fewer ids than its total, or has an id that is not a whole number.
     """
     params = {"departmentIds": department_id}
     if metadata_date:
@@ -598,7 +626,22 @@ def fetch_object_ids(client: dict, department_id: int, metadata_date) -> list:
         return []
     if not isinstance(object_ids, list):
         raise RuntimeError(f"Unexpected object list for department {department_id}: {body}")
-    return sorted({value for value in (as_int(item) for item in object_ids) if value is not None})
+    # The walk checkpoints past every id it reads, so a cut-short list or a dropped id would be
+    # lost for good. A list longer than its total only carries duplicates.
+    total = as_int(total)
+    if total is None or len(object_ids) < total:
+        raise RuntimeError(
+            f"Object list for department {department_id} has {len(object_ids)} ids, "
+            f"fewer than its total {body.get('total')!r}"
+        )
+    parsed = [as_int(item) for item in object_ids]
+    if None in parsed:
+        malformed = [item for item, value in zip(object_ids, parsed) if value is None]
+        raise RuntimeError(
+            f"Object list for department {department_id} has ids that are not whole numbers: "
+            f"{malformed[:__MALFORMED_ID_PREVIEW]}"
+        )
+    return sorted(set(parsed))
 
 
 def save_state(state: dict):
@@ -627,6 +670,7 @@ def reset_walk(state: dict):
     state["current_department_id"] = state["after_object_id"] = None
     # The walk reads every object again, so it finds the failed enrichments itself.
     state["pending_enrichment"] = {}
+    state["retry_after_object_id"] = None
 
 
 def resolve_state(state: dict, settings: dict):
@@ -713,6 +757,17 @@ def delete_object(object_id: int, state: dict):
     # The second argument is a dictionary containing the primary key of the row.
     op.delete(table=__OBJECT_TABLE, keys={"object_id": object_id})
     state["pending_enrichment"].pop(str(object_id), None)
+    delete_enrichment(object_id, state)
+
+
+def delete_enrichment(object_id: int, state: dict):
+    """
+    Delete an object's enrichment row and forget its enrichment hash, when it has one. Its
+    depicted-element rows keep their stamps and no longer match a live enrichment row.
+    Args:
+        object_id: the object id.
+        state: the sync state.
+    """
     if state["enrichment_hashes"].pop(str(object_id), None) is not None:
         # The 'delete' operation marks a row as deleted in the destination table.
         # The first argument is the name of the destination table.
@@ -763,6 +818,8 @@ def enrich_object(
     if not obj.get("primaryImageSmall"):
         counts["no_image"] += 1
         pending.pop(str(object_id), None)
+        # An object that lost its image also loses the enrichment made from it; its catalog row stays.
+        delete_enrichment(object_id, state)
         return
     terms = tag_terms(obj)
     inputs = cortex.enrichment_inputs(obj, terms, settings["cortex_model"])
@@ -783,16 +840,20 @@ def enrich_object(
         counts["enrichment_failed"] += 1
         pending[str(object_id)] = department_id
         return
+    # The input hash stays the cache key in state. The rows get a stamp unique to this enrichment:
+    # inputs that change and then change back give an input hash an older element row already has.
+    enriched_at = datetime.now(timezone.utc)
+    stamp = cortex.enrichment_stamp(input_hash, enriched_at)
     # The 'upsert' operation is used to insert or update data in the destination table.
     # The first argument is the name of the destination table.
     # The second argument is a dictionary containing the record to be upserted.
     op.upsert(
         table=__VISUAL_ATTRIBUTE_TABLE,
         data=cortex.build_visual_attribute_row(
-            object_id, validated, terms, settings["cortex_model"], input_hash
+            object_id, validated, terms, settings["cortex_model"], stamp, enriched_at
         ),
     )
-    for row in cortex.build_depicted_element_rows(object_id, validated, input_hash):
+    for row in cortex.build_depicted_element_rows(object_id, validated, stamp):
         # The 'upsert' operation is used to insert or update data in the destination table.
         # The first argument is the name of the destination table.
         # The second argument is a dictionary containing the record to be upserted.
@@ -804,14 +865,17 @@ def enrich_object(
 def process_object(context: dict, department_id: int, object_id: int, state: dict, counts: dict):
     """
     Read one object and upsert it, or delete it when the API no longer has it or it is no longer
-    public domain. A detail whose isPublicDomain is anything but true or false is skipped, so a
-    partial response neither deletes the row nor overwrites it.
+    public domain.
     Args:
         context: the sync context.
         department_id: the department whose list returned the object.
         object_id: the object id.
         state: the sync state.
         counts: the per-sync counts.
+    Raises:
+        RuntimeError: if the detail carries another id, or an isPublicDomain that is not true or
+            false. The sync fails before the walk checkpoints past the object, so the next sync
+            reads it again instead of losing it, and the row is neither deleted nor overwritten.
     """
     context["read_ids"].add(object_id)
     obj = get_object(context["client"], object_id)
@@ -820,17 +884,18 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         counts["deleted_not_found"] += 1
         return
     if as_int(obj.get("objectID")) != object_id:
-        counts["mismatched_id"] += 1
-        state["pending_enrichment"].pop(str(object_id), None)
-        return
+        raise RuntimeError(
+            f"Detail for object {object_id} carries objectID {obj.get('objectID')!r}"
+        )
     public_domain = obj.get("isPublicDomain")
     if public_domain is False:
         delete_object(object_id, state)
         counts["deleted_not_public_domain"] += 1
         return
     if public_domain is not True:
-        counts["unknown_public_domain"] += 1
-        return
+        raise RuntimeError(
+            f"Detail for object {object_id} has isPublicDomain {public_domain!r}, not true or false"
+        )
     upsert_object(obj, department_id)
     counts["upserted"] += 1
     if context["cortex_session"] is not None:
@@ -895,10 +960,12 @@ def retry_pending_enrichments(context: dict, state: dict, counts: dict):
     sync reads only the objects changed since the cursor, so without this pass a failed object
     would wait until the Met edits it. The pass runs after the walk finishes, with what is left of
     the per-sync object and enrichment budgets, so objects that fail every time can never stop the
-    walk. An id leaves the list once it is enriched, deleted or no longer public domain.
+    walk. Each pass starts after the id the previous one tried last, so those objects cannot take
+    the budget from the ids after them either. An id leaves the list once it is enriched, deleted,
+    no longer public domain or without an image.
     Args:
         context: the sync context.
-        state: the sync state.
+        state: the sync state, checkpointed every __CHECKPOINT_EVERY_OBJECTS retries.
         counts: the per-sync counts.
     """
     pending = state["pending_enrichment"]
@@ -909,13 +976,24 @@ def retry_pending_enrichments(context: dict, state: dict, counts: dict):
     )
     if context["cortex_session"] is None or not queued:
         return
+    after = state["retry_after_object_id"]
+    if after is not None:
+        queued = [item for item in queued if int(item[0]) > after] + [
+            item for item in queued if int(item[0]) <= after
+        ]
     retried = 0
     for object_id, department_id in queued:
         if budget_exhausted(context):
             break
         context["objects_left"] -= 1
         process_object(context, department_id, int(object_id), state, counts)
+        state["retry_after_object_id"] = int(object_id)
         retried += 1
+        if retried % __CHECKPOINT_EVERY_OBJECTS == 0:
+            save_state(state)
+    if retried == len(queued):
+        # Every queued id had its turn, so the next pass starts from the lowest again.
+        state["retry_after_object_id"] = None
     save_state(state)
     log.info(
         f"Retried {retried} of {len(queued)} pending enrichments; {len(pending)} are still pending"
@@ -972,10 +1050,6 @@ def report_counts(counts: dict):
         f"deleted as no longer public domain: {counts['deleted_not_public_domain']}"
     )
     skipped = {
-        "objects whose detail carried a different id": counts["mismatched_id"],
-        "objects whose detail did not say whether they are public domain": counts[
-            "unknown_public_domain"
-        ],
         "objects without an image to enrich": counts["no_image"],
         "images that could not be downloaded or were too large": counts["image_unavailable"],
         "enrichments that failed or returned no valid field": counts["enrichment_failed"],
@@ -1005,8 +1079,6 @@ def update(configuration: dict, state: dict):
         "upserted": 0,
         "deleted_not_found": 0,
         "deleted_not_public_domain": 0,
-        "mismatched_id": 0,
-        "unknown_public_domain": 0,
         "no_image": 0,
         "image_unavailable": 0,
         "enrichment_failed": 0,

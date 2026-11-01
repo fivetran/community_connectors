@@ -91,6 +91,9 @@ COMPILE_SQL = (
 HTTP_TIMEOUT_SECONDS = 60
 # Written next to the OSI files: the sha256 of the semantic_manifest.json they were converted from
 OSI_SOURCE_STAMP = "source.sha256"
+# Written by fetch after both artifacts, with their hashes and the run's host and environment. osi and publish refuse
+# to run without it, so an interrupted fetch cannot pair one run's manifest with another run's semantic manifest.
+FETCH_RECORD = "fetched_run.json"
 # dbt platform endpoints, filled in from DBT_HOST and DBT_ACCOUNT_ID
 ADMIN_API_URL = "https://{host}/api/v2/accounts/{account_id}{path}"
 # A multicell host <prefix>.<region>.dbt.com serves the Semantic Layer at <prefix>.semantic-layer.<region>.dbt.com
@@ -254,8 +257,18 @@ def fetch(args: argparse.Namespace) -> None:
         print(f"removed {stale_osi}: run osi again for this run")
     target = work / "dbt" / "target"
     target.mkdir(parents=True, exist_ok=True)
+    record = target / FETCH_RECORD
+    record.unlink(missing_ok=True)
     (target / "manifest.json").write_text(json.dumps(manifest))
     (target / "semantic_manifest.json").write_text(json.dumps(semantic))
+    fetched = {
+        "run_id": args.run_id,
+        "host": env["DBT_HOST"],
+        "environment_id": prod_env_id,
+        "manifest_sha256": sha256_of(target / "manifest.json"),
+        "semantic_manifest_sha256": sha256_of(target / "semantic_manifest.json"),
+    }
+    record.write_text(json.dumps(fetched, indent=2) + "\n")
     print(
         f"run {args.run_id} (job {run.get('job_definition_id')}, finished {run.get('finished_at')})"
     )
@@ -464,6 +477,7 @@ def osi(args: argparse.Namespace) -> None:
     source = work / "dbt" / "target" / "semantic_manifest.json"
     if not source.exists():
         sys.exit(f"no {source}; run fetch first")
+    record = require_fetch_record(work)
     semantic = json.loads(source.read_text())
     context = yaml.safe_load(Path(args.context).read_text()) if args.context else {}
 
@@ -474,6 +488,13 @@ def osi(args: argparse.Namespace) -> None:
         compiled = {}
     else:
         require(env, "DBT_HOST", "DBT_PROD_ENV_ID", "DBT_TOKEN")
+        # The compiled SQL must come from the environment whose run was fetched, not one an env file points at.
+        compiling_from = (env["DBT_HOST"], require_int(env, "DBT_PROD_ENV_ID"))
+        if compiling_from != (record["host"], record["environment_id"]):
+            sys.exit(
+                f"run {record['run_id']} was fetched from {record['host']} environment {record['environment_id']}; "
+                "compile with the same DBT_HOST and DBT_PROD_ENV_ID, or fetch again"
+            )
         compiled = compile_metric_sql(env, names)
     doc = enrich_osi(doc, semantic, context, compiled)
     validate_osi(doc)
@@ -519,6 +540,28 @@ def stage_skills(skills: list[str], uses_schemas: list[str], skills_dir: Path) -
         print(f"skill/{key} <- {src}")
 
 
+def require_fetch_record(work: Path) -> dict:
+    """Exit unless fetch finished: its record exists and matches both artifacts now in <work>/dbt/target.
+
+    Returns:
+        The record: run_id, host, environment_id and the two artifact hashes.
+    """
+    target = work / "dbt" / "target"
+    path = target / FETCH_RECORD
+    if not path.exists():
+        sys.exit(f"no {path}: the last fetch did not finish; run fetch again")
+    record = json.loads(path.read_text())
+    for name, key in (
+        ("manifest.json", "manifest_sha256"),
+        ("semantic_manifest.json", "semantic_manifest_sha256"),
+    ):
+        if not (target / name).exists() or sha256_of(target / name) != record.get(key):
+            sys.exit(
+                f"{target / name} is not the file run {record.get('run_id')} fetched; run fetch again"
+            )
+    return record
+
+
 def require_osi_matches_manifest(work: Path) -> None:
     """Exit unless <work>/osi was converted from the semantic_manifest.json now in <work>/dbt/target.
 
@@ -552,6 +595,7 @@ def publish(args: argparse.Namespace) -> None:
     # fetch removes osi/, so publishing DBT_* alone would leave an earlier run's OSI_* tables beside them.
     if not list((work / "osi").glob("*.osi.yaml")):
         sys.exit(f"no OSI files under {work / 'osi'} for the fetched run; run osi first")
+    require_fetch_record(work)
     require_osi_matches_manifest(work)
     steps = [
         [cli, "dbt", "--project-dir", str(work / "dbt")],

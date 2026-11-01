@@ -28,10 +28,11 @@ metrics:
       The answer to every "how many objects" question. Every row is public domain, so this is the row count.
       It covers only the departments the connector syncs, not the Met's whole collection.
   enriched_object_count:
-    synonyms: [enriched objects, classified objects, objects with AI tags, objects the model described]
+    synonyms: [enriched objects, objects with AI tags, objects the model described]
     instructions: >-
-      Objects the vision model enriched. Give it next to public_domain_object_count whenever an answer uses an AI
-      column, as the denominator of what was classified.
+      Objects the vision model enriched: enrichment coverage, not a count of classified objects. An enriched object
+      can have a null subject_category. Give it next to public_domain_object_count whenever an answer uses an AI
+      column.
   curator_tags_matched_total:
     synonyms: [matched curator tags, tags the model matched]
     instructions: >-

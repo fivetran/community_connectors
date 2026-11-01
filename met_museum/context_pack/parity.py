@@ -519,6 +519,9 @@ def normalize(value: Any) -> str:
         return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
+    if isinstance(value, str):
+        # Quoted, so the string "NULL" or "true" never matches SQL NULL or a boolean.
+        return json.dumps(value, ensure_ascii=False)
     return str(value)
 
 
@@ -779,9 +782,11 @@ def run_ai_lane(
     local: LocalAI,
     args: argparse.Namespace,
     out: Callable[[str], None],
-) -> None:
+) -> bool:
     """
     Run the four AI functions on both engines over the same sample and report agreement per function.
+    Returns False when the engines returned different keys for any function: the rates would then compare
+    different samples, so the lane is invalid.
     Args:
         engines: the engines by name.
         local: the DuckDB backend.
@@ -800,12 +805,24 @@ def run_ai_lane(
     duck.run(
         f"create or replace temp table ai_sample as {with_models(duck.ctes, ai_sample_sql(None))}"
     )
+    valid = True
     for function, queries in ai_queries(args.sample, args.cortex_model).items():
         answers = {}
         for name, engine in engines.items():
             _, rows = engine.query(queries[name])
             answers[name] = {row[0]: answer_key(function, row[1]) for row in rows}
-        keys = sorted(set(answers["snowflake"]) & set(answers["duckdb"]), key=str)
+        only = {
+            name: sorted(set(answers[name]) - set(answers[other]), key=str)
+            for name, other in (("snowflake", "duckdb"), ("duckdb", "snowflake"))
+        }
+        if only["snowflake"] or only["duckdb"]:
+            valid = False
+            out(
+                f"\n  {function:<12} INVALID: the engines returned different keys "
+                f"(only snowflake: {only['snowflake'][:10]}, only duckdb: {only['duckdb'][:10]})"
+            )
+            continue
+        keys = sorted(answers["snowflake"], key=str)
         if function == "AI_AGG":
             overlaps = []
             for key in keys:
@@ -832,6 +849,7 @@ def run_ai_lane(
                 f"    {key}: snowflake={_short(answers['snowflake'][key])} duckdb={_short(answers['duckdb'][key])}"
             )
     out(f"\n  {args.backend} calls made: {local.calls}")
+    return valid
 
 
 def _short(value: Any) -> str:
@@ -899,7 +917,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     out(f"Tables with _fivetran_deleted: {', '.join(args.fivetran_deleted_tables) or 'none'}")
     snowflake = snowflake_engine(args)
     duck, duck_connection = duckdb_engine(args)
-    compute_ok = True
+    compute_ok = ai_ok = True
     if args.lane in ("compute", "both"):
         compute_ok = run_compute_lane([snowflake, duck], out)
     if args.lane in ("ai", "both"):
@@ -909,11 +927,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         model = args.local_model or ("claude-sonnet-5" if args.backend == "claude" else "llama3.2")
         local = LocalAI(args.backend, model, api_key)
         register_ai_functions(duck_connection, local)
-        run_ai_lane({"snowflake": snowflake, "duckdb": duck}, local, args, out)
+        ai_ok = run_ai_lane({"snowflake": snowflake, "duckdb": duck}, local, args, out)
 
     if args.output:
         Path(args.output).write_text("\n".join(lines) + "\n")
-    return 0 if compute_ok else 1
+    return 0 if compute_ok and ai_ok else 1
 
 
 if __name__ == "__main__":

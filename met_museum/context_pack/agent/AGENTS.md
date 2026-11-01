@@ -123,7 +123,7 @@ Checked answer: **2** paintings, both by Vincent van Gogh, 1889: 436535 *Wheat F
 
 "What subjects do the European Paintings show, and how many are classified?"
 
-Metric query: the `objects_by_subject` saved query, ordered by `public_domain_object_count` descending.
+Metric query: the `objects_by_subject` saved query with the where filter `{{ Dimension('object__department_name') }} = 'European Paintings'`, ordered by `public_domain_object_count` descending.
 
 ```sql
 select
@@ -131,6 +131,7 @@ select
   count(object_id) as public_domain_object_count,
   sum(case when is_enriched then 1 else 0 end) as enriched_object_count
 from fct_objects_enriched
+where department_name = 'European Paintings'
 group by subject_category
 order by
   public_domain_object_count desc,

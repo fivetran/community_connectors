@@ -20,7 +20,7 @@ import re
 import time
 
 # For timestamping each enrichment
-from datetime import datetime, timezone
+from datetime import datetime
 
 # For making HTTP requests to the Cortex REST API
 import requests
@@ -236,6 +236,21 @@ def enrichment_hash(inputs: dict) -> str:
         The first 16 hex characters of the SHA-256 of the inputs.
     """
     canonical = json.dumps(inputs, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:__HASH_CHARS]
+
+
+def enrichment_stamp(input_hash: str, enriched_at: datetime) -> str:
+    """
+    Stamp one enrichment's rows. The input hash alone is not unique: inputs that change and change
+    back give a hash that depicted-element rows from the earlier enrichment still carry, and those
+    rows would look current. The time of the enrichment makes the stamp unique.
+    Args:
+        input_hash: the enrichment hash of the inputs.
+        enriched_at: the time of this enrichment.
+    Returns:
+        The first 16 hex characters of the SHA-256 of both.
+    """
+    canonical = f"{input_hash}|{enriched_at.isoformat()}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:__HASH_CHARS]
 
 
@@ -559,7 +574,7 @@ def enrich(
 
 
 def build_visual_attribute_row(
-    object_id: int, validated: dict, terms: list, model: str, input_hash: str
+    object_id: int, validated: dict, terms: list, model: str, stamp: str, enriched_at: datetime
 ) -> dict:
     """
     Build the object_visual_attribute row for one enriched object.
@@ -568,7 +583,8 @@ def build_visual_attribute_row(
         validated: the dictionary from validate_answer, with at least one accepted value.
         terms: the object's curator tag terms.
         model: the Cortex model that produced the answer.
-        input_hash: the enrichment hash, which the object's depicted-element rows also carry.
+        stamp: the enrichment stamp, which the object's depicted-element rows also carry.
+        enriched_at: the time of this enrichment.
     Returns:
         A dictionary whose keys match the object_visual_attribute table columns.
     """
@@ -586,22 +602,22 @@ def build_visual_attribute_row(
         "curator_tags_matched": matched,
         "curator_tags_missed": missed,
         "enrichment_model": model,
-        "enrichment_hash": input_hash,
-        "enriched_at": datetime.now(timezone.utc),
+        "enrichment_hash": stamp,
+        "enriched_at": enriched_at,
     }
 
 
-def build_depicted_element_rows(object_id: int, validated: dict, input_hash: str) -> list:
+def build_depicted_element_rows(object_id: int, validated: dict, stamp: str) -> list:
     """
     Build the object_depicted_element rows for one enriched object.
     Args:
         object_id: the object id.
         validated: the dictionary from validate_answer.
-        input_hash: the enrichment hash of the object_visual_attribute row.
+        stamp: the enrichment stamp of the object_visual_attribute row.
     Returns:
         A list of dictionaries whose keys match the object_depicted_element table columns.
     """
     return [
-        {"object_id": object_id, "element": element, "enrichment_hash": input_hash}
+        {"object_id": object_id, "element": element, "enrichment_hash": stamp}
         for element in validated["depicted_elements"]
     ]

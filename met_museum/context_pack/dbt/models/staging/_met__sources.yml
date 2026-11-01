@@ -49,4 +49,5 @@ sources:
         description: >
           The things the model saw in an object's image, one row each. A row is current only when its enrichment_hash
           equals the object's row in object_visual_attribute: a re-enrichment that no longer sees an element leaves
-          the old row behind with the old hash.
+          the old row behind with the old hash. The connector makes the hash unique to each enrichment, so an old row
+          never matches a later one.

@@ -114,9 +114,13 @@ models:
         description: URL of the web-size image the Cortex model read.
       - name: metadata_day
         data_type: date
-        description: The UTC date the Met last updated the record.
+        description: >
+          The UTC date the Met last updated the record. Null when staging's metadata_date is null, which staging
+          allows with a warning, so this test warns too.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
         granularity: day
         dimension:
           type: time
