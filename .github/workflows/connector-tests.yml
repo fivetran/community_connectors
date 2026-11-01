@@ -1,0 +1,202 @@
+name: Connector Tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Minimum line coverage of connector.py (or the connector folder) required to pass.
+  COVERAGE_MIN: 50
+
+jobs:
+  detect:
+    name: Detect connectors to test
+    runs-on: ubuntu-latest
+    outputs:
+      connectors: ${{ steps.find.outputs.connectors }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find connectors that have a test directory
+        id: find
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 <<'EOF'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          TEST_DIR_NAMES = {"test", "tests"}
+          base = os.environ["BASE_SHA"]
+          head = os.environ["HEAD_SHA"]
+
+          def has_test_dir(connector):
+              # Any folder named test/tests anywhere under the connector counts.
+              return any(
+                  p.is_dir() and p.name in TEST_DIR_NAMES
+                  for p in pathlib.Path(connector).rglob("*")
+              )
+
+          all_connectors = sorted(
+              p.name
+              for p in pathlib.Path(".").iterdir()
+              if p.is_dir() and not p.name.startswith(".") and has_test_dir(p.name)
+          )
+
+          # Include deleted files too, so a deletion still selects its connector.
+          diff = subprocess.run(
+              ["git", "diff", "--name-only", f"{base}...{head}"],
+              capture_output=True,
+              text=True,
+              check=True,
+          ).stdout
+
+          changed = set()
+          shared_change = False
+          for path in diff.splitlines():
+              parts = pathlib.PurePosixPath(path).parts
+              # A file at the repo root, or under a hidden folder such as .github,
+              # is shared code: run every connector that has tests.
+              if len(parts) == 1 or parts[0].startswith("."):
+                  shared_change = True
+              else:
+                  changed.add(parts[0])
+
+          if shared_change:
+              selected = all_connectors
+          else:
+              selected = sorted(c for c in changed if c in all_connectors)
+
+          print(f"Connectors with tests: {all_connectors or 'none'}")
+          print(f"Shared/root change detected: {shared_change}")
+          print(f"Connectors to test: {selected or 'none'}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"connectors={json.dumps(selected, separators=(',', ':'))}\n")
+          EOF
+
+  tests:
+    name: Connector tests
+    needs: detect
+    # Runs even when detect failed or found nothing, so the required check always reports.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Run tests for each selected connector
+        env:
+          CONNECTORS: ${{ needs.detect.outputs.connectors }}
+          DETECT_RESULT: ${{ needs.detect.result }}
+          COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          python3 <<'EOF'
+          import json
+          import os
+          import subprocess
+          import sys
+          import venv
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          if os.environ["DETECT_RESULT"] != "success":
+              print("::error::Detect step did not succeed; cannot tell which connectors to test.")
+              sys.exit(1)
+
+          connectors = json.loads(os.environ["CONNECTORS"] or "[]")
+          if not connectors:
+              print("No connectors with tests changed. Nothing to run.")
+              sys.exit(0)
+
+          temp = Path(os.environ["RUNNER_TEMP_DIR"])
+          coverage_min = os.environ["COVERAGE_MIN"]
+          failed = {}
+
+          def skipped_count(junit_path):
+              if not junit_path.is_file():
+                  return None
+              root = ET.parse(junit_path).getroot()
+              return sum(int(suite.get("skipped", 0)) for suite in root.iter("testsuite"))
+
+          for connector in connectors:
+              print(f"::group::{connector}")
+              reasons = []
+              # One venv per connector: requirements pins can conflict across connectors.
+              env_dir = temp / f"venv-{connector}"
+              venv.create(env_dir, with_pip=True)
+              python = env_dir / "bin" / "python"
+
+              requirements = Path(connector, "requirements.txt")
+              install = [
+                  str(python), "-m", "pip", "install",
+                  "fivetran_connector_sdk", "requests", "pytest", "pytest-cov",
+              ]
+              if requirements.is_file():
+                  install += ["-r", str(requirements)]
+
+              if subprocess.run(install, check=False).returncode != 0:
+                  reasons.append("dependency install failed")
+              else:
+                  cov_target = "connector" if Path(connector, "connector.py").is_file() else "."
+                  junit_name = "junit.xml"
+                  junit = Path(connector, junit_name)
+                  result = subprocess.run(
+                      [
+                          str(python), "-m", "pytest", ".", "-v",
+                          f"--junitxml={junit_name}",
+                          f"--cov={cov_target}",
+                          "--cov-report=term",
+                          f"--cov-fail-under={coverage_min}",
+                      ],
+                      cwd=connector,
+                      check=False,
+                  )
+                  if result.returncode != 0:
+                      reasons.append(f"pytest exit code {result.returncode} (failed, or coverage below {coverage_min}%)")
+
+                  skipped = skipped_count(junit)
+                  if skipped is None:
+                      reasons.append("no JUnit report was produced")
+                  elif skipped > 0:
+                      reasons.append(f"{skipped} test(s) skipped; skips are not allowed")
+              print("::endgroup::")
+
+              if reasons:
+                  failed[connector] = reasons
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as out:
+                  out.write("### Connector tests\n\n")
+                  for connector in connectors:
+                      if connector in failed:
+                          out.write(f"- `{connector}`: failed. {'; '.join(failed[connector])}\n")
+                      else:
+                          out.write(f"- `{connector}`: passed\n")
+
+          if failed:
+              for connector, reasons in failed.items():
+                  print(f"::error::{connector}: {'; '.join(reasons)}")
+              sys.exit(1)
+          EOF
