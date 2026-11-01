@@ -119,7 +119,7 @@ Claude Code, Cursor and other MCP clients can query the pack's metrics through a
 2. Which 1880s objects do the curators tag as both a landscape and cypresses?
 3. What subjects do the objects show, and how many are classified?
 4. How often do the model's depicted elements match the curators' tags?
-5. How many objects are there per decade?
+5. How many objects are there per department and decade?
 
 The answers carry the sync they came from. After a later sync the SQL still runs, and the numbers can change.
 

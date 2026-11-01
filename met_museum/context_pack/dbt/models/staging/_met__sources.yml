@@ -32,7 +32,9 @@ sources:
       - name: object
         description: >
           One row per public-domain object in the configured departments. The connector deletes an object that the
-          API reports as not found or that stops being public domain, so a live row is always public domain.
+          API reports as not found or that stops being public domain. A row stays as it was at its last read when
+          the Met moves the object out of a synced department or drops it from the object list, and when its
+          department is removed from department_ids.
       - name: object_constituent
         description: >
           The people and organizations credited on an object. The API returns only an object's current

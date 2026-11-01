@@ -120,7 +120,7 @@ order by o.object_id
 
 # The same question answered from the curators' tags alone, with no AI column, for contrast.
 HERO_CURATOR_SQL = """
-select o.object_id, o.title, o.artist_display_name, o.object_date
+select o.object_id, o.title, o.artist_display_name, o.object_date, o.object_url
 from fct_objects_enriched as o
 where o.object_begin_date between 1880 and 1889
   and exists (select 1 from fct_object_tag as t where t.object_id = o.object_id and lower(t.term) = 'landscapes')
@@ -805,6 +805,10 @@ def run_ai_lane(
     duck.run(
         f"create or replace temp table ai_sample as {with_models(duck.ctes, ai_sample_sql(None))}"
     )
+    _, sampled = duck.query("select count(*) from ai_sample")
+    if not sampled[0][0]:
+        out("\n  INVALID: no enriched rows to compare. Run an enrichment sync first.")
+        return False
     valid = True
     for function, queries in ai_queries(args.sample, args.cortex_model).items():
         answers = {}
@@ -826,7 +830,9 @@ def run_ai_lane(
         if function == "AI_AGG":
             overlaps = []
             for key in keys:
-                left, right = answers["snowflake"][key], answers["duckdb"][key]
+                # A null answer has no terms, so it overlaps nothing.
+                left = answers["snowflake"][key] or frozenset()
+                right = answers["duckdb"][key] or frozenset()
                 union = left | right
                 overlaps.append(len(left & right) / len(union) if union else 1.0)
             rate = sum(overlaps) / len(overlaps) if overlaps else 0.0

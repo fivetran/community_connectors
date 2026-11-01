@@ -123,6 +123,7 @@ __STATE_KEYS = (
     "pending_enrichment",
     "retry_after_object_id",
     "malformed_pending",
+    "reread_after_object_id",
 )
 
 
@@ -491,10 +492,10 @@ def send_request(
                 if error_status_ok:
                     close_response(last_response)
                     return response
-                raise RuntimeError(
-                    f"Met API returned HTTP {status} for {url}: "
-                    f"{response.text[:__ERROR_BODY_PREVIEW_CHARS]}"
-                )
+                close_response(last_response)
+                preview = response.text[:__ERROR_BODY_PREVIEW_CHARS]
+                response.close()
+                raise RuntimeError(f"Met API returned HTTP {status} for {url}: {preview}")
             failure = f"HTTP {status}"
             close_response(last_response)
             last_response = response
@@ -688,6 +689,7 @@ def reset_walk(state: dict):
     state["pending_enrichment"] = {}
     state["retry_after_object_id"] = None
     state["malformed_pending"] = {}
+    state["reread_after_object_id"] = None
 
 
 def resolve_state(state: dict, settings: dict):
@@ -1032,8 +1034,10 @@ def reread_malformed_details(context: dict, state: dict, counts: dict):
     Read again the objects whose detail was skipped as malformed on an earlier sync. An incremental
     sync reads only the objects changed since the cursor, so without this pass a skipped object would
     wait until the Met edits it.
-    The pass runs after the walk finishes, with what is left of the per-sync object budget. An id
-    leaves the list once its detail is whole, whether the object is then upserted or deleted.
+    The pass runs after the walk finishes, with what is left of the per-sync object and enrichment
+    budgets. Each pass starts after the id the previous one read last, so objects that stay
+    malformed cannot take the budget from the ids after them. An id leaves the list once its detail
+    is whole, whether the object is then upserted or deleted.
     Args:
         context: the sync context.
         state: the sync state, checkpointed every __CHECKPOINT_EVERY_OBJECTS objects.
@@ -1048,15 +1052,24 @@ def reread_malformed_details(context: dict, state: dict, counts: dict):
         ),
         key=lambda item: int(item[0]),
     )
+    after = state["reread_after_object_id"]
+    if after is not None:
+        queued = [item for item in queued if int(item[0]) > after] + [
+            item for item in queued if int(item[0]) <= after
+        ]
     reread = 0
     for object_id, department_id in queued:
-        if context["objects_left"] <= 0:
+        if budget_exhausted(context):
             break
         context["objects_left"] -= 1
         process_object(context, department_id, int(object_id), state, counts)
+        state["reread_after_object_id"] = int(object_id)
         reread += 1
         if reread % __CHECKPOINT_EVERY_OBJECTS == 0:
             save_state(state)
+    if reread == len(queued):
+        # Every queued id had its turn, so the next pass starts from the lowest again.
+        state["reread_after_object_id"] = None
     if queued:
         save_state(state)
         log.info(

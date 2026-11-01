@@ -114,9 +114,11 @@ models:
         description: URL of the web-size image the Cortex model read.
       - name: metadata_day
         data_type: date
-        description: The UTC date the Met last updated the record.
+        description: The UTC date the Met last updated the record. Null when the API sent no readable metadataDate.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
         granularity: day
         dimension:
           type: time
@@ -151,20 +153,26 @@ models:
         data_type: varchar
         description: >
           The style period the model assigned, for example impressionist or post_impressionist. A model judgment from
-          the image, not the Met's own period field.
+          the image, not the Met's own period field. Null when not enriched, or when the model's answer was not on
+          the allowed list.
         dimension:
           type: categorical
       - name: dominant_colors
         data_type: varchar
         description: >
           A JSON array of dominant colors from a fixed set of thirteen. The prompt asks for up to five, and the
-          connector keeps every allowed color the model returns, so a row can hold more.
+          connector keeps every allowed color the model returns, so a row can hold more. Null when not enriched, or
+          when the model returned no allowed color.
       - name: materials_visible
         data_type: varchar
-        description: A JSON array of materials the model saw, from a fixed set of seventeen.
+        description: >
+          A JSON array of materials the model saw, from a fixed set of seventeen. Null when not enriched, or when
+          the model returned no allowed material.
       - name: visual_description
         data_type: varchar
-        description: Two or three sentences describing what the image shows, written as alt text by the model.
+        description: >
+          Two or three sentences describing what the image shows, written as alt text by the model. Null when not
+          enriched, or when the model returned no description.
       - name: depicted_element_count
         data_type: integer
         description: The number of current depicted elements; 0 when not enriched.
@@ -172,19 +180,24 @@ models:
         data_type: varchar
         description: >
           The things the model saw, sorted and separated by ' | ', for reading. Filter on fct_object_depicted_element
-          instead.
+          instead. Null when not enriched, or when the model returned no usable element.
       - name: curator_tag_agreement
         data_type: double
         description: >
           The share of the object's curator tags that match a depicted element, from 0 to 1, ignoring case and
-          regular plurals. Null when the object has no tags or was not enriched. Average it only through the
+          regular plurals, scored against the tags the object had when it was enriched. Null when it had no tags then or
+          was not enriched. Average it only through the
           curator_tag_agreement metric, which weights by tag count.
       - name: curator_tags_matched
         data_type: integer
-        description: The number of curator tags that match a depicted element.
+        description: >
+          The number of curator tags that match a depicted element, scored against the tags the object had when it
+          was enriched. 0 when it had none then, null when not enriched.
       - name: curator_tags_missed
         data_type: integer
-        description: The number of curator tags that match none.
+        description: >
+          The number of curator tags that match none, scored against the tags the object had when it was enriched.
+          0 when it had none then, null when not enriched.
       - name: enrichment_model
         data_type: varchar
         description: The Cortex model that produced the enrichment, for example claude-sonnet-5.

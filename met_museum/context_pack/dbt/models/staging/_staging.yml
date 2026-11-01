@@ -21,11 +21,13 @@ models:
       - name: metadata_date
         description: >
           Null when the API sent no metadataDate or one the connector could not parse. The stamp joins then cannot
-          tell that object's current constituents and tags from ones the Met removed, and leave them all out. This
-          test fails the build, and dbt skips every model downstream of stg_met__object, every mart included, until
-          the Met fixes the record. The connector logs a warning that names the object.
+          tell that object's current constituents and tags from ones the Met removed, and leave them all out. The
+          object then shows no tags or constituents until the Met fixes the record. This test warns, and the
+          connector logs a warning that names the object.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
 
   - name: stg_met__object_constituent
     description: >

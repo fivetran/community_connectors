@@ -108,7 +108,7 @@ def _env_value(raw: str) -> str:
     and a `#` with no space before it stay.
     """
     raw = raw.strip()
-    quoted = re.match(r"""(['"])(.*)\1\s*(?:#.*)?$""", raw)
+    quoted = re.match(r"""(['"])(.*?)\1\s*(?:#.*)?$""", raw)
     if quoted:
         return quoted.group(2)
     return re.sub(r"\s+#.*$", "", raw)
