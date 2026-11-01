@@ -9,5 +9,6 @@ select
 from {{ source('met', 'object_tag') }} as t
 inner join {{ ref('stg_met__object') }} as o
   on cast(t.{{ lake_col('object_id') }} as integer) = o.object_id
-  and t.{{ lake_col('object_metadata_date') }} = o.metadata_date
-where not coalesce(t.{{ lake_col('_fivetran_deleted') }}, false)
+  -- Null-safe: an object whose metadataDate the connector could not parse keeps its current rows.
+  and t.{{ lake_col('object_metadata_date') }} is not distinct from o.metadata_date
+where {{ live_rows('object_tag', 't') }}

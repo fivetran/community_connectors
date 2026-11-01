@@ -1,5 +1,6 @@
 {#-
-  Production (target name 'prod', set by the dbt platform Production job): every model in the target schema, so
+  Production (target name 'prod'; set it as the Production environment's target name, because the dbt platform
+  defaults to 'default'): every model in the target schema, so
   every agent reads one schema. The pack has its own database, so nothing else
   can collide there. No model sets a custom schema today.
   Everything else (a CI job's dbt_cloud_pr_* schema, a developer's dbt_<user>, a local run): the target schema, then

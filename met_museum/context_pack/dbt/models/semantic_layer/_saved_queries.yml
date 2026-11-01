@@ -10,8 +10,8 @@ saved_queries:
   - name: objects_by_subject
     description: >
       Order by public_domain_object_count descending. Public-domain objects per subject category, as the Cortex model
-      classified each image, with how many are enriched. Objects that were not enriched fall in the null category;
-      report them as not classified, never as "other".
+      classified each image, with how many are enriched. Objects that were not enriched, and enriched objects whose
+      answer was not on the allowed list, fall in the null category; report them as not classified, never as "other".
     query_params:
       metrics:
         - public_domain_object_count

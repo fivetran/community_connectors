@@ -18,7 +18,7 @@ The numbers in these rules are examples from the sync of October 31, 2026. Answe
 
 1. **A null AI column means not classified, never "none".** When `is_enriched` is false, every AI column is null: `subject_category`, `scene_type`, `style_period`, `dominant_colors`, `materials_visible`, `visual_description`, `depicted_elements` and the curator agreement columns. The model can also come back with a value that isn't on the allowed list, and the connector stores a null for it, so an enriched object can still have a null `subject_category`, `scene_type` or `style_period`. Report both kinds as not classified. Never count them as `other` or as showing nothing. Give the enriched count with every answer that uses an AI column, for example "2,365 of 2,365 objects enriched".
 2. **Find objects by what the image shows in `fct_object_depicted_element`.** Filter `element` there and join `fct_objects_enriched` on `object_id`. `depicted_elements` in `fct_objects_enriched` is a ' | '-separated list for reading. Do not filter on it.
-3. **Match an element on a word, not an exact phrase.** The model writes elements as lowercase noun phrases of its own choosing, such as `cypress`, `cypress tree` or `cypress trees`. Use `element like '%cypress%'`, in lowercase.
+3. **Match an element on a whole word and its plural, never on part of a word.** The model writes elements as lowercase noun phrases of its own choosing, such as `cypress`, `cypress tree` or `cypress trees`. Put a space on each side of `element` and match the word with a space on each side, once for the singular and once for the plural, in lowercase: `(' ' || element || ' ' like '% cypress %' or ' ' || element || ' ' like '% cypresses %')`. A bare `like '%oak%'` also matches `cloak`, which the model names far more often than `oak`.
 4. **Filter date ranges on `object_begin_date`, and quote `object_date`.** "From the 1880s" is `object_begin_date between 1880 and 1889`. Say which field you filtered on. `object_date` is the Met's own text, such as `1889` or `ca. 1665`: give it next to each object.
 5. **The AI columns are the model's reading of the image, not the Met's catalog.** `subject_category`, `scene_type` and `style_period` are model judgments. `style_period` is not the Met's period field. When a question asks what the Met says, answer from the catalog columns and the curator tags.
 6. **Curator tags and depicted elements are separate sources. Name the one you used.** Curator tags (`fct_object_tag`) are the Met's own subject terms, such as `Landscapes` or `Cypresses`. Depicted elements are the model's. On the sync of October 31, 2026, 2,682 of the 7,416 scored curator tags matched an element (36%), which means the two disagree more often than they agree. When a question can be answered from either, give both results and say which source each came from.
@@ -59,7 +59,7 @@ The dbt MCP server lists saved queries but has no tool that runs one. Pass a sav
 
 ## Checked questions
 
-Each question has its SQL over the dbt models and the answer it returned on the sync of October 31, 2026. The same SQL returned the same rows on Snowflake and on DuckDB, both reading the same Managed Data Lake tables. When a question matches one of these, run its query. You may change the subject, the element, the decade or the department; change nothing else. If your result differs from the checked answer, the data has changed since that sync: report your result, not the checked one.
+Each question has its SQL over the dbt models and the answer it returned on the sync of October 31, 2026. The same SQL returned the same rows on Snowflake and on DuckDB, both reading the same Managed Data Lake tables. When a question matches one of these, run its query. You may change the subject, the element (both its singular and its plural, rule 3), the decade or the department; change nothing else. If your result differs from the checked answer, the data has changed since that sync: report your result, not the checked one.
 
 ### Landscapes with cypress trees from the 1880s
 
@@ -80,7 +80,10 @@ where o.subject_category = 'landscape'
     select 1
     from fct_object_depicted_element as e
     where e.object_id = o.object_id
-      and e.element like '%cypress%'
+      and (
+        ' ' || e.element || ' ' like '% cypress %'
+        or ' ' || e.element || ' ' like '% cypresses %'
+      )
   )
 order by o.object_id
 ```

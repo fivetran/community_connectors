@@ -3,19 +3,22 @@
 # every sync. Every metric and dataset named here must exist in the semantic manifest.
 model:
   instructions: >-
-    Definitions only. Every count comes from the dbt Semantic Layer (query_metrics), never from running these
-    expressions yourself. Every row is a public-domain object, so never filter on public domain. A null AI column
-    (subject_category, scene_type, style_period and the curator agreement columns) means the object was not
-    enriched, never "none" or "other": give the enriched count with every answer that uses one. The AI columns
-    are the vision model's reading of the image, not the Met's catalog.
+    Definitions only. Take every count from the dbt Semantic Layer (query_metrics), not by writing your own SQL
+    from these definitions; without the Semantic Layer, run the checked SQL in the pack's AGENTS.md. Every row is
+    a public-domain object, so never filter on public domain. A null AI column (subject_category, scene_type,
+    style_period and the curator agreement columns) means not classified, never "none" or "other": either the
+    object was not enriched (is_enriched is false), or the model answered with a value outside the allowed list.
+    Give the enriched count with every answer that uses one. The AI columns are the vision model's reading of the
+    image, not the Met's catalog.
 
 datasets:
   fct_objects_enriched:
     synonyms: [artworks, objects, works, paintings, collection objects]
     instructions: >-
       One row per live public-domain object in the departments the connector syncs. To find objects by what the
-      image shows, filter fct_object_depicted_element on element with a lowercase word match and join on
-      object_id; depicted_elements here is a list for reading. Filter date ranges on object_begin_date and quote
+      image shows, filter fct_object_depicted_element on element, matching the lowercase word and its plural as
+      whole words, never as part of a word (oak also matches cloak), and join on object_id; depicted_elements here
+      is a list for reading. Filter date ranges on object_begin_date and quote
       object_date. department_name keeps the Met's spelling, such as European Paintings.
 
 metrics:

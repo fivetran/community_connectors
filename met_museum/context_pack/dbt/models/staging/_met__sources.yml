@@ -14,9 +14,6 @@ sources:
       # Fivetran stamps every row with _fivetran_synced; quoted on the lake, like every other source column.
       loaded_at_field: >-
         {{ '"_fivetran_synced"' if var('quote_lake_identifiers') else '_fivetran_synced' }}
-      freshness:
-        warn_after: {count: 2, period: day}
-        error_after: {count: 7, period: day}
     quoting:
       database: false
       schema: "{{ var('quote_lake_identifiers') }}"
@@ -24,6 +21,13 @@ sources:
     tables:
       - name: department
         description: Every department of the Met, one row each. Deleted rows carry _fivetran_deleted = true.
+        config:
+          # The connector upserts every department on every sync, so this table alone shows whether syncs run.
+          # The other tables get rows only when the Met edits an object or the model enriches one, so a quiet week,
+          # or a sync with enrichment off, says nothing about the connector's health.
+          freshness:
+            warn_after: {count: 2, period: day}
+            error_after: {count: 7, period: day}
       - name: object
         description: >
           One row per public-domain object in the configured departments. The connector deletes an object that the

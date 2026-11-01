@@ -10,8 +10,8 @@ groups:
 
 # Every live row is a public-domain object: the connector deletes an object that stops being public domain. So
 # public_domain_object_count counts rows of fct_objects_enriched with no filter. The AI columns describe the image as
-# the Cortex model saw it; they are null when the object was not enriched (is_enriched = false), which is not the same
-# as the model seeing nothing.
+# the Cortex model saw it; they are null when the object was not enriched (is_enriched = false), or when the model's
+# value was not on the allowed list. Neither is the same as the model seeing nothing.
 
 models:
   - name: fct_objects_enriched
@@ -136,12 +136,15 @@ models:
         data_type: varchar
         description: >
           What the image is of, as the model classified it: landscape, portrait, religious, mythological, history,
-          genre_scene, still_life, animal, architecture, marine, abstract or other. Null when not enriched.
+          genre_scene, still_life, animal, architecture, marine, abstract or other. Null when not enriched, or when the
+          model's answer was not on this list.
         dimension:
           type: categorical
       - name: scene_type
         data_type: varchar
-        description: outdoor, indoor, mixed or none, as the model classified the image. Null when not enriched.
+        description: >
+          outdoor, indoor, mixed or none, as the model classified the image. Null when not enriched, or when the
+          model's answer was not on this list.
         dimension:
           type: categorical
       - name: style_period
@@ -153,7 +156,9 @@ models:
           type: categorical
       - name: dominant_colors
         data_type: varchar
-        description: A JSON array of up to five dominant colors from a fixed set of thirteen.
+        description: >
+          A JSON array of dominant colors from a fixed set of thirteen. The prompt asks for up to five, and the
+          connector keeps every allowed color the model returns, so a row can hold more.
       - name: materials_visible
         data_type: varchar
         description: A JSON array of materials the model saw, from a fixed set of seventeen.
@@ -232,8 +237,10 @@ models:
   - name: fct_object_depicted_element
     description: >
       One row per element the Cortex model saw in a live object's image, current enrichment only. Filter here to find
-      objects by what they show, for example element like '%cypress%', then join fct_objects_enriched on object_id.
-      Elements are lowercase noun phrases chosen by the model: match on a word, not on an exact phrase.
+      objects by what they show, then join fct_objects_enriched on object_id. Elements are lowercase noun phrases
+      chosen by the model, so match the word and its plural as whole words, for example
+      ' ' || element || ' ' like '% cypress %' or ' ' || element || ' ' like '% cypresses %'. A bare
+      like '%oak%' also matches cloak.
     config:
       group: met_museum_context
       access: public

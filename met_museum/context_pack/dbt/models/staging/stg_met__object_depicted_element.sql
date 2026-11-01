@@ -9,3 +9,4 @@ from {{ source('met', 'object_depicted_element') }} as d
 inner join {{ ref('stg_met__object_visual_attribute') }} as v
   on cast(d.{{ lake_col('object_id') }} as integer) = v.object_id
   and cast(d.{{ lake_col('enrichment_hash') }} as varchar) = v.enrichment_hash
+where {{ live_rows('object_depicted_element', 'd') }}

@@ -1,7 +1,7 @@
 """This connector syncs public-domain objects from The Metropolitan Museum of Art Collection API, with
 optional Snowflake Cortex vision enrichment of each object's image.
-See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
-and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
+See the Technical Reference documentation (https://fivetran.com/docs/connector-sdk/technical-reference)
+and the Best Practices documentation (https://fivetran.com/docs/connector-sdk#connectordevelopmentbestpractices) for details
 """
 
 # For reading configuration from a JSON file and for the configuration fingerprint
@@ -55,7 +55,8 @@ __VISUAL_ATTRIBUTE_TABLE = "object_visual_attribute"
 __DEPICTED_ELEMENT_TABLE = "object_depicted_element"
 
 # The API's CDN blocks a client for about a minute once it sends about 80 requests within a minute. A gap
-# of 0.8 seconds between requests is 75 a minute, so a long sync never reaches the block.
+# of 0.8 seconds from the start of one request to the start of the next, counting image downloads, allows
+# at most 75 a minute, so a long sync stays below the block.
 __MIN_REQUEST_INTERVAL_SECONDS = 0.8
 
 # Attempts for transient failures, with exponential backoff and up to a second of jitter.
@@ -74,9 +75,6 @@ __BLOCKED_DELAY_SECONDS = 60
 # never a reason to delete a row.
 __OBJECT_NOT_FOUND_MESSAGE = "ObjectID not found"
 __NOT_FOUND_STATUS_CODE = 404
-
-# The title of the page the image host returns for a file it does not have.
-__IMAGE_NOT_FOUND_TITLE = "404 - File or directory not found."
 
 # How much of an error response body goes into the error message.
 __ERROR_BODY_PREVIEW_CHARS = 300
@@ -172,7 +170,7 @@ def parse_department_ids(value) -> list:
     ids = set()
     for part in value.split(","):
         entry = part.strip()
-        if not entry.isdigit() or int(entry) <= 0:
+        if not entry.isdecimal() or int(entry) <= 0:
             raise ValueError(
                 f"Invalid department_ids entry {entry!r}: expected positive whole numbers separated by commas."
             )
@@ -197,7 +195,7 @@ def parse_positive_int(configuration: dict, key: str, default: int, ceiling: int
     if value is None:
         return default
     text = str(value)
-    if not text.isdigit() or not 0 < int(text) <= ceiling:
+    if not text.isdecimal() or not 0 < int(text) <= ceiling:
         raise ValueError(f"Invalid {key} {value!r}: expected a whole number from 1 to {ceiling}.")
     return int(text)
 
@@ -271,7 +269,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -419,7 +417,14 @@ def throttle(client: dict):
     client["last_request_at"] = time.monotonic()
 
 
-def send_request(client: dict, url: str, params=None, not_found_ok: bool = False, accept=None):
+def send_request(
+    client: dict,
+    url: str,
+    params=None,
+    not_found_ok: bool = False,
+    accept=None,
+    error_status_ok: bool = False,
+):
     """
     Send a GET request, retrying HTTP 403 (the CDN's rate block), 429 and 5xx, connection errors
     and timeouts. Any other error status fails at once.
@@ -429,12 +434,16 @@ def send_request(client: dict, url: str, params=None, not_found_ok: bool = False
         params: the query parameters.
         not_found_ok: return a 404 response to the caller instead of failing.
         accept: an Accept header to send instead of the session's application/json.
+        error_status_ok: return the error response to the caller instead of failing, at once for a
+            non-retryable status and after the last attempt for a retryable one.
     Returns:
-        The response, with status 200, or 404 when not_found_ok is true.
+        The response, with status 200, 404 when not_found_ok is true, or any status when
+        error_status_ok is true.
     Raises:
         RuntimeError: on a non-retryable status, any other request error, or when every attempt failed.
     """
     failure = None
+    last_response = None
     for attempt in range(1, __MAX_RETRIES + 1):
         delay = retry_delay(attempt)
         throttle(client)
@@ -444,7 +453,8 @@ def send_request(client: dict, url: str, params=None, not_found_ok: bool = False
                 url, params=params, headers=headers, timeout=__REQUEST_TIMEOUT_SECONDS
             )
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
-            failure = f"{type(error).__name__}: {error}"
+            # A transport failure on the last attempt fails even with error_status_ok: it is no status.
+            failure, last_response = f"{type(error).__name__}: {error}", None
         except requests.exceptions.RequestException as error:
             raise RuntimeError(f"Met request to {url} failed: {error}") from error
         else:
@@ -454,14 +464,19 @@ def send_request(client: dict, url: str, params=None, not_found_ok: bool = False
             if status == __BLOCKED_STATUS_CODE:
                 delay = __BLOCKED_DELAY_SECONDS
             elif status not in __RETRYABLE_STATUS_CODES:
+                if error_status_ok:
+                    return response
                 raise RuntimeError(
                     f"Met API returned HTTP {status} for {url}: "
                     f"{response.text[:__ERROR_BODY_PREVIEW_CHARS]}"
                 )
             failure = f"HTTP {status}"
+            last_response = response
         if attempt < __MAX_RETRIES:
             log.warning(f"Met request failed ({failure}); retrying in {delay:.0f}s")
             time.sleep(delay)
+    if error_status_ok and last_response is not None:
+        return last_response
     raise RuntimeError(f"Met request to {url} failed after {__MAX_RETRIES} attempts: {failure}")
 
 
@@ -509,15 +524,16 @@ def get_image(client: dict, url: str):
         client: the API client.
         url: the primaryImageSmall URL.
     Returns:
-        A tuple (bytes, content_type), or None when the image is missing, not an image, or too large.
+        A tuple (bytes, content_type), or None when the image host answers with an error status, or
+        the file is not an image or is too large. The caller keeps the object pending.
     Raises:
-        RuntimeError: if the request fails after retries, or a 404 is not the image host's not-found page.
+        RuntimeError: if every attempt failed with a connection error or a timeout.
     """
     # The image host answers some files with HTTP 406 when the request asks only for JSON.
-    response = send_request(client, url, not_found_ok=True, accept=__IMAGE_ACCEPT)
-    if response.status_code == __NOT_FOUND_STATUS_CODE:
-        if __IMAGE_NOT_FOUND_TITLE not in response.text:
-            raise RuntimeError(f"Unexpected 404 body for image {url}")
+    # Any error status is one object's broken image, not an outage: failing on it would stop this
+    # sync and every later one at the same object.
+    response = send_request(client, url, accept=__IMAGE_ACCEPT, error_status_ok=True)
+    if response.status_code != 200:
         return None
     content_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
     if not content_type.startswith(__IMAGE_CONTENT_TYPE_PREFIX):
@@ -576,7 +592,8 @@ def fetch_object_ids(client: dict, department_id: int, metadata_date) -> list:
         params["metadataDate"] = metadata_date
     body = get_json(client, "/objects", params=params)
     total, object_ids = body.get("total"), body.get("objectIDs")
-    # An empty result is total 0 with objectIDs null. Anything else without a list is not "no objects".
+    # An empty result is total 0 with objectIDs null; an empty list is accepted too. Anything else
+    # without a list is not "no objects".
     if object_ids is None and total == 0:
         return []
     if not isinstance(object_ids, list):
@@ -640,8 +657,9 @@ def resolve_state(state: dict, settings: dict):
         log.warning(f"Enrichment with {model} is new, so every object is read again to enrich it")
         reset_walk(state)
     state["department_fingerprint"] = fingerprint
-    if model is not None:
-        state["enrichment_model"] = model
+    # Null while enrichment is off, so turning it back on, even with the same model, restarts the
+    # walk and enriches the objects synced in between.
+    state["enrichment_model"] = model
 
 
 def sync_departments(client: dict, state: dict, settings: dict):
@@ -786,7 +804,8 @@ def enrich_object(
 def process_object(context: dict, department_id: int, object_id: int, state: dict, counts: dict):
     """
     Read one object and upsert it, or delete it when the API no longer has it or it is no longer
-    public domain.
+    public domain. A detail whose isPublicDomain is anything but true or false is skipped, so a
+    partial response neither deletes the row nor overwrites it.
     Args:
         context: the sync context.
         department_id: the department whose list returned the object.
@@ -794,6 +813,7 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         state: the sync state.
         counts: the per-sync counts.
     """
+    context["read_ids"].add(object_id)
     obj = get_object(context["client"], object_id)
     if obj is None:
         delete_object(object_id, state)
@@ -803,9 +823,13 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         counts["mismatched_id"] += 1
         state["pending_enrichment"].pop(str(object_id), None)
         return
-    if obj.get("isPublicDomain") is not True:
+    public_domain = obj.get("isPublicDomain")
+    if public_domain is False:
         delete_object(object_id, state)
         counts["deleted_not_public_domain"] += 1
+        return
+    if public_domain is not True:
+        counts["unknown_public_domain"] += 1
         return
     upsert_object(obj, department_id)
     counts["upserted"] += 1
@@ -869,17 +893,22 @@ def retry_pending_enrichments(context: dict, state: dict, counts: dict):
     """
     Read and enrich again the objects whose enrichment failed on an earlier sync. An incremental
     sync reads only the objects changed since the cursor, so without this pass a failed object
-    would wait until the Met edits it. The retries share the per-sync object and enrichment
-    budgets; an id leaves the list once it is enriched, deleted or no longer public domain.
+    would wait until the Met edits it. The pass runs after the walk finishes, with what is left of
+    the per-sync object and enrichment budgets, so objects that fail every time can never stop the
+    walk. An id leaves the list once it is enriched, deleted or no longer public domain.
     Args:
         context: the sync context.
         state: the sync state.
         counts: the per-sync counts.
     """
     pending = state["pending_enrichment"]
-    if context["cortex_session"] is None or not state["metadata_cursor"] or not pending:
+    # An id the walk read this sync, whether it failed again or was added, waits for the next sync.
+    queued = sorted(
+        (item for item in pending.items() if int(item[0]) not in context["read_ids"]),
+        key=lambda item: int(item[0]),
+    )
+    if context["cortex_session"] is None or not queued:
         return
-    queued = sorted(pending.items(), key=lambda item: int(item[0]))
     retried = 0
     for object_id, department_id in queued:
         if budget_exhausted(context):
@@ -898,7 +927,8 @@ def run_walk(context: dict, state: dict, counts: dict):
     Walk every configured department. With no metadata_cursor this is the historical sync, which reads
     every object; with one, it reads only the objects changed since. The objects the API no longer has
     or that are no longer public domain are deleted in both, so a full re-sync over earlier rows removes
-    them too. When every department is finished, the cursor moves to the day before the walk started.
+    them too. When every department is finished, the cursor moves to the day before the walk started,
+    and the pending enrichments are retried with what is left of the budgets.
     Args:
         context: the sync context.
         state: the sync state.
@@ -908,12 +938,10 @@ def run_walk(context: dict, state: dict, counts: dict):
         started = datetime.now(timezone.utc) - __CURSOR_OVERLAP
         state["pending_cursor"] = started.strftime(__METADATA_DATE_FORMAT)
     mode = "incremental" if state["metadata_cursor"] else "historical"
-    retry_pending_enrichments(context, state, counts)
     for department_id in context["settings"]["department_ids"]:
         if department_id in state["departments_done"]:
             continue
         if not walk_department(context, department_id, state, counts):
-            # The retries can use the whole budget before the walk reads an object.
             position = (
                 f"after object {state['after_object_id']}"
                 if state["after_object_id"] is not None
@@ -930,6 +958,7 @@ def run_walk(context: dict, state: dict, counts: dict):
     log.info(
         f"The {mode} sync is complete; the next sync reads objects changed since {state['metadata_cursor']}"
     )
+    retry_pending_enrichments(context, state, counts)
 
 
 def report_counts(counts: dict):
@@ -944,6 +973,9 @@ def report_counts(counts: dict):
     )
     skipped = {
         "objects whose detail carried a different id": counts["mismatched_id"],
+        "objects whose detail did not say whether they are public domain": counts[
+            "unknown_public_domain"
+        ],
         "objects without an image to enrich": counts["no_image"],
         "images that could not be downloaded or were too large": counts["image_unavailable"],
         "enrichments that failed or returned no valid field": counts["enrichment_failed"],
@@ -958,7 +990,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
@@ -974,6 +1006,7 @@ def update(configuration: dict, state: dict):
         "deleted_not_found": 0,
         "deleted_not_public_domain": 0,
         "mismatched_id": 0,
+        "unknown_public_domain": 0,
         "no_image": 0,
         "image_unavailable": 0,
         "enrichment_failed": 0,
@@ -984,6 +1017,7 @@ def update(configuration: dict, state: dict):
         "cortex_session": None,
         "objects_left": settings["max_objects_per_sync"],
         "enrichments_left": settings["max_enrichments_per_sync"],
+        "read_ids": set(),
     }
     try:
         sync_departments(context["client"], state, settings)

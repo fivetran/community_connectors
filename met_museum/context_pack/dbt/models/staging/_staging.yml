@@ -19,13 +19,19 @@ models:
           - unique
           - not_null
       - name: metadata_date
+        description: >
+          Null when the API sent no metadataDate or one the connector could not parse. The stamp joins compare it
+          null-safe, so that object keeps its constituents and tags, and the test only warns.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
 
   - name: stg_met__object_constituent
     description: >
       The constituents credited on a live object, current rows only: a row is kept when its object_metadata_date
-      equals the object's metadata_date.
+      equals the object's metadata_date. No mart reads it yet: it is the current-rows view to build a constituent
+      mart on, so a query never reads the source table's removed constituents.
     data_tests:
       - unique:
           arguments:

@@ -1,7 +1,7 @@
 -- The Cortex vision enrichment of a live object, one row per enriched object.
--- Live rows come from the inner join to stg_met__object, not from _fivetran_deleted: the connector deletes this row
--- with its object, and on the Managed Data Lake the enrichment tables have no _fivetran_deleted column until the
--- first delete lands, so filtering on it would fail on a lake that has never deleted an enrichment.
+-- Live rows only: the connector deletes this row with its object, so an object that is deleted and later comes back
+-- must not show its old enrichment before it is enriched again. live_rows leaves the filter out while the table has
+-- no _fivetran_deleted column, which it gets only when the first delete lands.
 -- dominant_colors and materials_visible are JSON arrays; they are kept as JSON text, which both engines read
 -- byte-identical from the same Iceberg file.
 
@@ -23,3 +23,4 @@ select
 from {{ source('met', 'object_visual_attribute') }} as v
 inner join {{ ref('stg_met__object') }} as o
   on cast(v.{{ lake_col('object_id') }} as integer) = o.object_id
+where {{ live_rows('object_visual_attribute', 'v') }}

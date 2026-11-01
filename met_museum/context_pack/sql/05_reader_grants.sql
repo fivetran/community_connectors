@@ -22,7 +22,9 @@
 -- Run it once after the first dbt build and the first publish. Every statement can run twice. Skip the file when only
 -- the role that owns the pack's objects reads them.
 --
--- Needs: MANAGE GRANTS, or ownership of each object granted on.
+-- Needs: the global MANAGE GRANTS privilege for the two future grants, which Snowflake requires in a standard schema
+-- even from the schema's owner (in a managed access schema, the owner can grant them). The other grants need MANAGE
+-- GRANTS or ownership of each object granted on.
 grant usage on database <pack_database> to role <reader_role>;
 grant usage on warehouse <warehouse> to role <reader_role>;
 

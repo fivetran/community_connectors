@@ -27,4 +27,4 @@ select
   {%- endfor %}
   {{ lake_col('metadata_date') }} as metadata_date
 from {{ source('met', 'object') }}
-where not coalesce({{ lake_col('_fivetran_deleted') }}, false)
+where {{ live_rows('object') }}

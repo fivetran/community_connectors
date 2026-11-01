@@ -44,3 +44,38 @@ where day_offset <= datediff(day, to_date('{{ start }}'), to_date('{{ end }}'))
 select cast(range as date) as date_day
 from range(date '{{ start }}', date '{{ end }}' + interval 1 day, interval 1 day)
 {%- endmacro %}
+
+{#- The filter that keeps a source table's live rows. A connector table gets its _fivetran_deleted column only when a
+    delete first lands, so the column can be missing on a new Managed Data Lake table or on a table of the local debug
+    warehouse that has no rows yet. The filter is written only when the column exists; without it, every row is live.
+    var('fivetran_deleted_tables') lists the tables that have the column, for a compile with no live connection
+    (parity.py passes the list it read from the lake). Otherwise the source table is described. -#}
+{% macro live_rows(table_name, alias=none) -%}
+  {%- set prefix = alias ~ '.' if alias else '' -%}
+  {%- if has_fivetran_deleted(table_name) -%}
+  not coalesce({{ prefix }}{{ lake_col('_fivetran_deleted') }}, false)
+  {%- else -%}
+  1 = 1
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro has_fivetran_deleted(table_name) -%}
+  {%- set known = var('fivetran_deleted_tables', none) -%}
+  {%- if known is not none -%}
+    {{ return(table_name in known) }}
+  {%- endif -%}
+  {%- if not execute -%}
+    {{ return(true) }}
+  {%- endif -%}
+  {{ return(adapter.dispatch('has_fivetran_deleted')(source('met', table_name))) }}
+{%- endmacro %}
+{% macro default__has_fivetran_deleted(relation) -%}
+  {%- set names = adapter.get_columns_in_relation(relation) | map(attribute='name') | map('lower') | list -%}
+  {{ return('_fivetran_deleted' in names) }}
+{%- endmacro %}
+{#- DuckDB's information_schema lists only one column per table of an attached Iceberg catalog, so the table is
+    described instead. -#}
+{% macro duckdb__has_fivetran_deleted(relation) -%}
+  {%- set described = run_query('describe ' ~ relation) -%}
+  {{ return('_fivetran_deleted' in (described.columns[0].values() | map('lower') | list)) }}
+{%- endmacro %}

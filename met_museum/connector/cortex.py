@@ -103,6 +103,12 @@ __CHAT_COMPLETIONS_PATH = "/api/v2/cortex/v1/chat/completions"
 # The account host must end with this suffix, with a label before it.
 __SNOWFLAKE_HOST_SUFFIX = ".snowflakecomputing.com"
 
+# Every label before the suffix is letters, digits, hyphens or underscores, so no character such as
+# ?, #, @ or : can move the request to another host while the value still ends with the suffix.
+__SNOWFLAKE_HOST_PATTERN = re.compile(
+    r"\A(?:[a-z0-9](?:[a-z0-9_\-]{0,61}[a-z0-9])?\.)+snowflakecomputing\.com\Z"
+)
+
 # Model names are letters, digits, dots and hyphens, so a value can never change the request's meaning.
 __MODEL_NAME_PATTERN = re.compile(r"\A[a-z0-9][a-z0-9.\-]{0,63}\Z")
 
@@ -162,6 +168,11 @@ def validate_settings(snowflake_account, snowflake_pat_token, cortex_model):
         )
     if not (host.endswith(__SNOWFLAKE_HOST_SUFFIX) and len(host) > len(__SNOWFLAKE_HOST_SUFFIX)):
         raise ValueError(f"snowflake_account must end with {__SNOWFLAKE_HOST_SUFFIX}.")
+    if not __SNOWFLAKE_HOST_PATTERN.match(host):
+        raise ValueError(
+            "snowflake_account must be a hostname of letters, digits, hyphens and underscores, "
+            f"with dots between labels, ending with {__SNOWFLAKE_HOST_SUFFIX}."
+        )
     if not __MODEL_NAME_PATTERN.match(cortex_model):
         raise ValueError(
             "cortex_model must be a Cortex model name such as claude-sonnet-5 "
@@ -192,8 +203,9 @@ def create_session(snowflake_pat_token: str) -> requests.Session:
 
 def enrichment_inputs(obj: dict, terms: list, model: str) -> dict:
     """
-    Collect everything an enrichment depends on: the image, the catalog text, the curator tags,
-    the model and the prompt version.
+    Collect everything an enrichment depends on: the image URL, the catalog text, the curator tags,
+    the model and the prompt version. The hash covers the URL, not the image bytes, so a file the
+    Met replaces at the same URL is not enriched again.
     Args:
         obj: the object detail response.
         terms: the object's curator tag terms.

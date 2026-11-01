@@ -69,6 +69,16 @@ DBT = os.environ.get("DBT_BIN", str(Path.home() / ".local/bin/dbt"))
 SNOWFLAKE_COMPILE_DATABASE = "MET_PACK"
 SNOWFLAKE_COMPILE_SCHEMA = "MET_MUSEUM_CONTEXT"
 
+# The six tables the connector writes, as the dbt source names them.
+SOURCE_TABLES = (
+    "department",
+    "object",
+    "object_constituent",
+    "object_tag",
+    "object_visual_attribute",
+    "object_depicted_element",
+)
+
 # Models the checked queries read. The time spine is left out: it reads nothing from the lake.
 SKIP_MODELS = {"metricflow_time_spine"}
 
@@ -102,7 +112,8 @@ where o.subject_category = 'landscape'
   and o.object_begin_date between 1880 and 1889
   and exists (
     select 1 from fct_object_depicted_element as e
-    where e.object_id = o.object_id and e.element like '%cypress%'
+    where e.object_id = o.object_id
+      and (' ' || e.element || ' ' like '% cypress %' or ' ' || e.element || ' ' like '% cypresses %')
   )
 order by o.object_id
 """
@@ -371,7 +382,11 @@ def snowflake_engine(args: argparse.Namespace) -> Engine:
     }
     target_path = compile_target(
         "snowflake",
-        {"lake_database": args.snowflake_database, "lake_schema": args.lake_schema},
+        {
+            "lake_database": args.snowflake_database,
+            "lake_schema": args.lake_schema,
+            "fivetran_deleted_tables": args.fivetran_deleted_tables,
+        },
         env,
     )
     prefix = re.compile(
@@ -421,6 +436,30 @@ def connect_duckdb_lake(lake: dict[str, str], client_secret: str):
     return connection
 
 
+def lake_tables_with_fivetran_deleted(args: argparse.Namespace) -> list[str]:
+    """
+    Return the connector tables in the lake that have a _fivetran_deleted column. A table gets the column only when the
+    first delete lands, and the staging models filter on it only where it exists (macro live_rows). Neither compile
+    has a live connection to look, so both get this list as var fivetran_deleted_tables; both engines read the same
+    Iceberg tables, so one list serves both.
+    Args:
+        args: the parsed command line.
+    """
+    lake = json.loads(Path(args.lake_config).read_text())
+    connection = connect_duckdb_lake(lake, Path(args.polaris_secret_file).read_text().strip())
+    try:
+        found = []
+        for table in SOURCE_TABLES:
+            described = connection.execute(
+                f'describe lake."{args.lake_schema}"."{table}"'
+            ).fetchall()
+            if "_fivetran_deleted" in {row[0].lower() for row in described}:
+                found.append(table)
+        return found
+    finally:
+        connection.close()
+
+
 def duckdb_engine(args: argparse.Namespace) -> tuple[Engine, Any]:
     """
     Compile the models for DuckDB and return an Engine over the attached lake, plus the raw connection.
@@ -430,7 +469,13 @@ def duckdb_engine(args: argparse.Namespace) -> tuple[Engine, Any]:
     lake = json.loads(Path(args.lake_config).read_text())
     client_secret = Path(args.polaris_secret_file).read_text().strip()
     target_path = compile_target(
-        "lake", {"lake_catalog": "lake", "lake_schema": args.lake_schema}, {}
+        "lake",
+        {
+            "lake_catalog": "lake",
+            "lake_schema": args.lake_schema,
+            "fivetran_deleted_tables": args.fivetran_deleted_tables,
+        },
+        {},
     )
     prefix = re.compile(r'"met_pack"\."met"\.')
     connection = connect_duckdb_lake(lake, client_secret)
@@ -850,6 +895,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     out(f'Snowflake: {args.snowflake_database}."{args.lake_schema}" (catalog-linked database)')
     out(f'DuckDB:    lake."{args.lake_schema}" (Polaris catalog attached in place)')
 
+    args.fivetran_deleted_tables = lake_tables_with_fivetran_deleted(args)
+    out(f"Tables with _fivetran_deleted: {', '.join(args.fivetran_deleted_tables) or 'none'}")
     snowflake = snowflake_engine(args)
     duck, duck_connection = duckdb_engine(args)
     compute_ok = True

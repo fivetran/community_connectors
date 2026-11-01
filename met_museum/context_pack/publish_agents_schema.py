@@ -185,6 +185,8 @@ def admin_api(env: dict[str, str], path: str) -> dict:
         sys.exit(f"dbt Admin API {path}: the response is not JSON")
     except urllib.error.URLError as exc:
         sys.exit(f"dbt Admin API {path}: {exc.reason}")
+    except TimeoutError:
+        sys.exit(f"dbt Admin API {path}: no response within {HTTP_TIMEOUT_SECONDS} seconds")
 
 
 def fetch(args: argparse.Namespace) -> None:
@@ -434,6 +436,10 @@ def compile_metric_sql(env: dict[str, str], metric_names: list[str]) -> dict[str
             sys.exit(f"compileSql {name}: HTTP {exc.code}")
         except urllib.error.URLError as exc:
             sys.exit(f"compileSql {name}: {exc.reason} ({url})")
+        except TimeoutError:
+            sys.exit(
+                f"compileSql {name}: no response within {HTTP_TIMEOUT_SECONDS} seconds ({url})"
+            )
         except ValueError:
             sys.exit(f"compileSql {name}: the response is not JSON ({url})")
         if not isinstance(payload, dict):
@@ -499,6 +505,9 @@ def stage_skills(skills: list[str], uses_schemas: list[str], skills_dir: Path) -
         key, sep, src = spec.partition("=")
         if not sep or not key or not src:
             sys.exit(f"--skill must be KEY=PATH, got {spec!r}")
+        # The key becomes the path skill/<key> in AGENTS.ROOT, so Met-Museum and met-museum would be two skills.
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", key):
+            sys.exit(f"--skill key {key!r} must be lowercase letters, digits and hyphens")
         body = Path(src).read_text()
         if body.startswith("---"):
             sys.exit(f"{src} already has frontmatter; merge uses: by hand")
