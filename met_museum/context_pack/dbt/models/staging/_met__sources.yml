@@ -22,9 +22,10 @@ sources:
       - name: department
         description: Every department of the Met, one row each. Deleted rows carry _fivetran_deleted = true.
         config:
-          # The connector upserts every department on every sync, so this table alone shows whether syncs run.
-          # The other tables get rows only when the Met edits an object or the model enriches one, so a quiet week,
-          # or a sync with enrichment off, says nothing about the connector's health.
+          # The connector upserts every department at the start of every sync, so this table shows whether syncs
+          # start. It does not show that objects synced: a sync that fails on every object walk still updates it, and
+          # the connector's sync history is where that failure shows. The other tables get rows only when the Met
+          # edits an object or the model enriches one, and their age says nothing about the connector's health.
           freshness:
             warn_after: {count: 2, period: day}
             error_after: {count: 7, period: day}

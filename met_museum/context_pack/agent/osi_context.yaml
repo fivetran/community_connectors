@@ -3,12 +3,13 @@
 # every sync. Every metric and dataset named here must exist in the semantic manifest.
 model:
   instructions: >-
-    Definitions only. Take every count from the dbt Semantic Layer (query_metrics), not by writing your own SQL
-    from these definitions; without the Semantic Layer, run the checked SQL in the pack's AGENTS.md. Every row is
+    Take every count from the dbt Semantic Layer (query_metrics), not by writing your own SQL
+    from these definitions. Without the Semantic Layer, run the checked SQL in the met-museum-agent skill. Every row is
     a public-domain object, so never filter on public domain. A null AI column (subject_category, scene_type,
-    style_period and the curator agreement columns) means not classified, never "none" or "other": either the
-    object was not enriched (is_enriched is false), or the model answered with a value outside the allowed list.
-    Give the enriched count with every answer that uses one. The AI columns are the vision model's reading of the
+    style_period, dominant_colors, materials_visible) means not classified, never "none" or "other": either the
+    object was not enriched (is_enriched is false), or the model gave no value on the allowed list. A null
+    curator agreement column means the object was not enriched or the Met gave it no curator tags to score.
+    Give the enriched count with every answer that uses an AI column. The AI columns are the vision model's reading of the
     image, not the Met's catalog.
 
 datasets:
@@ -17,7 +18,7 @@ datasets:
     instructions: >-
       One row per live public-domain object in the departments the connector syncs. To find objects by what the
       image shows, filter fct_object_depicted_element on element, matching the lowercase word and its plural as
-      whole words, never as part of a word (oak also matches cloak), and join on object_id; depicted_elements here
+      whole words, never as part of a word (oak also matches cloak), and join on object_id. depicted_elements here
       is a list for reading. Filter date ranges on object_begin_date and quote
       object_date. department_name keeps the Met's spelling, such as European Paintings.
 
@@ -25,7 +26,7 @@ metrics:
   public_domain_object_count:
     synonyms: [artworks, number of artworks, objects, object count, paintings, works in the collection]
     instructions: >-
-      The answer to every "how many objects" question. Every row is public domain, so this is the row count.
+      Use it for how many objects there are, overall or grouped by a dimension. Every row is public domain, so this is the row count.
       It covers only the departments the connector syncs, not the Met's whole collection.
   enriched_object_count:
     synonyms: [enriched objects, objects with AI tags, objects the model described]
@@ -36,17 +37,17 @@ metrics:
   curator_tags_matched_total:
     synonyms: [matched curator tags, tags the model matched]
     instructions: >-
-      Curator tags that match one of the model's depicted elements (AI tags), over enriched objects. The
+      Curator tags that match one of the model's depicted elements, over enriched objects. The
       numerator of curator_tag_agreement.
   curator_tags_scored_total:
     synonyms: [scored curator tags, curator tags compared]
     instructions: >-
-      Curator tags compared with the model's depicted elements (AI tags), over enriched objects. The denominator
+      Curator tags compared with the model's depicted elements, over enriched objects. The denominator
       of curator_tag_agreement.
   curator_tag_agreement:
     synonyms: [tag agreement, curator agreement, AI tag agreement, match rate between AI tags and curator tags]
     instructions: >-
       Matched curator tags over scored curator tags, so each tag weighs the same. Never average the per-object
       curator_tag_agreement column instead: that weighs an object with one tag the same as an object with ten.
-      Agreement measures how far the model's depicted elements (AI tags) and the curators name the same things,
+      Agreement measures how far the model's depicted elements and the curators name the same things,
       not whether the model is right: a curator tag such as Women can name what the model calls figure.

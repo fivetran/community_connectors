@@ -177,6 +177,7 @@ order by source_table
 select subject_category, count(object_id) as public_domain_object_count,
   sum(case when is_enriched then 1 else 0 end) as enriched_object_count
 from fct_objects_enriched
+where department_name = 'European Paintings'
 group by subject_category
 order by public_domain_object_count desc, subject_category nulls first
 """,

@@ -1,7 +1,7 @@
 -- The Cortex vision enrichment of a live object, one row per enriched object.
 -- Live rows only: the connector deletes this row with its object, so an object that is deleted and later comes back
--- must not show its old enrichment before it is enriched again. live_rows leaves the filter out while the table has
--- no _fivetran_deleted column, which it gets only when the first delete lands.
+-- must not show its old enrichment before it is enriched again. live_rows leaves the filter out only when the table
+-- has no _fivetran_deleted column.
 -- dominant_colors and materials_visible are JSON arrays; they are kept as JSON text, which both engines read
 -- byte-identical from the same Iceberg file.
 

@@ -7,7 +7,7 @@ When your agent has a dbt MCP server on this project, take counts from the dbt S
 ## The data
 
 - Source: The Metropolitan Museum of Art Collection API (`collectionapi.metmuseum.org`). Objects the Met marks public domain are released under Creative Commons Zero.
-- A Fivetran Connector SDK connector syncs the configured departments. It keeps only public-domain objects and deletes the row of an object the Met stops returning or stops marking public domain. Every live row is public domain, so never filter on it.
+- A Fivetran Connector SDK connector syncs the configured departments. It keeps only public-domain objects and deletes the row of an object the API reports as not found, or that the Met stops marking public domain. Every live row is public domain, so never filter on it.
 - When enrichment is on, the connector sends each object's web-size image to a Claude model through the Snowflake Cortex REST API. The model picks a subject category, scene type, style period, colors and materials from fixed lists, names up to 20 things it can see, and writes two or three sentences of alt text. The connector then counts how many of the object's curator tags match a thing the model named.
 - The dbt project `met_museum_context` builds the three models below from the connector's six tables. Constituents, tags and depicted elements the Met or the model no longer reports are dropped in staging, so they never reach an answer.
 - After the sync of October 31, 2026, the connector's tables held one department, European Paintings (department 11): 2,365 objects with begin dates from 1200 to 1920, all 2,365 of them enriched.
@@ -16,12 +16,12 @@ When your agent has a dbt MCP server on this project, take counts from the dbt S
 
 The numbers in these rules are examples from the sync of October 31, 2026. Answer from the query results, never from these examples.
 
-1. **A null AI column means not classified, never "none".** When `is_enriched` is false, every AI column is null: `subject_category`, `scene_type`, `style_period`, `dominant_colors`, `materials_visible`, `visual_description`, `depicted_elements` and the curator agreement columns. The model can also come back with a value that isn't on the allowed list, and the connector stores a null for it, so an enriched object can still have a null `subject_category`, `scene_type` or `style_period`. Report both kinds as not classified. Never count them as `other` or as showing nothing. Give the enriched count with every answer that uses an AI column, for example "2,365 of 2,365 objects enriched".
+1. **A null AI column means not classified, never "none".** When `is_enriched` is false, every AI column is null: `subject_category`, `scene_type`, `style_period`, `dominant_colors`, `materials_visible`, `visual_description`, `depicted_elements` and the curator agreement columns. The model can also come back with no value on the allowed list, and the connector stores a null for it, so an enriched object can still have a null `subject_category`, `scene_type`, `style_period`, `dominant_colors` or `materials_visible`. Report both kinds as not classified. An enriched object with no curator tags has null curator agreement columns, because there is nothing to score. Never count them as `other` or as showing nothing. Give the enriched count with every answer that uses an AI column, for example "2,365 of 2,365 objects enriched".
 2. **Find objects by what the image shows in `fct_object_depicted_element`.** Filter `element` there and join `fct_objects_enriched` on `object_id`. `depicted_elements` in `fct_objects_enriched` is a ' | '-separated list for reading. Do not filter on it.
 3. **Match an element on a whole word and its plural, never on part of a word.** The model writes elements as lowercase noun phrases of its own choosing, such as `cypress`, `cypress tree` or `cypress trees`. Put a space on each side of `element` and match the word with a space on each side, once for the singular and once for the plural, in lowercase: `(' ' || element || ' ' like '% cypress %' or ' ' || element || ' ' like '% cypresses %')`. A bare `like '%oak%'` also matches `cloak`, which the model names far more often than `oak`.
 4. **Filter date ranges on `object_begin_date`, and quote `object_date`.** "From the 1880s" is `object_begin_date between 1880 and 1889`. Say which field you filtered on. `object_date` is the Met's own text, such as `1889` or `ca. 1665`: give it next to each object.
 5. **The AI columns are the model's reading of the image, not the Met's catalog.** `subject_category`, `scene_type` and `style_period` are model judgments. `style_period` is not the Met's period field. When a question asks what the Met says, answer from the catalog columns and the curator tags.
-6. **Curator tags and depicted elements are separate sources. Name the one you used.** Curator tags (`fct_object_tag`) are the Met's own subject terms, such as `Landscapes` or `Cypresses`. Depicted elements are the model's. On the sync of October 31, 2026, 2,682 of the 7,416 scored curator tags matched an element (36%), which means the two disagree more often than they agree. When a question can be answered from either, give both results and say which source each came from.
+6. **Curator tags and depicted elements are separate sources. Name the one you used.** Curator tags (`fct_object_tag`) are the Met's own subject terms, such as `Landscapes` or `Cypresses`. Depicted elements are the model's. On the sync of October 31, 2026, 2,682 of the 7,416 scored curator tags matched an element (36%). When a question can be answered from either, give both results and say which source each came from.
 7. **Take curator agreement from the `curator_tag_agreement` metric, never from an average of the column.** The metric divides matched tags by scored tags over every object, so each tag weighs the same. Averaging the per-object column weighs an object with one tag the same as an object with ten. Agreement measures how far the model and the curators name the same things, not whether the model is right: a curator tag such as `Women` can name what the model calls `figure`.
 8. **Filter categorical values in lowercase, as written.** `subject_category` is one of `landscape`, `portrait`, `religious`, `mythological`, `history`, `genre_scene`, `still_life`, `animal`, `architecture`, `marine`, `abstract` or `other`. `scene_type` is `outdoor`, `indoor`, `mixed` or `none`. `department_name` keeps the Met's spelling, such as `European Paintings`.
 9. **The data covers the configured departments only.** An object from a department the connector does not sync is not missing from the Met. It is outside this data. Say so when a question names an artist, period or place the synced departments may not hold.
@@ -59,7 +59,7 @@ The dbt MCP server lists saved queries but has no tool that runs one. Pass a sav
 
 ## Checked questions
 
-Each question has its SQL over the dbt models and the answer it returned on the sync of October 31, 2026. The same SQL returned the same rows on Snowflake and on DuckDB, both reading the same Managed Data Lake tables. When a question matches one of these, run its query. You may change the subject, the element (both its singular and its plural, rule 3), the decade or the department; change nothing else. If your result differs from the checked answer, the data has changed since that sync: report your result, not the checked one.
+Each question has its SQL over the dbt models and the answer it returned on the sync of October 31, 2026. The same SQL returned the same rows on Snowflake and on DuckDB, both reading the same Managed Data Lake tables. When a question matches one of these, run its query. You may change the subject, the element (both its singular and its plural, rule 3), the decade or the department. Change nothing else. If your result differs from the checked answer, the data has changed since that sync. Report your result, not the checked one.
 
 ### Landscapes with cypress trees from the 1880s
 
@@ -88,7 +88,7 @@ where o.subject_category = 'landscape'
 order by o.object_id
 ```
 
-Checked answer: **2** paintings, both by Vincent van Gogh, 1889: 436535 *Wheat Field with Cypresses* and 437980 *Cypresses*. The model classified 13 objects from the 1880s as landscapes, and these 2 are the ones where it also saw a cypress. The curator tags alone find the same 2 (next question).
+Checked answer: 2 paintings, both by Vincent van Gogh, 1889: 436535 *Wheat Field with Cypresses* and 437980 *Cypresses*. The model classified 13 objects from the 1880s as landscapes, and these 2 are the ones where it also saw a cypress. The curator tags alone find the same 2 (next question).
 
 ### The same question from the curator tags alone
 
@@ -117,7 +117,7 @@ where o.object_begin_date between 1880 and 1889
 order by o.object_id
 ```
 
-Checked answer: **2** paintings, both by Vincent van Gogh, 1889: 436535 *Wheat Field with Cypresses* and 437980 *Cypresses*. The query on depicted elements finds the same 2 paintings, so for the 1880s the enrichment doesn't add anything the curator tags didn't already have. Across all decades the curators tag 4 objects `Cypresses`, the model names a cypress in 16, and 3 objects are in both.
+Checked answer: 2 paintings, both by Vincent van Gogh, 1889: 436535 *Wheat Field with Cypresses* and 437980 *Cypresses*. The query on depicted elements finds the same 2 paintings, so for the 1880s the enrichment doesn't add anything the curator tags didn't already have. Across all decades the curators tag 4 objects `Cypresses`, the model names a cypress in 16, and 3 objects are in both.
 
 ### Objects by subject
 

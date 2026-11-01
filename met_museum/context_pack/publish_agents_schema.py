@@ -263,7 +263,7 @@ def fetch(args: argparse.Namespace) -> None:
     (target / "semantic_manifest.json").write_text(json.dumps(semantic))
     fetched = {
         "run_id": args.run_id,
-        "host": env["DBT_HOST"],
+        "host": host_of(env["DBT_HOST"]).lower(),
         "environment_id": prod_env_id,
         "manifest_sha256": sha256_of(target / "manifest.json"),
         "semantic_manifest_sha256": sha256_of(target / "semantic_manifest.json"),
@@ -489,7 +489,7 @@ def osi(args: argparse.Namespace) -> None:
     else:
         require(env, "DBT_HOST", "DBT_PROD_ENV_ID", "DBT_TOKEN")
         # The compiled SQL must come from the environment whose run was fetched, not one an env file points at.
-        compiling_from = (env["DBT_HOST"], require_int(env, "DBT_PROD_ENV_ID"))
+        compiling_from = (host_of(env["DBT_HOST"]).lower(), require_int(env, "DBT_PROD_ENV_ID"))
         if compiling_from != (record["host"], record["environment_id"]):
             sys.exit(
                 f"run {record['run_id']} was fetched from {record['host']} environment {record['environment_id']}; "

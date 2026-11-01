@@ -45,11 +45,13 @@ select cast(range as date) as date_day
 from range(date '{{ start }}', date '{{ end }}' + interval 1 day, interval 1 day)
 {%- endmacro %}
 
-{#- The filter that keeps a source table's live rows. A connector table gets its _fivetran_deleted column only when a
-    delete first lands, so the column can be missing on a new Managed Data Lake table or on a table of the local debug
-    warehouse that has no rows yet. The filter is written only when the column exists; without it, every row is live.
-    var('fivetran_deleted_tables') lists the tables that have the column, for a compile with no live connection
-    (parity.py passes the list it read from the lake). Otherwise the source table is described. -#}
+{#- The filter that keeps a source table's live rows. In the Managed Data Lake used for this pack, all six tables of
+    the connector carry _fivetran_deleted, including the three it never deletes from. The filter is written only when
+    the column exists, and without it every row is live. dbt decides this when it builds the view, so a view built
+    before its table had the column stays unfiltered until the next build.
+    var('fivetran_deleted_tables') is for parity.py only, which compiles with no live connection and passes the list it
+    read from the lake. It must be a list, and names compare in lowercase. Never set it on the dbt platform, where it
+    would pin the filters instead of describing the source table. -#}
 {% macro live_rows(table_name, alias=none) -%}
   {%- set prefix = alias ~ '.' if alias else '' -%}
   {%- if has_fivetran_deleted(table_name) -%}
@@ -62,7 +64,10 @@ from range(date '{{ start }}', date '{{ end }}' + interval 1 day, interval 1 day
 {% macro has_fivetran_deleted(table_name) -%}
   {%- set known = var('fivetran_deleted_tables', none) -%}
   {%- if known is not none -%}
-    {{ return(table_name in known) }}
+    {%- if known is string or known is mapping or known is not iterable -%}
+      {{ exceptions.raise_compiler_error("var fivetran_deleted_tables must be a list of table names, got " ~ known) }}
+    {%- endif -%}
+    {{ return(table_name | lower in (known | map('lower') | list)) }}
   {%- endif -%}
   {%- if not execute -%}
     {{ return(true) }}

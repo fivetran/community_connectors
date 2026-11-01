@@ -20,12 +20,11 @@ models:
           - not_null
       - name: metadata_date
         description: >
-          Null when the API sent no metadataDate or one the connector could not parse. The stamp joins compare it
-          null-safe, so that object keeps its constituents and tags, and the test only warns.
+          Null when the API sent no metadataDate or one the connector could not parse. The stamp joins then cannot
+          tell that object's current constituents and tags from ones the Met removed. They leave those rows out,
+          and this test fails the build.
         data_tests:
-          - not_null:
-              config:
-                severity: warn
+          - not_null
 
   - name: stg_met__object_constituent
     description: >
@@ -64,8 +63,8 @@ models:
 
   - name: stg_met__object_visual_attribute
     description: >
-      The Cortex vision enrichment of a live object, one row per enriched object. Live rows come from the join to
-      stg_met__object.
+      The Cortex vision enrichment of a live object, one row per enriched object. A row is kept when its own
+      _fivetran_deleted is not true and its object is in stg_met__object.
     columns:
       - name: object_id
         data_tests:

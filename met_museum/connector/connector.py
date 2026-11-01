@@ -54,7 +54,7 @@ __TAG_TABLE = "object_tag"
 __VISUAL_ATTRIBUTE_TABLE = "object_visual_attribute"
 __DEPICTED_ELEMENT_TABLE = "object_depicted_element"
 
-# The API's CDN blocks a client for about a minute once it sends about 80 requests within a minute. A gap
+# In testing, requests 0.35 seconds apart drew HTTP 403 from the CDN for about a minute at a time. A gap
 # of 0.8 seconds from the start of one request to the start of the next, counting image downloads, allows
 # at most 75 a minute, so a long sync stays below the block.
 __MIN_REQUEST_INTERVAL_SECONDS = 0.8
@@ -462,8 +462,9 @@ def send_request(
                 stream=stream,
             )
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
-            # A transport failure on the last attempt fails even with error_status_ok: it is no status.
-            failure, last_response = f"{type(error).__name__}: {error}", None
+            # A transport failure carries no status. The last status response, if an earlier attempt
+            # got one, is kept, so the request fails outright only when every attempt failed this way.
+            failure = f"{type(error).__name__}: {error}"
         except requests.exceptions.RequestException as error:
             raise RuntimeError(f"Met request to {url} failed: {error}") from error
         else:
@@ -489,6 +490,8 @@ def send_request(
             time.sleep(delay)
     if error_status_ok and last_response is not None:
         return last_response
+    if last_response is not None:
+        last_response.close()
     raise RuntimeError(f"Met request to {url} failed after {__MAX_RETRIES} attempts: {failure}")
 
 
@@ -540,7 +543,8 @@ def get_image(client: dict, url: str):
         the file is not an image or is too large, or the body breaks off. The caller keeps the
         object pending.
     Raises:
-        RuntimeError: if every attempt failed with a connection error or a timeout.
+        RuntimeError: if every attempt failed with a connection error or a timeout, so no attempt
+            got a status from the image host.
     """
     # The image host answers some files with HTTP 406 when the request asks only for JSON.
     # Any error status is one object's broken image, not an outage: failing on it would stop this
@@ -872,10 +876,10 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         object_id: the object id.
         state: the sync state.
         counts: the per-sync counts.
-    Raises:
-        RuntimeError: if the detail carries another id, or an isPublicDomain that is not true or
-            false. The sync fails before the walk checkpoints past the object, so the next sync
-            reads it again instead of losing it, and the row is neither deleted nor overwritten.
+    A detail that carries another id, or an isPublicDomain that is not true or false, is skipped and
+    counted. The row is neither deleted nor overwritten, and the walk reads the object again when the
+    Met next edits it. Failing the sync on it would stop this sync and every later one at the same
+    object.
     """
     context["read_ids"].add(object_id)
     obj = get_object(context["client"], object_id)
@@ -883,19 +887,19 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         delete_object(object_id, state)
         counts["deleted_not_found"] += 1
         return
-    if as_int(obj.get("objectID")) != object_id:
-        raise RuntimeError(
-            f"Detail for object {object_id} carries objectID {obj.get('objectID')!r}"
-        )
     public_domain = obj.get("isPublicDomain")
+    if as_int(obj.get("objectID")) != object_id or not isinstance(public_domain, bool):
+        log.warning(
+            f"Skipping object {object_id}: its detail carries objectID {obj.get('objectID')!r} "
+            f"and isPublicDomain {public_domain!r}"
+        )
+        state["pending_enrichment"].pop(str(object_id), None)
+        counts["malformed_detail"] += 1
+        return
     if public_domain is False:
         delete_object(object_id, state)
         counts["deleted_not_public_domain"] += 1
         return
-    if public_domain is not True:
-        raise RuntimeError(
-            f"Detail for object {object_id} has isPublicDomain {public_domain!r}, not true or false"
-        )
     upsert_object(obj, department_id)
     counts["upserted"] += 1
     if context["cortex_session"] is not None:
@@ -1050,6 +1054,9 @@ def report_counts(counts: dict):
         f"deleted as no longer public domain: {counts['deleted_not_public_domain']}"
     )
     skipped = {
+        "objects whose detail carried another id or no true or false isPublicDomain": counts[
+            "malformed_detail"
+        ],
         "objects without an image to enrich": counts["no_image"],
         "images that could not be downloaded or were too large": counts["image_unavailable"],
         "enrichments that failed or returned no valid field": counts["enrichment_failed"],
@@ -1082,6 +1089,7 @@ def update(configuration: dict, state: dict):
         "no_image": 0,
         "image_unavailable": 0,
         "enrichment_failed": 0,
+        "malformed_detail": 0,
     }
     context = {
         "settings": settings,
