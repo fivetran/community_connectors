@@ -38,6 +38,7 @@ from transform import (
     build_department_row,
     build_object_row,
     build_tag_rows,
+    parse_timestamp,
     tag_terms,
 )
 
@@ -121,6 +122,7 @@ __STATE_KEYS = (
     "enrichment_hashes",
     "pending_enrichment",
     "retry_after_object_id",
+    "malformed_pending",
 )
 
 
@@ -420,6 +422,17 @@ def throttle(client: dict):
     client["last_request_at"] = time.monotonic()
 
 
+def close_response(response):
+    """
+    Close a response, when there is one. A streamed response holds its pooled connection until it is
+    closed.
+    Args:
+        response: a response, or None.
+    """
+    if response is not None:
+        response.close()
+
+
 def send_request(
     client: dict,
     url: str,
@@ -463,35 +476,34 @@ def send_request(
             )
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
             # A transport failure carries no status. The last status response, if an earlier attempt
-            # got one, is kept, so the request fails outright only when every attempt failed this way.
+            # got one, is kept for a caller that passed error_status_ok.
             failure = f"{type(error).__name__}: {error}"
         except requests.exceptions.RequestException as error:
             raise RuntimeError(f"Met request to {url} failed: {error}") from error
         else:
             status = response.status_code
             if status == 200 or (status == __NOT_FOUND_STATUS_CODE and not_found_ok):
+                close_response(last_response)
                 return response
             if status == __BLOCKED_STATUS_CODE:
                 delay = __BLOCKED_DELAY_SECONDS
             elif status not in __RETRYABLE_STATUS_CODES:
                 if error_status_ok:
+                    close_response(last_response)
                     return response
                 raise RuntimeError(
                     f"Met API returned HTTP {status} for {url}: "
                     f"{response.text[:__ERROR_BODY_PREVIEW_CHARS]}"
                 )
             failure = f"HTTP {status}"
-            # A streamed response holds its connection until it is closed.
-            if last_response is not None:
-                last_response.close()
+            close_response(last_response)
             last_response = response
         if attempt < __MAX_RETRIES:
             log.warning(f"Met request failed ({failure}); retrying in {delay:.0f}s")
             time.sleep(delay)
     if error_status_ok and last_response is not None:
         return last_response
-    if last_response is not None:
-        last_response.close()
+    close_response(last_response)
     raise RuntimeError(f"Met request to {url} failed after {__MAX_RETRIES} attempts: {failure}")
 
 
@@ -675,6 +687,7 @@ def reset_walk(state: dict):
     # The walk reads every object again, so it finds the failed enrichments itself.
     state["pending_enrichment"] = {}
     state["retry_after_object_id"] = None
+    state["malformed_pending"] = {}
 
 
 def resolve_state(state: dict, settings: dict):
@@ -692,6 +705,7 @@ def resolve_state(state: dict, settings: dict):
     state["department_ids_synced"] = state["department_ids_synced"] or []
     state["enrichment_hashes"] = state["enrichment_hashes"] or {}
     state["pending_enrichment"] = state["pending_enrichment"] or {}
+    state["malformed_pending"] = state["malformed_pending"] or {}
 
     fingerprint = json.dumps(settings["department_ids"])
     model = settings["cortex_model"] if settings["enable_cortex"] else None
@@ -761,6 +775,7 @@ def delete_object(object_id: int, state: dict):
     # The second argument is a dictionary containing the primary key of the row.
     op.delete(table=__OBJECT_TABLE, keys={"object_id": object_id})
     state["pending_enrichment"].pop(str(object_id), None)
+    state["malformed_pending"].pop(str(object_id), None)
     delete_enrichment(object_id, state)
 
 
@@ -877,9 +892,9 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
         state: the sync state.
         counts: the per-sync counts.
     A detail that carries another id, or an isPublicDomain that is not true or false, is skipped and
-    counted. The row is neither deleted nor overwritten, and the walk reads the object again when the
-    Met next edits it. Failing the sync on it would stop this sync and every later one at the same
-    object.
+    counted. The row is neither deleted nor overwritten, and the id is kept in malformed_pending.
+    reread_malformed_details reads the object again after each later walk until its detail is
+    whole. Failing the sync on it would stop this sync and every later one at the same object.
     """
     context["read_ids"].add(object_id)
     obj = get_object(context["client"], object_id)
@@ -893,15 +908,23 @@ def process_object(context: dict, department_id: int, object_id: int, state: dic
             f"Skipping object {object_id}: its detail carries objectID {obj.get('objectID')!r} "
             f"and isPublicDomain {public_domain!r}"
         )
-        state["pending_enrichment"].pop(str(object_id), None)
+        state["malformed_pending"][str(object_id)] = department_id
         counts["malformed_detail"] += 1
         return
+    state["malformed_pending"].pop(str(object_id), None)
     if public_domain is False:
         delete_object(object_id, state)
         counts["deleted_not_public_domain"] += 1
         return
     upsert_object(obj, department_id)
     counts["upserted"] += 1
+    if parse_timestamp(obj.get("metadataDate")) is None:
+        # The row is written, but its tag and constituent stamps are null. The context pack's
+        # not_null test on metadata_date fails the dbt build until the Met fixes the record.
+        log.warning(
+            f"Object {object_id} has no readable metadataDate: {obj.get('metadataDate')!r}"
+        )
+        counts["no_metadata_date"] += 1
     if context["cortex_session"] is not None:
         enrich_object(context, obj, department_id, object_id, state, counts)
 
@@ -1004,13 +1027,51 @@ def retry_pending_enrichments(context: dict, state: dict, counts: dict):
     )
 
 
+def reread_malformed_details(context: dict, state: dict, counts: dict):
+    """
+    Read again the objects whose detail was skipped as malformed on an earlier sync. An incremental
+    sync reads only the objects changed since the cursor, so without this pass a skipped object would
+    wait until the Met edits it.
+    The pass runs after the walk finishes, with what is left of the per-sync object budget. An id
+    leaves the list once its detail is whole, whether the object is then upserted or deleted.
+    Args:
+        context: the sync context.
+        state: the sync state, checkpointed every __CHECKPOINT_EVERY_OBJECTS objects.
+        counts: the per-sync counts.
+    """
+    # An id the walk read this sync, whether it was skipped again or added, waits for the next sync.
+    queued = sorted(
+        (
+            item
+            for item in state["malformed_pending"].items()
+            if int(item[0]) not in context["read_ids"]
+        ),
+        key=lambda item: int(item[0]),
+    )
+    reread = 0
+    for object_id, department_id in queued:
+        if context["objects_left"] <= 0:
+            break
+        context["objects_left"] -= 1
+        process_object(context, department_id, int(object_id), state, counts)
+        reread += 1
+        if reread % __CHECKPOINT_EVERY_OBJECTS == 0:
+            save_state(state)
+    if queued:
+        save_state(state)
+        log.info(
+            f"Read {reread} of {len(queued)} objects skipped as malformed again; "
+            f"{len(state['malformed_pending'])} are still skipped"
+        )
+
+
 def run_walk(context: dict, state: dict, counts: dict):
     """
     Walk every configured department. With no metadata_cursor this is the historical sync, which reads
     every object; with one, it reads only the objects changed since. The objects the API no longer has
     or that are no longer public domain are deleted in both, so a full re-sync over earlier rows removes
     them too. When every department is finished, the cursor moves to the day before the walk started,
-    and the pending enrichments are retried with what is left of the budgets.
+    and the skipped objects and pending enrichments are read again with what is left of the budgets.
     Args:
         context: the sync context.
         state: the sync state.
@@ -1040,6 +1101,7 @@ def run_walk(context: dict, state: dict, counts: dict):
     log.info(
         f"The {mode} sync is complete; the next sync reads objects changed since {state['metadata_cursor']}"
     )
+    reread_malformed_details(context, state, counts)
     retry_pending_enrichments(context, state, counts)
 
 
@@ -1057,6 +1119,7 @@ def report_counts(counts: dict):
         "objects whose detail carried another id or no true or false isPublicDomain": counts[
             "malformed_detail"
         ],
+        "objects written with no readable metadataDate": counts["no_metadata_date"],
         "objects without an image to enrich": counts["no_image"],
         "images that could not be downloaded or were too large": counts["image_unavailable"],
         "enrichments that failed or returned no valid field": counts["enrichment_failed"],
@@ -1090,6 +1153,7 @@ def update(configuration: dict, state: dict):
         "image_unavailable": 0,
         "enrichment_failed": 0,
         "malformed_detail": 0,
+        "no_metadata_date": 0,
     }
     context = {
         "settings": settings,

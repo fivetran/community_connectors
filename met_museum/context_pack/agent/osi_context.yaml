@@ -6,9 +6,10 @@ model:
     Take every count from the dbt Semantic Layer (query_metrics), not by writing your own SQL
     from these definitions. Without the Semantic Layer, run the checked SQL in the met-museum-agent skill. Every row is
     a public-domain object, so never filter on public domain. A null AI column (subject_category, scene_type,
-    style_period, dominant_colors, materials_visible) means not classified, never "none" or "other": either the
-    object was not enriched (is_enriched is false), or the model gave no value on the allowed list. A null
-    curator agreement column means the object was not enriched or the Met gave it no curator tags to score.
+    style_period, dominant_colors, materials_visible, visual_description, depicted_elements) means not classified,
+    never "none" or "other": either the object was not enriched (is_enriched is false), or the model gave no value
+    on the allowed list. A null curator_tag_agreement means the object was not enriched or the Met gave it no
+    curator tags to score. An enriched object with no tags has 0 in curator_tags_matched and curator_tags_missed.
     Give the enriched count with every answer that uses an AI column. The AI columns are the vision model's reading of the
     image, not the Met's catalog.
 

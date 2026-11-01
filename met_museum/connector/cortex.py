@@ -325,6 +325,22 @@ def retry_delay(attempt: int) -> float:
     return min(__BASE_DELAY_SECONDS * 2 ** (attempt - 1), __MAX_DELAY_SECONDS)
 
 
+def answer_text(payload):
+    """
+    Return the text of the first choice of a Chat Completions response, or None when the response
+    does not have that shape.
+    Args:
+        payload: the decoded response body.
+    Returns:
+        The text, or None.
+    """
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    return content if isinstance(content, str) else None
+
+
 def call_cortex(session: requests.Session, snowflake_account: str, body: dict):
     """
     Send one Chat Completions request. HTTP 429 and 5xx, connection errors, timeouts and invalid
@@ -334,7 +350,8 @@ def call_cortex(session: requests.Session, snowflake_account: str, body: dict):
         snowflake_account: the account host.
         body: the request body.
     Returns:
-        The text of the first choice, or None when every attempt failed transiently.
+        The text of the first choice, or None when the response had no text or every attempt failed
+        transiently.
     Raises:
         CortexEnrichmentError: on HTTP 400, 401, 403, 404 or another non-retryable status.
     """
@@ -344,10 +361,7 @@ def call_cortex(session: requests.Session, snowflake_account: str, body: dict):
         try:
             response = session.post(url, json=body, timeout=__REQUEST_TIMEOUT_SECONDS)
             if response.status_code == 200:
-                choices = response.json().get("choices") or []
-                message = (choices[0].get("message") or {}) if choices else {}
-                content = message.get("content")
-                return content if isinstance(content, str) else None
+                return answer_text(response.json())
             if response.status_code not in __RETRYABLE_STATUS_CODES:
                 raise CortexEnrichmentError(
                     f"Cortex returned HTTP {response.status_code}: "

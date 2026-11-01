@@ -172,7 +172,7 @@ order by source_table
         "sum(case when is_enriched then 1 else 0 end) as enriched_object_count from fct_objects_enriched",
     ),
     (
-        "saved_query_objects_by_subject",
+        "agents_objects_by_subject",
         """
 select subject_category, count(object_id) as public_domain_object_count,
   sum(case when is_enriched then 1 else 0 end) as enriched_object_count
@@ -439,10 +439,9 @@ def connect_duckdb_lake(lake: dict[str, str], client_secret: str):
 
 def lake_tables_with_fivetran_deleted(args: argparse.Namespace) -> list[str]:
     """
-    Return the connector tables in the lake that have a _fivetran_deleted column. A table gets the column only when the
-    first delete lands, and the staging models filter on it only where it exists (macro live_rows). Neither compile
-    has a live connection to look, so both get this list as var fivetran_deleted_tables; both engines read the same
-    Iceberg tables, so one list serves both.
+    Return the connector tables in the lake that have a _fivetran_deleted column. The staging models filter on the
+    column only where it exists (macro live_rows). Neither compile has a live connection to look, so both get this
+    list as var fivetran_deleted_tables; both engines read the same Iceberg tables, so one list serves both.
     Args:
         args: the parsed command line.
     """
