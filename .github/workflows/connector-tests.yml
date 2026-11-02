@@ -1,59 +1,90 @@
+# Runs pytest for any connector whose PR diff touches a pytest-collectible test
+# file (test_*.py / *_test.py). One job, one step: figures out which connectors
+# changed, then runs pytest for each. If detection logic raises an error, the
+# step itself fails - there's no separate job boundary to hide that behind.
 name: Connector Tests
 
 on:
   pull_request:
 
 permissions:
+  # Read-only: this workflow only inspects the PR diff and runs tests, it
+  # never needs to write to the repo.
   contents: read
 
 env:
   # Minimum line coverage of connector.py (or the connector folder) required to pass.
   COVERAGE_MIN: 50
+  # Only a user with triage/write+ access can apply labels to someone else's PR
+  # (fork contributors cannot label their own PR), so this label is an
+  # effective maintainer-only override. Apply it and re-run to bypass this check.
+  OVERRIDE_LABEL: skip-connector-tests
 
 jobs:
-  detect:
-    name: Detect connectors to test
+  tests:
+    name: Connector tests
     runs-on: ubuntu-latest
-    outputs:
-      connectors: ${{ steps.find.outputs.connectors }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # Full git history, not just the latest commit - needed so
+          # `git diff base...head` below can find both commits and compare them.
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Find connectors that have a test directory
-        id: find
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Detect connectors and run their tests
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          OVERRIDE_LABEL: ${{ env.OVERRIDE_LABEL }}
+          COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
           python3 <<'EOF'
           import json
           import os
           import pathlib
           import subprocess
+          import sys
+          import venv
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
 
-          TEST_DIR_NAMES = {"test", "tests"}
+          # --- Maintainer override: a labelled PR skips this check entirely ---
+          # Only a user with triage/write+ access can label another contributor's
+          # PR (fork authors cannot label their own), so this is an effective
+          # maintainer-only override.
+          labels = json.loads(os.environ["PR_LABELS"] or "[]")
+          if os.environ["OVERRIDE_LABEL"] in labels:
+              print(f"'{os.environ['OVERRIDE_LABEL']}' label present - skipping connector tests.")
+              sys.exit(0)
+
+          # --- Detect which connectors changed and have pytest-collectible tests ---
+
+          def is_pytest_file_name(name):
+              # pytest's own default collection rule: test_*.py or *_test.py.
+              # No directory-name check (e.g. requiring a "tests/" folder) - a
+              # file matching this naming rule counts no matter where it sits,
+              # since that's genuinely what pytest itself will collect and run.
+              return name.startswith("test_") or name.endswith("_test.py")
+
+          # base/head are the PR's base and head commit SHAs. "..." (triple-dot)
+          # diffs head against their common ancestor, which is how GitHub itself
+          # computes a PR's file list - so this matches what the PR page shows.
           base = os.environ["BASE_SHA"]
           head = os.environ["HEAD_SHA"]
 
-          def has_test_dir(connector):
-              # Any folder named test/tests anywhere under the connector counts.
-              return any(
-                  p.is_dir() and p.name in TEST_DIR_NAMES
-                  for p in pathlib.Path(connector).rglob("*")
-              )
-
-          all_connectors = sorted(
-              p.name
-              for p in pathlib.Path(".").iterdir()
-              if p.is_dir() and not p.name.startswith(".") and has_test_dir(p.name)
-          )
-
-          # Include deleted files too, so a deletion still selects its connector.
+          # --name-only (no --diff-filter) includes added, modified AND deleted
+          # files, so a deleted test file still shows up in this list.
           diff = subprocess.run(
               ["git", "diff", "--name-only", f"{base}...{head}"],
               capture_output=True,
@@ -62,78 +93,49 @@ jobs:
           ).stdout
 
           changed = set()
-          shared_change = False
           for path in diff.splitlines():
-              parts = pathlib.PurePosixPath(path).parts
-              # A file at the repo root, or under a hidden folder such as .github,
-              # is shared code: run every connector that has tests.
-              if len(parts) == 1 or parts[0].startswith("."):
-                  shared_change = True
-              else:
+              changed_path = pathlib.PurePosixPath(path)
+              parts = changed_path.parts
+              # Select only connectors where the changed file itself is pytest-collectible.
+              # parts[0] is the top-level connector folder name, e.g.
+              # "federal_register" for "federal_register/tests/test_connector.py".
+              # len(parts) > 1 excludes files sitting directly in the repo root
+              # (those have no connector folder to select).
+              # NOTE: a file that was DELETED by this PR no longer exists in the
+              # checked-out tree, so pytest can't run it - deleting the only test
+              # file a connector has means that connector is never selected here.
+              if (
+                  len(parts) > 1
+                  and not parts[0].startswith(".")
+                  and changed_path.suffix == ".py"
+                  and is_pytest_file_name(changed_path.name)
+              ):
                   changed.add(parts[0])
 
-          if shared_change:
-              selected = all_connectors
-          else:
-              selected = sorted(c for c in changed if c in all_connectors)
+          connectors = sorted(changed)
+          print(f"Connectors to test: {connectors or 'none'}")
 
-          print(f"Connectors with tests: {all_connectors or 'none'}")
-          print(f"Shared/root change detected: {shared_change}")
-          print(f"Connectors to test: {selected or 'none'}")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-              out.write(f"connectors={json.dumps(selected, separators=(',', ':'))}\n")
-          EOF
-
-  tests:
-    name: Connector tests
-    needs: detect
-    # Runs even when detect failed or found nothing, so the required check always reports.
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.13'
-
-      - name: Run tests for each selected connector
-        env:
-          CONNECTORS: ${{ needs.detect.outputs.connectors }}
-          DETECT_RESULT: ${{ needs.detect.result }}
-          COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
-          RUNNER_TEMP_DIR: ${{ runner.temp }}
-        run: |
-          python3 <<'EOF'
-          import json
-          import os
-          import subprocess
-          import sys
-          import venv
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          if os.environ["DETECT_RESULT"] != "success":
-              print("::error::Detect step did not succeed; cannot tell which connectors to test.")
-              sys.exit(1)
-
-          connectors = json.loads(os.environ["CONNECTORS"] or "[]")
           if not connectors:
               print("No connectors with tests changed. Nothing to run.")
               sys.exit(0)
 
+          # --- Run pytest for each selected connector ---
+
+          # runner.temp: a scratch directory unique to this job run, cleaned up
+          # automatically afterward - used below to hold one venv per connector.
           temp = Path(os.environ["RUNNER_TEMP_DIR"])
           coverage_min = os.environ["COVERAGE_MIN"]
+          # Maps connector name -> list of human-readable failure reasons, built
+          # up across the loop below and used both for the step summary and the
+          # final exit-code decision.
           failed = {}
 
           def skipped_count(junit_path):
+              # JUnit XML is the standard machine-readable test report format;
+              # pytest writes one here via --junitxml=... below. Each <testsuite>
+              # element carries a "skipped" count attribute - sum them up so we
+              # can catch skipped tests, which pytest otherwise reports as if
+              # they were a kind of pass (exit code 0 either way).
               if not junit_path.is_file():
                   return None
               root = ET.parse(junit_path).getroot()
@@ -148,6 +150,11 @@ jobs:
               python = env_dir / "bin" / "python"
 
               requirements = Path(connector, "requirements.txt")
+              # fivetran_connector_sdk/requests are pre-installed in the real
+              # Connector SDK runtime (per _template_connector/requirements.txt),
+              # so contributors' own requirements.txt files don't list them -
+              # install them explicitly here to match. pytest/pytest-cov are
+              # this workflow's own testing tools, not part of the connector.
               install = [
                   str(python), "-m", "pip", "install",
                   "fivetran_connector_sdk", "requests", "pytest", "pytest-cov",
@@ -155,10 +162,19 @@ jobs:
               if requirements.is_file():
                   install += ["-r", str(requirements)]
 
+              # check=False lets us capture non-zero exit codes and add clear,
+              # connector-specific failure reasons instead of raising immediately.
               if subprocess.run(install, check=False).returncode != 0:
                   reasons.append("dependency install failed")
               else:
+                  # Measure coverage of connector.py specifically when it exists
+                  # (the SDK's standard entry-point file), otherwise fall back to
+                  # the whole connector folder.
                   cov_target = "connector" if Path(connector, "connector.py").is_file() else "."
+                  # junit_name is a bare filename, not a path, because the
+                  # subprocess below runs with cwd=connector - pytest writes it
+                  # relative to that cwd, so `junit` (used to read it back after)
+                  # must point at the same place: connector/junit.xml.
                   junit_name = "junit.xml"
                   junit = Path(connector, junit_name)
                   result = subprocess.run(
@@ -167,24 +183,40 @@ jobs:
                           f"--junitxml={junit_name}",
                           f"--cov={cov_target}",
                           "--cov-report=term",
+                          # pytest-cov itself fails the run (non-zero exit) if
+                          # coverage comes in under this percentage - this is
+                          # the guard against tests that pass but exercise
+                          # little or none of the actual connector code.
                           f"--cov-fail-under={coverage_min}",
                       ],
                       cwd=connector,
+                      # Keep control in this script so we can classify failures
+                      # (no tests, test failures, low coverage, missing report).
                       check=False,
                   )
-                  if result.returncode != 0:
+                  if result.returncode == 5:
+                      reasons.append("pytest collected no tests (exit code 5)")
+                  elif result.returncode != 0:
                       reasons.append(f"pytest exit code {result.returncode} (failed, or coverage below {coverage_min}%)")
 
                   skipped = skipped_count(junit)
                   if skipped is None:
                       reasons.append("no JUnit report was produced")
                   elif skipped > 0:
+                      # pytest writes junit.xml because we pass --junitxml=...; it is a
+                      # machine-readable XML report with per-suite test stats.
+                      # Skips can happen via @pytest.mark.skip/skipif, missing optional
+                      # dependencies/services, or marker deselection. Treat them as
+                      # failures so the check is never "green but partially untested".
                       reasons.append(f"{skipped} test(s) skipped; skips are not allowed")
               print("::endgroup::")
 
               if reasons:
                   failed[connector] = reasons
 
+          # GITHUB_STEP_SUMMARY: a markdown file GitHub renders on the workflow
+          # run's summary page - gives a readable pass/fail-per-connector view
+          # without having to open each job's raw log.
           summary = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary:
               with open(summary, "a", encoding="utf-8") as out:
@@ -195,6 +227,9 @@ jobs:
                       else:
                           out.write(f"- `{connector}`: passed\n")
 
+          # Exiting non-zero here is what actually makes this GitHub Actions
+          # step (and so the job, and the PR check) show as failed - everything
+          # above just prepared the reporting.
           if failed:
               for connector, reasons in failed.items():
                   print(f"::error::{connector}: {'; '.join(reasons)}")
