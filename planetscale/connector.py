@@ -165,6 +165,10 @@ __INTEGER_TYPES = {
 __FLOAT_TYPES = {"FLOAT32", "FLOAT64"}
 # VStream column types that are kept as bytes
 __BINARY_TYPES = {"BLOB", "BINARY", "VARBINARY", "BIT", "GEOMETRY"}
+# Character set id that VStream reports for numbers, dates, decimals, and JSON, which arrive as ASCII or UTF-8 text
+__BINARY_CHARSET_ID = 63
+# Character set ids are 16-bit numbers; only the lower 16 bits of the reported value are used
+__CHARSET_ID_MASK = 0xFFFF
 # VStream column types that are passed through unconverted. ENUM was checked against PlanetScale and
 # arrives as its text label, so only SET and GEOMETRY need the warning.
 __UNCONVERTED_TYPES = {"SET", "GEOMETRY"}
@@ -822,6 +826,38 @@ def peek_position(stub, configuration: dict, table: str, shard: str) -> str:
         ) from error
 
 
+def decode_text(field, raw: bytes) -> str:
+    """
+    Decode a text value with the character set that VStream reports for its column. The copy and the change stream
+    can send the same column in different character sets, and each stream announces its own, so decoding by the
+    announced character set gives the same string for the same value. Nothing is guessed.
+    Args:
+        field: The query.Field that describes the column.
+        raw: The value as bytes.
+    Returns:
+        The decoded string.
+    Raises:
+        RuntimeError: if the character set is not known or the bytes are not valid in it.
+    """
+    charset_id = field.charset & __CHARSET_ID_MASK
+    if charset_id in (0, __BINARY_CHARSET_ID):
+        encoding = "utf-8"
+    else:
+        try:
+            encoding = pymysql.charset.charset_by_id(charset_id).encoding
+        except KeyError as error:
+            raise RuntimeError(
+                f"Column '{field.name}' uses character set id {charset_id}, which this connector does not support"
+            ) from error
+    try:
+        return raw.decode(encoding)
+    except (UnicodeDecodeError, LookupError) as error:
+        raise RuntimeError(
+            f"A value of column '{field.name}' is not valid in its character set (id {charset_id}, {encoding}); "
+            "the sync stops instead of guessing"
+        ) from error
+
+
 def to_python(field, raw):
     """
     Convert one VStream value (text-encoded bytes) into a Python value the SDK stores sensibly.
@@ -840,10 +876,7 @@ def to_python(field, raw):
         return float(raw)
     if kind in __BINARY_TYPES:
         return bytes(raw)
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("latin-1")  # same fallback as the Go connector's CleanStringValue
+    return decode_text(field, raw)
 
 
 def to_record(fields: list, row) -> dict:
@@ -891,6 +924,26 @@ def has_partial_json(change) -> bool:
     return change.HasField("json_partial_values") and any(change.json_partial_values.cols)
 
 
+def is_partial_row_image(change) -> bool:
+    """
+    Tell whether the after image of a row change leaves out columns. That happens when the source does not log full
+    row images, and the left out values would arrive as NULL.
+    Args:
+        change: The binlog.RowChange from the stream.
+    Returns:
+        True if the data_columns bitmap says that any column is missing from the after image.
+    """
+    if not change.HasField("data_columns"):
+        return False
+    bitmap = change.data_columns
+    for column in range(bitmap.count):
+        byte_index = column // 8
+        byte = bitmap.cols[byte_index] if byte_index < len(bitmap.cols) else 0
+        if not byte >> (column % 8) & 1:
+            return True
+    return False
+
+
 def delete_row(table: str, before: dict, primary_key: list):
     """
     Delete the row that the before image describes.
@@ -916,7 +969,7 @@ def emit_row_changes(row_event, fields: list, table: str, primary_key: list) -> 
     Returns:
         The number of row changes handled.
     Raises:
-        RuntimeError: if a row change carries a partial JSON value.
+        RuntimeError: if a row change carries a partial JSON value or a partial row image.
     """
     if strip_keyspace(row_event.table_name) != table:
         return 0
@@ -926,6 +979,12 @@ def emit_row_changes(row_event, fields: list, table: str, primary_key: list) -> 
             raise RuntimeError(
                 f"Table '{table}' sent an update with a partial JSON value, which this connector cannot "
                 "apply. The sync stops instead of writing an incomplete JSON document."
+            )
+        if change.HasField("after") and is_partial_row_image(change):
+            raise RuntimeError(
+                f"Table '{table}' sent an update with a partial row image, which this connector cannot apply "
+                "because it would overwrite the columns that were left out with NULL. The source must log "
+                "full row images."
             )
         before = to_record(fields, change.before) if change.HasField("before") else None
         after = to_record(fields, change.after) if change.HasField("after") else None
@@ -1293,7 +1352,8 @@ def sync_table(
     checkpointer: Checkpointer,
 ):
     """
-    Sync every shard of one table, truncating it first if this is its first sync, then checkpoint if it changed.
+    Sync every shard of one table, truncating it first if this is its first sync or its shards changed, then
+    checkpoint if it changed.
     Args:
         stub: The VStream client stub.
         configuration: a dictionary that holds the configuration settings for the connector.
@@ -1303,6 +1363,15 @@ def sync_table(
         checkpointer: Saves the cursors and checkpoints state.
     """
     table_state = checkpointer.state["tables"].setdefault(table, {"shards": {}})
+    saved_shards = set(table_state["shards"])
+    if saved_shards and saved_shards != set(shards):
+        # After a reshard the cursors of the old shards cannot be mixed with fresh copies of the new ones: changes
+        # such as deletes on a retired shard since its last checkpoint would never be replayed
+        log.warning(
+            f"[{table}] the shards changed from {sorted(saved_shards)} to {sorted(shards)}; "
+            "copying the table again from scratch"
+        )
+        table_state["shards"] = {}
     cursors = {shard: Cursor.from_state(table_state["shards"].get(shard)) for shard in shards}
     is_first_sync = not any(cursor.has_progress() for cursor in cursors.values())
     if is_first_sync:
