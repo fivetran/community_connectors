@@ -5,7 +5,14 @@
 name: Connector Tests
 
 on:
+  # Default pull_request types (opened/synchronize/reopened) don't include
+  # label changes, so applying or removing skip-connector-tests on an
+  # existing PR would never trigger a new run - re-running the old failed
+  # job also replays its original event payload (old PR_LABELS), so the
+  # override couldn't be applied retroactively either way. labeled/unlabeled
+  # makes a label change start a fresh run with the current labels.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   # Read-only: this workflow only inspects the PR diff and runs tests, it
@@ -85,8 +92,18 @@ jobs:
 
           # --name-only (no --diff-filter) includes added, modified AND deleted
           # files, so a deleted test file still shows up in this list.
+          # --no-renames: without it, git reports a renamed file as a single
+          # entry under its NEW name only, hiding the old name entirely. That
+          # let a contributor bypass detection by renaming their only test
+          # file to something that doesn't match (e.g. test_connector.py ->
+          # connector_checks.py): the old, matching name would simply vanish
+          # from this diff and the connector would never be selected. With
+          # --no-renames, git reports it as a delete + an add instead, so the
+          # old (matching) path still appears here, the connector still gets
+          # selected, and pytest's own zero-tests guard below catches the
+          # now-missing test file.
           diff = subprocess.run(
-              ["git", "diff", "--name-only", f"{base}...{head}"],
+              ["git", "diff", "--no-renames", "--name-only", f"{base}...{head}"],
               capture_output=True,
               text=True,
               check=True,
