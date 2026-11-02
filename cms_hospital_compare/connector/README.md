@@ -27,10 +27,12 @@ Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
 ```bash
-fivetran init --template cms_hospital_compare/connector
+fivetran init --template cms_hospital_compare
 ```
 
 `fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
+
+This template creates `connector/` and the optional `context_pack/` side by side. Run `fivetran debug` and `fivetran deploy` from `connector/`.
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
@@ -179,7 +181,29 @@ The `dataset_release` table has one row per dataset per release the connector re
 
 ## Additional files
 
-The optional context pack in [`../context_pack/`](../context_pack/) gives AI agents DuckDB views and agent instructions for this connector's tables: the latest recorded CMS release only, CMS text values cast to numbers and dates, and four checked questions with their SQL and answers. The connector does not use it.
+The optional context pack in [`../context_pack/`](../context_pack/) gives an AI agent what it needs to answer questions from this connector's tables. The connector writes every value as text, exactly as CMS sends it, and keeps every release, so a query over the raw tables can return a wrong number with no error: `score > '21.3'` compares text, and `Not Available` sorts above every rate. The pack has no code. Besides its `.gitignore`, it holds two files:
+
+- **`cms_views.sql`**: DuckDB views that read only the latest recorded CMS release, cast CMS's text values to numbers and dates, and set every CMS sentinel (`Not Available`, `N/A`, `Too Few to Report` and the rest) to NULL. Each view has a `_history` twin that keeps every recorded release.
+- **`agent/AGENTS.md`**: instructions for the agent: which views to use, the rules each query follows, four checked questions with their SQL and answers, and the answer format.
+
+The pack sits beside `connector/`, not inside it, so `fivetran debug` and `fivetran deploy` never package it, and the connector does not use it. It makes no LLM call and needs no API key. It needs DuckDB, as the CLI or a library; the SQL was run on DuckDB 1.3.2 (CLI) and 1.5.5 (Python).
+
+To use it, sync the connector with `fivetran debug`, run `duckdb` from `context_pack/`, and start the session with:
+
+```sql
+ATTACH '../connector/files/warehouse.db' AS cms_wh (READ_ONLY);
+SET search_path = 'memory.main,cms_wh.tester';
+select count(distinct table_name) as tables_loaded from dataset_release where not coalesce(_fivetran_deleted, false);
+.read cms_views.sql
+```
+
+Run `.read cms_views.sql` only when `tables_loaded` is 5. Before the first release is recorded, the check fails with `Referenced column "_fivetran_deleted" not found`; treat that as not loaded. In a tool without the CLI's `.read` command, pass the file's contents instead. The views are created in the session's own database, so the warehouse is never written. Create nothing in that database named like a raw table (`hospital`, `hrrp` and the others): it comes first on the search path and would hide the warehouse table from every view.
+
+The views exist only in the session that created them. To use the pack with Claude Code, Cursor or another agent, give it `agent/AGENTS.md` as its instructions and a tool that runs DuckDB SQL, and have the agent run the setup statements above as its first call, in its own session. Point a DuckDB MCP server at an in-memory database (`:memory:`). With a DuckDB file instead, `memory.main` does not exist: replace it in the search path with `<file name>.main` (for `scratch.duckdb`, `scratch.main`), and attach the warehouse and set the search path again on every new connection.
+
+The same views run over a Fivetran Managed Data Lake: attach the lake's Iceberg catalog in DuckDB after the first sync finishes, then set the search path to `memory.main,<lake_catalog_alias>.<connection_schema>`. Never put the catalog credentials in a tracked file.
+
+The data is published hospital benchmarks, not patient records. A rate above the national rate is not CMS's statistical finding that a hospital is worse.
 
 ## Additional considerations
 
