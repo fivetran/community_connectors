@@ -144,6 +144,17 @@ jobs:
           for connector in connectors:
               print(f"::group::{connector}")
               reasons = []
+
+              # A deleted test file still shows up in the diff (see the NOTE
+              # above), so a connector whose folder was entirely removed by
+              # this PR can still end up in `connectors`. Nothing to run in
+              # that case - skip it rather than crash trying to cd into a
+              # directory that no longer exists.
+              if not Path(connector).is_dir():
+                  print(f"{connector} no longer exists at this commit; skipping.")
+                  print("::endgroup::")
+                  continue
+
               # One venv per connector: requirements pins can conflict across connectors.
               env_dir = temp / f"venv-{connector}"
               venv.create(env_dir, with_pip=True)
