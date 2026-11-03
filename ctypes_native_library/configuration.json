@@ -1,0 +1,5 @@
+{
+  "library_path": "<OPTIONAL_LIBRARY_PATH_DEFAULT_lib_src/libstublibrary.so>",
+  "total_rows": "<OPTIONAL_TOTAL_ROWS_DEFAULT_50000>",
+  "batch_size": "<OPTIONAL_BATCH_SIZE_DEFAULT_1000>"
+}
