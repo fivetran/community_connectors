@@ -6,6 +6,7 @@ name: Connector Tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   # Read-only: this workflow only inspects the PR diff and runs tests, it
