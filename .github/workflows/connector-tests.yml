@@ -22,9 +22,7 @@ permissions:
 env:
   # Minimum line coverage of connector.py (or the connector folder) required to pass.
   COVERAGE_MIN: 50
-  # Only a user with triage/write+ access can apply labels to someone else's PR
-  # (fork contributors cannot label their own PR), so this label is an
-  # effective maintainer-only override. Apply it and re-run to bypass this check.
+  # Applying this label skips the connector tests check for this PR.
   OVERRIDE_LABEL: skip-connector-tests
 
 jobs:
@@ -66,10 +64,7 @@ jobs:
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          # --- Maintainer override: a labelled PR skips this check entirely ---
-          # Only a user with triage/write+ access can label another contributor's
-          # PR (fork authors cannot label their own), so this is an effective
-          # maintainer-only override.
+          # --- Override: a labelled PR skips this check entirely ---
           labels = json.loads(os.environ["PR_LABELS"] or "[]")
           if os.environ["OVERRIDE_LABEL"] in labels:
               print(f"'{os.environ['OVERRIDE_LABEL']}' label present - skipping connector tests.")
