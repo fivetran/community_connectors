@@ -171,10 +171,6 @@ jobs:
               else:
                   # Measure coverage across every .py file in the connector's
                   # folder, not just connector.py - picks up helper modules too.
-                  # NOTE: this also counts the test files' own executed lines
-                  # (there's no exclusion for tests/), which can inflate the
-                  # percentage somewhat, since a test file's own simple lines
-                  # "execute" just by running.
                   cov_target = "."
                   # junit_name is a bare filename, not a path, because the
                   # subprocess below runs with cwd=connector - pytest writes it
