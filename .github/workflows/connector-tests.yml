@@ -5,14 +5,7 @@
 name: Connector Tests
 
 on:
-  # Default pull_request types (opened/synchronize/reopened) don't include
-  # label changes, so applying or removing skip-connector-tests on an
-  # existing PR would never trigger a new run - re-running the old failed
-  # job also replays its original event payload (old PR_LABELS), so the
-  # override couldn't be applied retroactively either way. labeled/unlabeled
-  # makes a label change start a fresh run with the current labels.
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   # Read-only: this workflow only inspects the PR diff and runs tests, it
@@ -22,8 +15,6 @@ permissions:
 env:
   # Minimum line coverage required across the connector's whole folder to pass.
   COVERAGE_MIN: 50
-  # Applying this label skips the connector tests check for this PR.
-  OVERRIDE_LABEL: skip-connector-tests
 
 jobs:
   tests:
@@ -49,8 +40,6 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          OVERRIDE_LABEL: ${{ env.OVERRIDE_LABEL }}
           COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
@@ -63,12 +52,6 @@ jobs:
           import venv
           import xml.etree.ElementTree as ET
           from pathlib import Path
-
-          # --- Override: a labelled PR skips this check entirely ---
-          labels = json.loads(os.environ["PR_LABELS"] or "[]")
-          if os.environ["OVERRIDE_LABEL"] in labels:
-              print(f"'{os.environ['OVERRIDE_LABEL']}' label present - skipping connector tests.")
-              sys.exit(0)
 
           # --- Detect which connectors changed and have pytest-collectible tests ---
 
