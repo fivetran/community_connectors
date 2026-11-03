@@ -134,6 +134,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Harness.io** ([harness_io](https://github.com/fivetran/community_connectors/tree/main/harness_io)) - Connect and sync data from Harness.io
 - **Healthchecks.io** ([healthchecks](https://github.com/fivetran/community_connectors/tree/main/healthchecks)) - Sync health check monitoring from Healthchecks.io
 - **HubSpot** ([hubspot](https://github.com/fivetran/community_connectors/tree/main/hubspot)) - Sync event data from HubSpot
+- **HTTP Proxy with requests** ([http_proxy](https://github.com/fivetran/community_connectors/tree/main/http_proxy)) - Demonstrates how to route API requests through an HTTP or HTTPS proxy using the requests library
 - **Iterate** ([iterate](https://github.com/fivetran/community_connectors/tree/main/iterate)) - Sync NPS survey data from Iterate REST API
 - **Keycloak** ([keycloak](https://github.com/fivetran/community_connectors/tree/main/keycloak)) - Sync IAM data from Keycloak Admin API
 - **LeaveDates** ([leavedates](https://github.com/fivetran/community_connectors/tree/main/leavedates)) - Sync leave report data from LeaveDates API
