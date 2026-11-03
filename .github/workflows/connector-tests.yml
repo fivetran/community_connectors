@@ -132,7 +132,9 @@ jobs:
               return sum(int(suite.get("skipped", 0)) for suite in root.iter("testsuite"))
 
           for connector in connectors:
-              print(f"::group::{connector}")
+              print(f"\n{'='*70}")
+              print(f"Testing: {connector}")
+              print(f"{'='*70}\n")
               reasons = []
 
               # A deleted test file still shows up in the diff (see the NOTE
@@ -142,7 +144,6 @@ jobs:
               # directory that no longer exists.
               if not Path(connector).is_dir():
                   print(f"{connector} no longer exists at this commit; skipping.")
-                  print("::endgroup::")
                   continue
 
               # One venv per connector: requirements pins can conflict across connectors.
@@ -213,7 +214,6 @@ jobs:
                       # dependencies/services, or marker deselection. Treat them as
                       # failures so the check is never "green but partially untested".
                       reasons.append(f"{skipped} test(s) skipped; skips are not allowed")
-              print("::endgroup::")
 
               if reasons:
                   failed[connector] = reasons
