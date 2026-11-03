@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  # Minimum line coverage of connector.py (or the connector folder) required to pass.
+  # Minimum line coverage required across the connector's whole folder to pass.
   COVERAGE_MIN: 50
   # Applying this label skips the connector tests check for this PR.
   OVERRIDE_LABEL: skip-connector-tests
