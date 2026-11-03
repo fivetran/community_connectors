@@ -90,12 +90,10 @@ jobs:
               # NOTE: this matches on the path's NAME only, not on whether the
               # file still exists - a DELETED test file still shows up here and
               # still selects its connector (its name alone is enough to match).
-              # That's intentional: pytest then runs for real against the
-              # current tree, finds the file gone, collects 0 tests, and the
-              # exit-code-5 handling further down fails the check - so deleting
-              # a connector's last test file is still caught, just via pytest
-              # actually running and finding nothing, not via this selection
-              # step excluding it upfront.
+              # If the whole connector folder was deleted, it's skipped later (safe).
+              # If only the tests were deleted, pytest runs and fails on 0 tests collected.
+              # This way, deleting the whole connector is safe (no error), but deleting
+              # just the tests is caught as a real failure.
               if (
                   len(parts) > 1
                   and not parts[0].startswith(".")
