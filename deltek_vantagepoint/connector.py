@@ -25,17 +25,38 @@ from fivetran_connector_sdk import Operations as op
 # The calendar-month format used for the monthly full-resync checkpoint
 from sync_limits import __STATE_MONTH_FORMAT
 
-# The Hubs and General/Configuration table/endpoint registries
-from table_registry import __CONFIG_TABLES, __TABLES
+# The Hubs, General/Configuration, detail/child, and Billing table/endpoint registries
+from table_registry import __CONFIG_TABLES, __HUB_CHILDREN, __INVOICE_HEADER_TABLE, __TABLES
 
 # Configuration validation and OAuth2 token acquisition
 from authentication import validate_configuration, get_access_token
 
-# The schema() entry point
-from schema_builder import schema
-
 # The per-table sync logic, including the monthly full resync
 from sync_operations import should_run_full_resync, sync_config_table, sync_table
+
+
+def schema(configuration: dict):
+    """
+    Define the schema function which lets you configure the schema your connector delivers.
+    See the technical reference documentation for more details on the schema function:
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    """
+    tables = [
+        {"table": table_config["table"], "primary_key": table_config["primary_key"]}
+        for table_config in __TABLES + __CONFIG_TABLES
+    ]
+    for hub_config in __HUB_CHILDREN.values():
+        for child in hub_config["children"]:
+            tables.append({"table": child["table"], "primary_key": child["primary_key"]})
+    tables.append(
+        {
+            "table": __INVOICE_HEADER_TABLE["table"],
+            "primary_key": __INVOICE_HEADER_TABLE["primary_key"],
+        }
+    )
+    return tables
 
 
 def update(configuration: dict, state: dict):

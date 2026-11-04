@@ -115,9 +115,8 @@ The connector's logic is split across the following files by concern:
 - `table_registry.py` - the list of tables synced by the connector and the Vantagepoint endpoint, primary key, and (where applicable) parent/child relationship for each one.
 - `authentication.py` - configuration validation and sign-in to obtain an access token.
 - `rest_client.py` - the HTTP request logic used by every table sync, including retries, backoff, and automatic token refresh.
-- `schema_builder.py` - defines the tables and primary keys delivered to the destination.
 - `sync_operations.py` - the sync logic for each table type, including the monthly full resync.
-- `connector.py` - the entry point that brings the above together.
+- `connector.py` - the entry point that brings the above together, including the `schema()` function that defines the tables and primary keys delivered to the destination.
 
 A handful of endpoints are intentionally not synced by this connector - see the comments in `table_registry.py` for which ones and why. One returns plaintext credentials, one requires a custom hub name specific to your instance, and one has no documented example available to verify its format against.
 
