@@ -17,6 +17,9 @@ import time
 # For validating the optional "initial_sync_start_date" configuration value's format
 from datetime import datetime
 
+# For validating the "base_url" configuration value's format
+from urllib.parse import urlparse
+
 # For making the OAuth2 token request
 import requests
 
@@ -36,16 +39,19 @@ def validate_configuration(configuration: dict):
     exists - a present-but-null or whitespace-only value (e.g. "base_url": null) would otherwise
     pass validation here and then fail later with a confusing AttributeError instead of this
     descriptive configuration error.
-    Also validates the optional "initial_sync_start_date" value's format, if set: it's used
-    directly as a filterHash value and passed through sync_table()'s cursor on every force_full
-    resync (not just the first sync ever - see sync_table() in sync_operations.py), so an invalid
-    value (a typo, or an impossible date like "2026-02-30T00:00:00") must be caught here, before
+    Also validates the format of "base_url" and the optional "initial_sync_start_date" value, if
+    set: "base_url" is used to build every API call this connector makes (see update() in
+    connector.py), and "initial_sync_start_date" is used directly as a filterHash value and passed
+    through sync_table()'s cursor on every force_full resync (not just the first sync ever - see
+    sync_table() in sync_operations.py), so an invalid value for either (a bare hostname with no
+    scheme, a typo, or an impossible date like "2026-02-30T00:00:00") must be caught here, before
     a monthly resync truncates real data and only then fails on the first page request.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Raises:
-        ValueError: if any required configuration parameter is missing or blank, or if
-            "initial_sync_start_date" is set but not a valid "YYYY-MM-DDTHH:MM:SS" timestamp.
+        ValueError: if any required configuration parameter is missing or blank, if "base_url"
+            isn't a valid http(s) URL, or if "initial_sync_start_date" is set but not a valid
+            "YYYY-MM-DDTHH:MM:SS" timestamp.
     """
     required_configs = [
         "base_url",
@@ -59,6 +65,14 @@ def validate_configuration(configuration: dict):
         value = configuration.get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required configuration value: {key}")
+
+    base_url = configuration.get("base_url")
+    parsed_base_url = urlparse(base_url)
+    if parsed_base_url.scheme not in ("http", "https") or not parsed_base_url.netloc:
+        raise ValueError(
+            f"Invalid configuration value for base_url: {base_url!r} - expected a URL starting "
+            f"with http:// or https://, e.g. https://YOUR_TENANT.deltekfirst.com/YOUR_FIRM"
+        )
 
     initial_sync_start_date = configuration.get("initial_sync_start_date")
     if initial_sync_start_date:
