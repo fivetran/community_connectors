@@ -114,6 +114,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Clerk** ([clerk](https://github.com/fivetran/community_connectors/tree/main/clerk)) - Sync user data from Clerk authentication
 - **Common Paper** ([commonpaper](https://github.com/fivetran/community_connectors/tree/main/commonpaper)) - Sync agreement data from Common Paper
 - **Courier** ([courier](https://github.com/fivetran/community_connectors/tree/main/courier)) - Sync notifications data from Courier multi-channel platform
+- **CubeTally** ([cubetally](https://github.com/fivetran/community_connectors/tree/main/cubetally)) - Sync products, customers, jobs, invoices, estimates and stock history from CubeTally field service and inventory software
 - **Customer Thermometer** ([customer_thermometer](https://github.com/fivetran/community_connectors/tree/main/customer_thermometer)) - Sync customer feedback from Customer Thermometer
 - **DataCamp** ([data_camp](https://github.com/fivetran/community_connectors/tree/main/data_camp)) - Sync course catalog from DataCamp LMS
 - **Discord** ([discord](https://github.com/fivetran/community_connectors/tree/main/discord)) - Sync data from Discord
