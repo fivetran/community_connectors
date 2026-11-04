@@ -37,7 +37,7 @@ from sync_limits import (
 from table_registry import __HUB_CHILDREN, __INVOICE_HEADER_TABLE
 
 # The shared HTTP GET wrapper with retry and token refresh
-from rest_client import get_api_response
+from rest_client import ApiStatusError, get_api_response
 
 # --------------------------------------------------------------------------------------
 # Incremental cursor logic
@@ -448,16 +448,12 @@ def sync_children_for_record(
                     payload, access_token = get_api_response(
                         url, {}, access_token, base_url, configuration
                     )
-                except RuntimeError as error:
-                    error_msg = str(error)
-                    # rest_client.py's get_api_response() raises this exact "API error: {status}
-                    # for {url}" format - match on that fixed prefix, not a substring search of the
-                    # whole message, so a URL that happens to contain the digits 400/403/404 (e.g.
-                    # a project code) can never be misclassified as one of these specific statuses.
-                    is_permission_denied = error_msg.startswith("API error: 403 for")
-                    is_bad_request = error_msg.startswith(
-                        "API error: 400 for"
-                    ) or error_msg.startswith("API error: 404 for")
+                except ApiStatusError as error:
+                    # Branch on the structured status_code ApiStatusError carries, rather than
+                    # parsing the exception message - a URL that happens to contain the digits
+                    # 400/403/404 (e.g. a project code) can never be misclassified this way.
+                    is_permission_denied = error.status_code == 403
+                    is_bad_request = error.status_code in (400, 404)
 
                     if force_full:
                         raise RuntimeError(
@@ -477,7 +473,7 @@ def sync_children_for_record(
                         # remaining children are skipped, not the whole child table.
                         log.warning(
                             f"Skipping children for {hub_name} '{parent_id}' - "
-                            f"API returned error: {error_msg}"
+                            f"API returned error: {error}"
                         )
                         break  # Skip all remaining children for this parent, move to next parent
 
@@ -552,7 +548,7 @@ def sync_invoice_header_for_project(
 
     try:
         payload, access_token = get_api_response(url, {}, access_token, base_url, configuration)
-    except RuntimeError as error:
+    except ApiStatusError as error:
         if force_full:
             raise RuntimeError(
                 f"Table '{table_name}' was truncated for the monthly full resync but failed while "
@@ -560,12 +556,12 @@ def sync_invoice_header_for_project(
                 f"than reporting it as successful. Underlying error: {error}"
             ) from error
 
-        # Same precise-match rationale as sync_children_for_record(): only a confirmed, persistent
-        # 403 is safe to log-and-skip-for-the-rest-of-this-sync. Anything else (an unexpected
-        # status code, or retries exhausted on a 5xx/timeout/connection error) is not confirmed to
-        # be persistent, so it raises instead - this stops the project's cursor from advancing
-        # past a record whose invoice header may only have failed transiently.
-        if str(error).startswith("API error: 403 for"):
+        # Same rationale as sync_children_for_record(): only a confirmed, persistent 403 is safe
+        # to log-and-skip-for-the-rest-of-this-sync. Anything else (an unexpected status code, or
+        # retries exhausted on a 5xx/timeout/connection error) is not confirmed to be persistent,
+        # so it raises instead - this stops the project's cursor from advancing past a record
+        # whose invoice header may only have failed transiently.
+        if error.status_code == 403:
             log.warning(
                 f"Table '{table_name}' failed with an unrecoverable error; skipping it for the "
                 f"rest of this sync: {error}"
