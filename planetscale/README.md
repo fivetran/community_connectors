@@ -110,7 +110,7 @@ The connector reads each table through VStream and sends the changes to Fivetran
 - Resharding – If the shards of the keyspace differ from the shards saved for a table, for example after a reshard, the `sync_table()` function truncates the table and copies it again for all shards. The saved positions of the old shards cannot be combined with fresh copies of the new ones, because deletes on a retired shard since its last checkpoint would never be replayed.
 - Data types – The `to_python()` function converts integers to `int`, floats to `float`, and binary values to `bytes`. Everything else arrives as text. The `decode_text()` function decodes it with the character set that VStream reports for the column, so the same value decodes to the same string whether it comes from the copy or from the change stream. For example, decimals, dates, times, and JSON values arrive as text, and ENUM values arrive as their text label.
 - Schema – The `schema()` function declares only the type of each primary key column, using `primary_key_sdk_type()`. A sync whose first operation is a delete has no upsert to infer the key type from. All other columns are inferred.
-- State – The `Checkpointer` class stores one cursor per table and shard and writes it with `op.checkpoint()` about once a minute while a table is read, after each table that was copied or changed, and at the end of the sync. The `prepare_state()` function drops the saved positions of tables that are no longer replicated and replaces state that belongs to a different database.
+- State – The `Checkpointer` class stores one cursor per table and shard, records a cursor for every shard of a table before the first checkpoint of that table, and writes the state with `op.checkpoint()` about once a minute while a table is read, after each table that was copied or changed, and at the end of the sync. The `prepare_state()` function drops the saved positions of tables that are no longer replicated and replaces state that belongs to a different database.
 
 The state has this structure:
 
@@ -146,6 +146,7 @@ The state has this structure:
 
 - The connector has been tested on an unsharded keyspace, on tables of up to 65,536 rows, and on a simulated large table. Multi-million-row tables, sharded keyspaces, and `ALTER TABLE` statements during a sync have not been tested.
 - Tables are synced one after another, each with its own stream.
+- In a sharded keyspace, all shards write to the same destination table, which is keyed by the primary key alone. The primary key of each table must therefore be unique across all shards. If two shards hold rows with the same key, the rows overwrite each other in the destination, and a delete on one shard deletes the row of the other.
 - `SET` and `GEOMETRY` values are passed through unconverted, and the connector logs a warning.
 - The connector does not provide the replica, shard selection, or starting GTID options of the Go connector.
 - A table that is dropped from the database or removed from `tables` stops syncing. Its rows stay in the destination.

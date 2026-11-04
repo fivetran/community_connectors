@@ -337,6 +337,21 @@ class Checkpointer:
         self.last_checkpoint_time = time.monotonic()
         self.has_pending_changes = False
 
+    def record_shards(self, table: str, cursors: dict):
+        """
+        Record a cursor for every shard of a table that has none yet, without checkpointing. Every shard is then
+        in state from the first checkpoint on, so a retry after a partly finished first sync sees the same shards
+        and is not mistaken for a reshard.
+        Args:
+            table: The table the cursors belong to.
+            cursors: A dictionary of shard name to Cursor.
+        """
+        table_state = self.state["tables"].setdefault(table, {"shards": {}})
+        for shard, cursor in cursors.items():
+            if shard not in table_state["shards"]:
+                table_state["shards"][shard] = cursor.to_state()
+                self.has_pending_changes = True
+
     def save(self, table: str, shard: str, cursor: Cursor):
         """
         Store the cursor in state, and checkpoint if enough time has passed.
@@ -1374,6 +1389,7 @@ def sync_table(
         table_state["shards"] = {}
     cursors = {shard: Cursor.from_state(table_state["shards"].get(shard)) for shard in shards}
     is_first_sync = not any(cursor.has_progress() for cursor in cursors.values())
+    checkpointer.record_shards(table, cursors)
     if is_first_sync:
         # The 'truncate' operation marks every existing row of the destination table as deleted. It runs once per
         # table, before any shard is read, so that reading shard 2 cannot delete what shard 1 just copied.
