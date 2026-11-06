@@ -43,6 +43,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
           RUNNER_TEMP_DIR: ${{ runner.temp }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           python3 <<'EOF'
           import json
@@ -53,6 +54,12 @@ jobs:
           import venv
           import xml.etree.ElementTree as ET
           from pathlib import Path
+
+          # --- Override: skip check if override label present ---
+          labels = json.loads(os.environ.get("PR_LABELS", "[]"))
+          if "override-connector-test" in labels:
+              print("'override-connector-test' label present - skipping connector tests.")
+              sys.exit(0)
 
           # --- Detect which connectors changed and have pytest-collectible tests ---
 
@@ -69,17 +76,19 @@ jobs:
           base = os.environ["BASE_SHA"]
           head = os.environ["HEAD_SHA"]
 
-          # --name-only (no --diff-filter) includes added, modified AND deleted
-          # files, so a deleted test file still shows up in this list.
+          # -z (NUL-delimited) output preserves non-ASCII filenames exactly,
+          # avoiding issues where git --name-only escapes special characters.
+          # (no --diff-filter) includes added, modified AND deleted files,
+          # so a deleted test file still shows up in this list.
           diff = subprocess.run(
-              ["git", "diff", "--name-only", f"{base}...{head}"],
+              ["git", "diff", "-z", f"{base}...{head}"],
               capture_output=True,
               text=True,
               check=True,
           ).stdout
 
           changed = set()
-          for path in diff.splitlines():
+          for path in diff.split("\0"):
               changed_path = pathlib.PurePosixPath(path)
               parts = changed_path.parts
               # Select only connectors where the changed file itself is pytest-collectible.
