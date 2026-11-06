@@ -115,11 +115,11 @@ The API has no paged object list. `GET /objects?departmentIds=<id>` returns ever
 
 ### Writing to an Iceberg catalog with `fivetran run`
 
-Connector SDK 3.0 adds `fivetran run`, which syncs into an Iceberg REST catalog instead of the local DuckDB file `fivetran debug` writes, and the connector runs under it unchanged. Describe the catalog and its storage in a `destination.json` file (the catalog `uri`, `warehouse`, `namespace`, OAuth `client_id`, `client_secret` and `scope`, and the `s3.*` storage settings). The `destination.json` in this directory has a placeholder for each key; replace them with your catalog's values, then run:
+Connector SDK 3.0 adds `fivetran run`, which syncs into an Iceberg REST catalog instead of the local DuckDB file `fivetran debug` writes, and the connector runs under it unchanged. Describe the catalog and its storage in a `destination.json` file (the catalog `uri`, `warehouse`, `namespace`, OAuth `client_id`, `client_secret` and `scope`, and the `s3.*` storage settings). The `destination.json` in this directory has a placeholder for each key. Copy it to a path outside the connector directory, replace the placeholders in the copy with your catalog's values, and pass that path to `--destination-file`. The filled copy holds the catalog secret and the storage keys, so it must not be committed, and `fivetran deploy` packages every file in the connector directory. Then run:
 
 ```bash
 fivetran reset
-fivetran run --configuration configuration.json --destination-file destination.json
+fivetran run --configuration configuration.json --destination-file <PATH_TO_FILLED_DESTINATION_JSON>
 ```
 
 `fivetran run` and `fivetran debug` share `files/state.json`, so run `fivetran reset` before the first sync into a new namespace. To read the tables back in DuckDB from a catalog that does not vend storage credentials, such as a local Apache Polaris catalog over MinIO, create an S3 secret for the storage and an Iceberg secret for the catalog, and attach it with `ACCESS_DELEGATION_MODE 'none'`. Without that option DuckDB asks the catalog for credentials and the catalog rejects the request:
@@ -279,7 +279,7 @@ The things the model saw in an object's image, one row each. Primary key `object
 
 - **`transform.py`** – Maps Collection API responses to destination rows, with no requests, configuration or state, so the mapping can be tested on its own.
 - **`cortex.py`** – The optional Snowflake Cortex vision enrichment: settings validation, the prompt and the allowed values it shares with the validator, the REST call and its retries, and the curator-tag agreement score.
-- **`destination.json`** – A placeholder for each Iceberg REST catalog and storage setting that `fivetran run` reads. It is not used by `fivetran debug` or `fivetran deploy`.
+- **`destination.json`** – A placeholder for each Iceberg REST catalog and storage setting that `fivetran run` reads. `fivetran debug` does not read it, and `fivetran deploy` packages the placeholder but no sync reads it. Fill in a copy outside this directory, as described in [Writing to an Iceberg catalog with `fivetran run`](#writing-to-an-iceberg-catalog-with-fivetran-run).
 
 ## Additional considerations
 

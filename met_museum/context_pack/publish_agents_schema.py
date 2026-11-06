@@ -39,7 +39,9 @@ sql/05_reader_grants.sql.
 `fetch` accepts only a successful run in the Production environment (DBT_PROD_ENV_ID), whose schemas are the ones the
 pack's agent reads, and refuses a manifest with no models or a semantic manifest with no metrics. It removes
 <work-dir>/osi, and `publish` refuses to run without OSI files converted from the fetched semantic manifest, so the
-DBT_* and OSI_* tables always come from the same run.
+DBT_* and OSI_* tables always come from the same run. `fetch` also records the newest successful Production run,
+and `osi` refuses compiled SQL unless that is the fetched run. Run `osi` right after `fetch`: a Production run that
+finishes between them is not caught. `publish` refuses a --uses-schema that no fetched model is built in.
 
 Needs agents-schema 0.0.11 and metricflow 0.213.0, which bring PyYAML and jsonschema. Tested on Python 3.12.
 """
@@ -208,9 +210,14 @@ def fetch(args: argparse.Namespace) -> None:
         sys.exit(f"run {args.run_id} is not in the Production environment (DBT_PROD_ENV_ID)")
     # The Semantic Layer serves the newest successful Production run, so compileSql matches this run's metric
     # definitions only when this run is that one. osi reads the answer from the fetch record.
-    newest = admin_api(
-        env, f"/runs/?environment_id={prod_env_id}&status=10&order_by=-finished_at&limit=1"
-    )
+    # A token that cannot list runs still fetches; osi then refuses compiled SQL, which --no-compiled-sql skips.
+    try:
+        newest = admin_api(
+            env, f"/runs/?environment_id={prod_env_id}&status=10&order_by=-finished_at&limit=1"
+        )
+    except SystemExit as exc:
+        print(f"{exc.code}; the newest Production run is unknown, so osi needs --no-compiled-sql")
+        newest = None
     newest_runs = newest.get("data") if isinstance(newest, dict) else None
     newest_run = newest_runs[0] if isinstance(newest_runs, list) and newest_runs else None
     newest_run_id = newest_run.get("id") if isinstance(newest_run, dict) else None
@@ -507,6 +514,12 @@ def osi(args: argparse.Namespace) -> None:
         # compileSql uses the newest successful Production run's definitions, so an older run's metrics would be
         # published with another run's SQL.
         newest_run_id = record.get("newest_production_run_id")
+        if newest_run_id is None:
+            sys.exit(
+                f"fetch could not list the newest successful Production run, so run {record['run_id']} is not "
+                "known to be the one the Semantic Layer compiles; fetch again with a DBT_TOKEN that can list runs, "
+                "or pass --no-compiled-sql"
+            )
         if newest_run_id != record["run_id"]:
             sys.exit(
                 f"run {record['run_id']} is not the newest successful Production run (run {newest_run_id} was when it "
@@ -562,7 +575,7 @@ def require_fetch_record(work: Path) -> dict:
     """Exit unless fetch finished: its record exists and matches both artifacts now in <work>/dbt/target.
 
     Returns:
-        The record: run_id, host, environment_id and the two artifact hashes.
+        The record: run_id, host, environment_id, newest_production_run_id and the two artifact hashes.
     """
     target = work / "dbt" / "target"
     path = target / FETCH_RECORD

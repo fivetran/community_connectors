@@ -719,6 +719,9 @@ def resolve_state(state: dict, settings: dict):
 
     fingerprint = json.dumps(settings["department_ids"])
     model = settings["cortex_model"] if settings["enable_cortex"] else None
+    # A state written before this key existed has no version; it was enriched with version 1, the
+    # only one there had been, so it is read again only when the prompt is past version 1.
+    stored_prompt_version = state["enrichment_prompt_version"] or "1"
     if state["department_fingerprint"] != fingerprint:
         if state["department_fingerprint"] is not None:
             log.warning(
@@ -728,12 +731,7 @@ def resolve_state(state: dict, settings: dict):
     elif model is not None and state["enrichment_model"] != model:
         log.warning(f"Enrichment with {model} is new, so every object is read again to enrich it")
         reset_walk(state)
-    elif model is not None and state["enrichment_prompt_version"] not in (
-        None,
-        cortex.prompt_version(),
-    ):
-        # A state written before this key existed has no version; it was enriched with version 1,
-        # the only one there has been, so it is not read again.
+    elif model is not None and stored_prompt_version != cortex.prompt_version():
         log.warning(
             f"The enrichment prompt changed to version {cortex.prompt_version()}, so every object "
             "is read again to enrich it"
