@@ -25,8 +25,9 @@ Steps, from this directory:
 
 Environment (or KEY=VALUE lines in a file passed with --env-file; values are never printed):
 
-    fetch    DBT_HOST, DBT_ACCOUNT_ID, DBT_TOKEN,      a dbt platform token that can read the run's artifacts,
-             DBT_PROD_ENV_ID                           and the Production environment the run must belong to
+    fetch    DBT_HOST, DBT_ACCOUNT_ID, DBT_TOKEN,      a dbt platform token that can read the run's artifacts and
+             DBT_PROD_ENV_ID                           list the environment's runs, and the Production environment
+                                                       the run must belong to
     osi      DBT_HOST, DBT_PROD_ENV_ID, DBT_TOKEN      a Semantic Layer token, for compiled SQL; optional
     publish  WAREHOUSE_CREDENTIALS                     the agents-schema CLI's Snowflake credentials, a JSON object
 
@@ -216,7 +217,10 @@ def fetch(args: argparse.Namespace) -> None:
             env, f"/runs/?environment_id={prod_env_id}&status=10&order_by=-finished_at&limit=1"
         )
     except SystemExit as exc:
-        print(f"{exc.code}; the newest Production run is unknown, so osi needs --no-compiled-sql")
+        print(
+            f"{exc.code}; the newest Production run is unknown, so osi needs --no-compiled-sql",
+            file=sys.stderr,
+        )
         newest = None
     newest_runs = newest.get("data") if isinstance(newest, dict) else None
     newest_run = newest_runs[0] if isinstance(newest_runs, list) and newest_runs else None
@@ -513,12 +517,17 @@ def osi(args: argparse.Namespace) -> None:
             )
         # compileSql uses the newest successful Production run's definitions, so an older run's metrics would be
         # published with another run's SQL.
-        newest_run_id = record.get("newest_production_run_id")
+        if "newest_production_run_id" not in record:
+            sys.exit(
+                f"run {record['run_id']} was fetched by an earlier version of this script, which did not record "
+                "the newest successful Production run; fetch again, or pass --no-compiled-sql"
+            )
+        newest_run_id = record["newest_production_run_id"]
         if newest_run_id is None:
             sys.exit(
                 f"fetch could not list the newest successful Production run, so run {record['run_id']} is not "
-                "known to be the one the Semantic Layer compiles; fetch again with a DBT_TOKEN that can list runs, "
-                "or pass --no-compiled-sql"
+                "known to be the one the Semantic Layer compiles (fetch printed why the list failed); fetch "
+                "again, with a DBT_TOKEN that can list runs if that was the cause, or pass --no-compiled-sql"
             )
         if newest_run_id != record["run_id"]:
             sys.exit(
