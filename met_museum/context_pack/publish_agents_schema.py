@@ -531,9 +531,10 @@ def osi(args: argparse.Namespace) -> None:
         newest_run_id = record["newest_production_run_id"]
         if newest_run_id is None:
             sys.exit(
-                f"fetch could not list the newest successful Production run, so run {record['run_id']} is not "
-                "known to be the one the Semantic Layer compiles (fetch printed why the list failed); fetch "
-                "again, with a DBT_TOKEN that can list runs if that was the cause, or pass --no-compiled-sql"
+                f"fetch did not get the newest successful Production run's id, so run {record['run_id']} is not "
+                "known to be the one the Semantic Layer compiles (fetch printed whether the list failed or "
+                "answered with no run id); fetch again, with a DBT_TOKEN that can list runs if the list failed, "
+                "or pass --no-compiled-sql"
             )
         if newest_run_id != record["run_id"]:
             sys.exit(
