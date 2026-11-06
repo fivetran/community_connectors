@@ -212,6 +212,7 @@ def fetch(args: argparse.Namespace) -> None:
     # The Semantic Layer serves the newest successful Production run, so compileSql matches this run's metric
     # definitions only when this run is that one. osi reads the answer from the fetch record.
     # A token that cannot list runs still fetches; osi then refuses compiled SQL, which --no-compiled-sql skips.
+    list_failed = False
     try:
         newest = admin_api(
             env, f"/runs/?environment_id={prod_env_id}&status=10&order_by=-finished_at&limit=1"
@@ -221,12 +222,14 @@ def fetch(args: argparse.Namespace) -> None:
             f"{exc.code}; the newest Production run is unknown, so osi needs --no-compiled-sql",
             file=sys.stderr,
         )
+        list_failed = True
         newest = None
     newest_runs = newest.get("data") if isinstance(newest, dict) else None
     newest_run = newest_runs[0] if isinstance(newest_runs, list) and newest_runs else None
     newest_run_id = newest_run.get("id") if isinstance(newest_run, dict) else None
-    # A list that answered but held no run id is reported here; a failed request was reported above.
-    if newest is not None and newest_run_id is None:
+    # A list that answered but held no run id (a JSON null body included) is reported here; a failed
+    # request was reported above.
+    if not list_failed and newest_run_id is None:
         print(
             "the newest Production run list had no run id; osi needs --no-compiled-sql",
             file=sys.stderr,
@@ -533,8 +536,8 @@ def osi(args: argparse.Namespace) -> None:
             sys.exit(
                 f"fetch did not get the newest successful Production run's id, so run {record['run_id']} is not "
                 "known to be the one the Semantic Layer compiles (fetch printed whether the list failed or "
-                "answered with no run id); fetch again, with a DBT_TOKEN that can list runs if the list failed, "
-                "or pass --no-compiled-sql"
+                "answered with no run id); fetch again, with a DBT_TOKEN that can list runs if the list failed "
+                "with HTTP 401 or 403, or pass --no-compiled-sql"
             )
         if newest_run_id != record["run_id"]:
             sys.exit(
