@@ -226,6 +226,16 @@ def enrichment_inputs(obj: dict, terms: list, model: str) -> dict:
     }
 
 
+def prompt_version() -> str:
+    """
+    Return the prompt and validator version, which the connector keeps in state so a new version
+    restarts the historical walk and every object is enriched again.
+    Returns:
+        The version string.
+    """
+    return __PROMPT_VERSION
+
+
 def enrichment_hash(inputs: dict) -> str:
     """
     Hash the enrichment inputs. An object whose hash is unchanged since its last enrichment is not

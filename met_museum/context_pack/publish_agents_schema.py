@@ -206,6 +206,14 @@ def fetch(args: argparse.Namespace) -> None:
     # A CI or development run builds into other schemas, so the published lineage would point the agent at nothing.
     if run.get("environment_id") != prod_env_id:
         sys.exit(f"run {args.run_id} is not in the Production environment (DBT_PROD_ENV_ID)")
+    # The Semantic Layer serves the newest successful Production run, so compileSql matches this run's metric
+    # definitions only when this run is that one. osi reads the answer from the fetch record.
+    newest = admin_api(
+        env, f"/runs/?environment_id={prod_env_id}&status=10&order_by=-finished_at&limit=1"
+    )
+    newest_runs = newest.get("data") if isinstance(newest, dict) else None
+    newest_run = newest_runs[0] if isinstance(newest_runs, list) and newest_runs else None
+    newest_run_id = newest_run.get("id") if isinstance(newest_run, dict) else None
     manifest = admin_api(env, f"/runs/{args.run_id}/artifacts/manifest.json")
     semantic = admin_api(env, f"/runs/{args.run_id}/artifacts/semantic_manifest.json")
     # publish replaces every DBT_* and OSI_* table, so an artifact that describes nothing would empty them.
@@ -265,6 +273,7 @@ def fetch(args: argparse.Namespace) -> None:
         "run_id": args.run_id,
         "host": host_of(env["DBT_HOST"]).lower(),
         "environment_id": prod_env_id,
+        "newest_production_run_id": newest_run_id,
         "manifest_sha256": sha256_of(target / "manifest.json"),
         "semantic_manifest_sha256": sha256_of(target / "semantic_manifest.json"),
     }
@@ -495,6 +504,15 @@ def osi(args: argparse.Namespace) -> None:
                 f"run {record['run_id']} was fetched from {record['host']} environment {record['environment_id']}; "
                 "compile with the same DBT_HOST and DBT_PROD_ENV_ID, or fetch again"
             )
+        # compileSql uses the newest successful Production run's definitions, so an older run's metrics would be
+        # published with another run's SQL.
+        newest_run_id = record.get("newest_production_run_id")
+        if newest_run_id != record["run_id"]:
+            sys.exit(
+                f"run {record['run_id']} is not the newest successful Production run (run {newest_run_id} was when it "
+                "was fetched), and the Semantic Layer compiles the newest run's metrics; fetch that run, or pass "
+                "--no-compiled-sql"
+            )
         compiled = compile_metric_sql(env, names)
     doc = enrich_osi(doc, semantic, context, compiled)
     validate_osi(doc)
@@ -578,6 +596,27 @@ def require_osi_matches_manifest(work: Path) -> None:
         )
 
 
+def require_uses_schemas_in_manifest(work: Path, uses_schemas: list[str]) -> None:
+    """Exit unless every --uses-schema is a schema that a model of the fetched manifest is built in.
+
+    The skill's `uses:` frontmatter points the agent at these schemas, so a misspelled one, or one from another
+    build, would publish guidance for a schema that holds none of the published models.
+    """
+    manifest = json.loads((work / "dbt" / "target" / "manifest.json").read_text())
+    models = [
+        n
+        for n in manifest.get("nodes", {}).values()
+        if isinstance(n, dict) and n.get("resource_type") == "model"
+    ]
+    built = sorted({n["schema"] for n in models if isinstance(n.get("schema"), str)})
+    unknown = [s for s in uses_schemas if s not in built]
+    if unknown:
+        sys.exit(
+            f"--uses-schema {', '.join(unknown)} is not a schema the fetched run built models in "
+            f"({', '.join(built)}); nothing was written"
+        )
+
+
 def publish(args: argparse.Namespace) -> None:
     """Run `agents-schema dbt`, `osi` and `skills` against <database>.AGENTS."""
     work = Path(args.work_dir)
@@ -597,6 +636,7 @@ def publish(args: argparse.Namespace) -> None:
         sys.exit(f"no OSI files under {work / 'osi'} for the fetched run; run osi first")
     require_fetch_record(work)
     require_osi_matches_manifest(work)
+    require_uses_schemas_in_manifest(work, args.uses_schema)
     steps = [
         [cli, "dbt", "--project-dir", str(work / "dbt")],
         [cli, "osi", "--osi-dir", str(work / "osi")],

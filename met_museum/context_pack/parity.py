@@ -62,7 +62,8 @@ from typing import Any, Callable, Sequence
 
 HERE = Path(__file__).resolve().parent
 DBT_DIR = HERE / "dbt"
-DBT = os.environ.get("DBT_BIN", str(Path.home() / ".local/bin/dbt"))
+# The dbt on PATH, unless DBT_BIN names another executable.
+DBT = os.environ.get("DBT_BIN", "dbt")
 
 # The compile-only database and schema each target's refs resolve to. They never exist: every ref to them is replaced
 # by the model's CTE name before a query runs.

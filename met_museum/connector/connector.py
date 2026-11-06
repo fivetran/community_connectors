@@ -113,6 +113,7 @@ __FALSE_TOKENS = ("false", "no", "0")
 __STATE_KEYS = (
     "department_fingerprint",
     "enrichment_model",
+    "enrichment_prompt_version",
     "metadata_cursor",
     "pending_cursor",
     "departments_done",
@@ -630,7 +631,7 @@ def fetch_object_ids(client: dict, department_id: int, metadata_date) -> list:
         The distinct ids, sorted, so the walk can resume after the last processed id.
     Raises:
         RuntimeError: if the response does not have the documented total and objectIDs shape, has
-            fewer ids than its total, or has an id that is not a whole number.
+            fewer distinct ids than its total, or has an id that is not a whole number.
     """
     params = {"departmentIds": department_id}
     if metadata_date:
@@ -658,7 +659,14 @@ def fetch_object_ids(client: dict, department_id: int, metadata_date) -> list:
             f"Object list for department {department_id} has ids that are not whole numbers: "
             f"{malformed[:__MALFORMED_ID_PREVIEW]}"
         )
-    return sorted(set(parsed))
+    # Duplicates can make a cut-short list as long as its total, so the distinct ids are counted.
+    distinct = sorted(set(parsed))
+    if len(distinct) < total:
+        raise RuntimeError(
+            f"Object list for department {department_id} has {len(distinct)} distinct ids, "
+            f"fewer than its total {body.get('total')!r}"
+        )
+    return distinct
 
 
 def save_state(state: dict):
@@ -695,8 +703,8 @@ def reset_walk(state: dict):
 def resolve_state(state: dict, settings: dict):
     """
     Prepare the state in place: make sure every key exists, then restart the historical walk when
-    the configured departments changed, or when enrichment was turned on or switched to another
-    model, so objects synced before are read and enriched.
+    the configured departments changed, or when enrichment was turned on, switched to another
+    model or given a new prompt version, so objects synced before are read and enriched.
     Args:
         state: the state from the previous sync, empty on the first sync.
         settings: the parsed configuration.
@@ -720,10 +728,22 @@ def resolve_state(state: dict, settings: dict):
     elif model is not None and state["enrichment_model"] != model:
         log.warning(f"Enrichment with {model} is new, so every object is read again to enrich it")
         reset_walk(state)
+    elif model is not None and state["enrichment_prompt_version"] not in (
+        None,
+        cortex.prompt_version(),
+    ):
+        # A state written before this key existed has no version; it was enriched with version 1,
+        # the only one there has been, so it is not read again.
+        log.warning(
+            f"The enrichment prompt changed to version {cortex.prompt_version()}, so every object "
+            "is read again to enrich it"
+        )
+        reset_walk(state)
     state["department_fingerprint"] = fingerprint
     # Null while enrichment is off, so turning it back on, even with the same model, restarts the
     # walk and enriches the objects synced in between.
     state["enrichment_model"] = model
+    state["enrichment_prompt_version"] = cortex.prompt_version() if model is not None else None
 
 
 def sync_departments(client: dict, state: dict, settings: dict):

@@ -136,7 +136,10 @@ def build_object_row(obj: dict, department_id) -> dict:
         "accession_year": text(obj.get("accessionYear")),
         "primary_image": text(obj.get("primaryImage")),
         "primary_image_small": text(obj.get("primaryImageSmall")),
-        "additional_image_count": len(obj.get("additionalImages") or []),
+        # A malformed value that is not a list counts as no additional images.
+        "additional_image_count": (
+            len(obj["additionalImages"]) if isinstance(obj.get("additionalImages"), list) else 0
+        ),
         "object_name": text(obj.get("objectName")),
         "title": text(obj.get("title")),
         "culture": text(obj.get("culture")),
