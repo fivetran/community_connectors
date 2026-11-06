@@ -81,7 +81,7 @@ jobs:
           # (no --diff-filter) includes added, modified AND deleted files,
           # so a deleted test file still shows up in this list.
           diff = subprocess.run(
-              ["git", "diff", "-z", f"{base}...{head}"],
+              ["git", "diff", "--name-only", "-z", f"{base}...{head}"],
               capture_output=True,
               text=True,
               check=True,
