@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: nhtsa_campaign_search
+    description: >
+      One document per NHTSA recall campaign for the Cortex Search service. search_text is the indexed text; makes and
+      models are sorted arrays, filtered with @contains; the rest are attributes and the text the agent quotes.
+    columns:
+      - name: nhtsa_campaign_number
+        description: NHTSA campaign number, unique.
+        data_tests:
+          - unique
+          - not_null
+      - name: search_text
+        description: component | summary | consequence | remedy.
+        data_tests:
+          - not_null
+      - name: makes
+        description: Configured makes the campaign covers, a sorted array.
+      - name: models
+        description: Configured make + model pairs the campaign covers, a sorted array.
