@@ -225,6 +225,12 @@ def fetch(args: argparse.Namespace) -> None:
     newest_runs = newest.get("data") if isinstance(newest, dict) else None
     newest_run = newest_runs[0] if isinstance(newest_runs, list) and newest_runs else None
     newest_run_id = newest_run.get("id") if isinstance(newest_run, dict) else None
+    # A list that answered but held no run id is reported here; a failed request was reported above.
+    if newest is not None and newest_run_id is None:
+        print(
+            "the newest Production run list had no run id; osi needs --no-compiled-sql",
+            file=sys.stderr,
+        )
     manifest = admin_api(env, f"/runs/{args.run_id}/artifacts/manifest.json")
     semantic = admin_api(env, f"/runs/{args.run_id}/artifacts/semantic_manifest.json")
     # publish replaces every DBT_* and OSI_* table, so an artifact that describes nothing would empty them.
