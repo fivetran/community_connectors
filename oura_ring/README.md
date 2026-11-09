@@ -10,7 +10,7 @@ category: SaaS & APIs
 
 This connector syncs health and wellness data from the Oura API v2 into your Fivetran destination. It covers the daily activity, sleep, readiness, and stress summaries, continuous heart rate, and the detailed `sleep` table, which holds one row per sleep period with durations, HRV, and heart rate that the daily sleep score does not include.
 
-It authenticates with Oura's OAuth2 authorization-code flow, because Oura retired personal access tokens in December 2025. Oura's refresh tokens are single-use, so each sync spends one, keeps the replacement encrypted in state, and checkpoints it before reading any data. Each table keeps its own date cursor, and every sync re-reads a short overlap window because Oura revises recent days after the ring syncs to the app.
+It authenticates with Oura's OAuth2 authorization-code flow, because Oura retired personal access tokens in December 2025. Oura's refresh tokens are single-use, so each sync spends one, keeps the replacement encrypted in state, and checkpoints it before reading any data. Each table keeps its own date cursor, and every sync re-reads the last 7 days because days can reach Oura late, after the ring syncs to the app.
 
 ## Accreditation
 
@@ -45,7 +45,7 @@ fivetran init --template oura_ring
 - Per-table date cursors, so a failure in one table does not re-read the others
 - A 7-day overlap on every sync to pick up days that reach Oura late, after the ring syncs to the app
 - `next_token` pagination, with a guard that stops the sync if the API repeats a token
-- Heart rate requests split into windows of at most 30 days
+- Heart rate requests split into windows of at most 30 days, which is Oura's limit
 - Retries that follow the `Retry-After` header on HTTP 429
 - A setup form with a setup test that validates the configuration
 
@@ -73,10 +73,10 @@ The `configuration.json` file contains the parameters needed to connect to the O
 
 ## Requirements file
 
-The `requirements.txt` file declares `cryptography`, which the connector uses to encrypt the rotated refresh token in state with the `fernet_key`:
+The `requirements.txt` file declares `cryptography`, which the connector uses to encrypt the rotated refresh token in state with the `fernet_key`. The version matches the one `fivetran_connector_sdk` pins, so the two do not conflict:
 
 ```
-cryptography==50.0.2
+cryptography==49.0.0
 ```
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
@@ -107,7 +107,9 @@ The Oura API v2 returns a `next_token` field when more records remain. The `def 
 
 ## Data handling
 
-The `def update(configuration, state)` function walks the six tables in turn, and the `def sync_table(session, table_name, table_config, start_date, today, state)` function reads each one through today. State holds a `<table>_synced_through` date per table. The next sync starts 7 days before that date, and the date filters are inclusive, so the overlap re-reads those days and upserts the same primary keys. The saved date follows the clock rather than the records returned, so a day that reaches Oura more than 7 days late, for example from a ring that stayed out of range of the app for longer than that, is not read again.
+The `def update(configuration, state)` function walks the six tables in turn, and the `def sync_table(session, table_name, table_config, start_date, today, state)` function reads each one through today. State holds a `<table>_synced_through` date per table. The next sync starts 7 days before that date, and the date filters are inclusive, so the overlap re-reads those days and upserts the same primary keys. The saved date follows the clock rather than the records returned, so a day that reaches Oura more than 7 days late, for example from a ring that stayed out of range of the app for longer than that, is not read again. Each sync therefore reads about 9 days of every table (the 7-day overlap through tomorrow), including the heart rate samples for those days.
+
+State saved by the earlier version of this connector, which used personal access tokens, holds one `last_sync_date` for all tables. On the first sync after the upgrade, the five original tables resume from that date and the `sleep` table starts from `lookback_days`. The old `last_sync_date` and `<table>_next_token` keys are then removed.
 
 The query runs through tomorrow in UTC because Oura dates records in the wearer's time zone, which can be ahead of UTC. The saved date never passes today.
 
@@ -119,7 +121,9 @@ Daily endpoints use `start_date` and `end_date` in YYYY-MM-DD format. The heart 
 
 The `def fetch_data_with_retry(session, url, params)` function retries HTTP 429, 500, 502, 503, and 504 responses, connection errors, and timeouts, up to 3 attempts with exponential backoff. On a 429 it waits for the `Retry-After` header, capped at 300 seconds.
 
-A token refresh rejected with HTTP 400 or 401 stops the sync before any data request, with a message to run the consent again. The token request is retried only when Oura did not process it: on a connection error, an HTTP 429, or a 5xx response. A read timeout is not retried, because Oura may already have rotated the token. An HTTP 401 on a data request stops the sync at once. An HTTP 403 or 426 means a missing scope or a lapsed subscription. On `daily_stress` the connector skips the table and reports it with `op.warning`, because stress data depends on the subscription. On any other table the sync stops and the message names the scope. Records with no primary key are skipped and counted in one `op.warning` summary.
+A token refresh rejected with HTTP 400 or 401 stops the sync before any data request. When Oura's error code is `invalid_grant`, the message says the refresh token was already used or revoked; otherwise it asks you to check `client_id` and `client_secret`. The token request is retried on a connection error, an HTTP 429 (waiting for the `Retry-After` header, capped at 300 seconds), or a 5xx response, because those usually mean Oura did not complete it. A gateway 502 or 504 can still arrive after Oura rotated the token, and then the next sync reports `invalid_grant`. A read timeout is not retried, because Oura may already have rotated the token.
+
+An HTTP 401 on a data request stops the sync at once. An HTTP 403 means a missing scope or a lapsed subscription, and an HTTP 426 means the account needs an upgrade. On `daily_stress` the connector skips the table for either one and reports it with `op.warning`, because stress data depends on the subscription. On any other table a 403 stops the sync with a message that names the scope, and a 426 stops it with the upgrade message. Records with no primary key are skipped and counted in one `op.warning` summary.
 
 Error messages carry the status and the URL only. Response bodies can hold health data, so they are never logged. Token errors add only the OAuth error code, such as `invalid_grant`, and never the token or the client secret.
 
@@ -130,53 +134,53 @@ Error messages carry the status and the URL only. Response bodies can hold healt
 The `DAILY_ACTIVITY` table consists of the following columns:
 
 - `id` (STRING, primary key): Unique identifier of the record
-- `active_calories` (INTEGER): Active calories expended in kilocalories
-- `average_met_minutes` (FLOAT): Average MET minutes
+- `active_calories` (INT): Active calories expended in kilocalories
+- `average_met_minutes` (DOUBLE): Average MET minutes
 - `class_5_min` (STRING): 5-minute activity classification string
-- `contributors_meet_daily_targets` (INTEGER): Contribution of meeting previous 7-day daily activity targets in range [1, 100]
-- `contributors_move_every_hour` (INTEGER): Contribution of previous 24-hour inactivity alerts in range [1, 100]
-- `contributors_recovery_time` (INTEGER): Contribution of previous 7-day recovery time in range [1, 100]
-- `contributors_stay_active` (INTEGER): Contribution of previous 24-hour activity in range [1, 100]
-- `contributors_training_frequency` (INTEGER): Contribution of previous 7-day exercise frequency in range [1, 100]
-- `contributors_training_volume` (INTEGER): Contribution of previous 7-day exercise volume in range [1, 100]
+- `contributors_meet_daily_targets` (INT): Contribution of meeting previous 7-day daily activity targets in range [1, 100]
+- `contributors_move_every_hour` (INT): Contribution of previous 24-hour inactivity alerts in range [1, 100]
+- `contributors_recovery_time` (INT): Contribution of previous 7-day recovery time in range [1, 100]
+- `contributors_stay_active` (INT): Contribution of previous 24-hour activity in range [1, 100]
+- `contributors_training_frequency` (INT): Contribution of previous 7-day exercise frequency in range [1, 100]
+- `contributors_training_volume` (INT): Contribution of previous 7-day exercise volume in range [1, 100]
 - `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
-- `equivalent_walking_distance` (INTEGER): Equivalent walking distance of energe expenditure in meters
-- `high_activity_met_minutes` (INTEGER): The total METs of each minute classified as high activity
-- `high_activity_time` (INTEGER): The total time in seconds of each minute classified as high activity
-- `inactivity_alerts` (INTEGER): Number of inactivity alerts received
-- `low_activity_met_minutes` (INTEGER): The total METs of each minute classified as low activity
-- `low_activity_time` (INTEGER): The total time in seconds of each minute classified as low activity
-- `medium_activity_met_minutes` (INTEGER): The total METs of each minute classified as medium activity
-- `medium_activity_time` (INTEGER): The total time in seconds of each minute classified as medium activity
-- `met_interval` (FLOAT): Interval in seconds between the sampled items
+- `equivalent_walking_distance` (INT): Equivalent walking distance of energe expenditure in meters
+- `high_activity_met_minutes` (INT): The total METs of each minute classified as high activity
+- `high_activity_time` (INT): The total time in seconds of each minute classified as high activity
+- `inactivity_alerts` (INT): Number of inactivity alerts received
+- `low_activity_met_minutes` (INT): The total METs of each minute classified as low activity
+- `low_activity_time` (INT): The total time in seconds of each minute classified as low activity
+- `medium_activity_met_minutes` (INT): The total METs of each minute classified as medium activity
+- `medium_activity_time` (INT): The total time in seconds of each minute classified as medium activity
+- `met_interval` (DOUBLE): Interval in seconds between the sampled items
 - `met_items` (STRING): JSON-serialized array of MET samples
 - `met_timestamp` (STRING): ISO 8601 timestamp of the first MET sample
-- `meters_to_target` (INTEGER): Meters remaining to target
-- `non_wear_time` (INTEGER): Ring non-wear time in seconds
-- `resting_time` (INTEGER): Resting time in seconds
-- `score` (INTEGER): Activity score in range [1, 100]
-- `sedentary_met_minutes` (INTEGER): Sedentary MET minutes
-- `sedentary_time` (INTEGER): Sedentary time in seconds
-- `steps` (INTEGER): Total number of steps taken
-- `target_calories` (INTEGER): Daily activity target in kilocalories
-- `target_meters` (INTEGER): Daily activity target in meters
+- `meters_to_target` (INT): Meters remaining to target
+- `non_wear_time` (INT): Ring non-wear time in seconds
+- `resting_time` (INT): Resting time in seconds
+- `score` (INT): Activity score in range [1, 100]
+- `sedentary_met_minutes` (INT): Sedentary MET minutes
+- `sedentary_time` (INT): Sedentary time in seconds
+- `steps` (INT): Total number of steps taken
+- `target_calories` (INT): Daily activity target in kilocalories
+- `target_meters` (INT): Daily activity target in meters
 - `timestamp` (STRING): ISO 8601 timestamp
-- `total_calories` (INTEGER): Total calories expended in kilocalories
+- `total_calories` (INT): Total calories expended in kilocalories
 
 ### daily_sleep
 
 The `DAILY_SLEEP` table consists of the following columns:
 
 - `id` (STRING, primary key): Unique identifier of the record
-- `contributors_deep_sleep` (INTEGER): Contribution of deep sleep in range [1, 100]
-- `contributors_efficiency` (INTEGER): Contribution of sleep efficiency in range [1, 100]
-- `contributors_latency` (INTEGER): Contribution of sleep latency in range [1, 100]
-- `contributors_rem_sleep` (INTEGER): Contribution of REM sleep in range [1, 100]
-- `contributors_restfulness` (INTEGER): Contribution of sleep restfulness in range [1, 100]
-- `contributors_timing` (INTEGER): Contribution of sleep timing in range [1, 100]
-- `contributors_total_sleep` (INTEGER): Contribution of total sleep in range [1, 100]
+- `contributors_deep_sleep` (INT): Contribution of deep sleep in range [1, 100]
+- `contributors_efficiency` (INT): Contribution of sleep efficiency in range [1, 100]
+- `contributors_latency` (INT): Contribution of sleep latency in range [1, 100]
+- `contributors_rem_sleep` (INT): Contribution of REM sleep in range [1, 100]
+- `contributors_restfulness` (INT): Contribution of sleep restfulness in range [1, 100]
+- `contributors_timing` (INT): Contribution of sleep timing in range [1, 100]
+- `contributors_total_sleep` (INT): Contribution of total sleep in range [1, 100]
 - `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
-- `score` (INTEGER): Daily sleep score
+- `score` (INT): Daily sleep score
 - `timestamp` (STRING): ISO 8601 timestamp
 
 ### daily_readiness
@@ -184,19 +188,19 @@ The `DAILY_SLEEP` table consists of the following columns:
 The `DAILY_READINESS` table consists of the following columns:
 
 - `id` (STRING, primary key): Unique identifier of the record
-- `contributors_activity_balance` (INTEGER): Contribution of cumulative activity balance in range [1, 100]
-- `contributors_body_temperature` (INTEGER): Contribution of body temperature in range [1, 100]
-- `contributors_hrv_balance` (INTEGER): Contribution of heart rate variability balance in range [1, 100]
-- `contributors_previous_day_activity` (INTEGER): Contribution of previous day's activity in range [1, 100]
-- `contributors_previous_night` (INTEGER): Contribution of previous night's sleep in range [1, 100]
-- `contributors_recovery_index` (INTEGER): Contribution of recovery index in range [1, 100]
-- `contributors_resting_heart_rate` (INTEGER): Contribution of resting heart rate in range [1, 100]
-- `contributors_sleep_balance` (INTEGER): Contribution of sleep balance in range [1, 100]
-- `contributors_sleep_regularity` (INTEGER): Contribution of sleep regularity in range [1, 100]
+- `contributors_activity_balance` (INT): Contribution of cumulative activity balance in range [1, 100]
+- `contributors_body_temperature` (INT): Contribution of body temperature in range [1, 100]
+- `contributors_hrv_balance` (INT): Contribution of heart rate variability balance in range [1, 100]
+- `contributors_previous_day_activity` (INT): Contribution of previous day's activity in range [1, 100]
+- `contributors_previous_night` (INT): Contribution of previous night's sleep in range [1, 100]
+- `contributors_recovery_index` (INT): Contribution of recovery index in range [1, 100]
+- `contributors_resting_heart_rate` (INT): Contribution of resting heart rate in range [1, 100]
+- `contributors_sleep_balance` (INT): Contribution of sleep balance in range [1, 100]
+- `contributors_sleep_regularity` (INT): Contribution of sleep regularity in range [1, 100]
 - `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
-- `score` (INTEGER): Daily readiness score
-- `temperature_deviation` (FLOAT): Temperature deviation in degrees Celsius
-- `temperature_trend_deviation` (FLOAT): Temperature trend deviation in degrees Celsius
+- `score` (INT): Daily readiness score
+- `temperature_deviation` (DOUBLE): Temperature deviation in degrees Celsius
+- `temperature_trend_deviation` (DOUBLE): Temperature trend deviation in degrees Celsius
 - `timestamp` (STRING): ISO 8601 timestamp
 
 ### daily_stress
@@ -206,16 +210,16 @@ The `DAILY_STRESS` table consists of the following columns:
 - `id` (STRING, primary key): Unique identifier of the record
 - `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
 - `day_summary` (STRING): Stress summary of full day
-- `recovery_high` (INTEGER): Time spent in a high recovery zone (bottom quartile data) in seconds
-- `stress_high` (INTEGER): Time spent in a high stress zone (top quartile of data) in seconds
+- `recovery_high` (INT): Time spent in a high recovery zone (bottom quartile data) in seconds
+- `stress_high` (INT): Time spent in a high stress zone (top quartile of data) in seconds
 
 ### heart_rate
 
 The `HEART_RATE` table consists of the following columns:
 
 - `timestamp` (STRING, primary key): ISO 8601 timestamp of the reading
-- `timestamp_unix` (INTEGER): Timestamp of the discrete sample as unix time in milliseconds
-- `bpm` (INTEGER): Heart rate as beats per minute
+- `timestamp_unix` (INT): Timestamp of the discrete sample as unix time in milliseconds
+- `bpm` (INT): Heart rate as beats per minute
 - `source` (STRING): Context of the reading: awake, rest, sleep, session, live, or workout
 - `producer_timestamp` (STRING): Timestamp the reading was produced, which Oura returns although its API specification does not list it
 
@@ -224,49 +228,49 @@ The `HEART_RATE` table consists of the following columns:
 The `SLEEP` table consists of the following columns:
 
 - `id` (STRING, primary key): Unique identifier of the record
-- `average_breath` (FLOAT): Average breathing rate during sleep as breaths/minute
-- `average_heart_rate` (FLOAT): Average heart rate during sleep in beats per minute
-- `average_hrv` (INTEGER): Average heart rate variability during sleep
-- `awake_time` (INTEGER): Duration spent awake in seconds
+- `average_breath` (DOUBLE): Average breathing rate during sleep as breaths/minute
+- `average_heart_rate` (DOUBLE): Average heart rate during sleep in beats per minute
+- `average_hrv` (INT): Average heart rate variability during sleep
+- `awake_time` (INT): Duration spent awake in seconds
 - `bedtime_end` (STRING): ISO 8601 end of the sleep period
 - `bedtime_start` (STRING): ISO 8601 start of the sleep period
 - `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
-- `deep_sleep_duration` (INTEGER): Duration spent in deep sleep in seconds
-- `efficiency` (INTEGER): Sleep efficiency rating in range [1, 100]
-- `heart_rate_interval` (FLOAT): Interval in seconds between the sampled items
+- `deep_sleep_duration` (INT): Duration spent in deep sleep in seconds
+- `efficiency` (INT): Sleep efficiency rating in range [1, 100]
+- `heart_rate_interval` (DOUBLE): Interval in seconds between the sampled items
 - `heart_rate_items` (STRING): JSON-serialized array of heart rate samples
 - `heart_rate_timestamp` (STRING): ISO 8601 timestamp of the first heart rate sample
-- `hrv_interval` (FLOAT): Interval in seconds between the sampled items
+- `hrv_interval` (DOUBLE): Interval in seconds between the sampled items
 - `hrv_items` (STRING): JSON-serialized array of HRV samples
 - `hrv_timestamp` (STRING): ISO 8601 timestamp of the first HRV sample
-- `latency` (INTEGER): Time taken to fall asleep in seconds
-- `light_sleep_duration` (INTEGER): Duration spent in light sleep in seconds
+- `latency` (INT): Time taken to fall asleep in seconds
+- `light_sleep_duration` (INT): Duration spent in light sleep in seconds
 - `low_battery_alert` (BOOLEAN): Flag indicating if a low battery alert occurred
-- `lowest_heart_rate` (INTEGER): Lowest heart rate during sleep
+- `lowest_heart_rate` (INT): Lowest heart rate during sleep
 - `movement_30_sec` (STRING): 30-second movement classification string
-- `period` (INTEGER): ECore sleep period identifier
-- `readiness_contributors_activity_balance` (INTEGER): Contribution of cumulative activity balance in range [1, 100]
-- `readiness_contributors_body_temperature` (INTEGER): Contribution of body temperature in range [1, 100]
-- `readiness_contributors_hrv_balance` (INTEGER): Contribution of heart rate variability balance in range [1, 100]
-- `readiness_contributors_previous_day_activity` (INTEGER): Contribution of previous day's activity in range [1, 100]
-- `readiness_contributors_previous_night` (INTEGER): Contribution of previous night's sleep in range [1, 100]
-- `readiness_contributors_recovery_index` (INTEGER): Contribution of recovery index in range [1, 100]
-- `readiness_contributors_resting_heart_rate` (INTEGER): Contribution of resting heart rate in range [1, 100]
-- `readiness_contributors_sleep_balance` (INTEGER): Contribution of sleep balance in range [1, 100]
-- `readiness_contributors_sleep_regularity` (INTEGER): Contribution of sleep regularity in range [1, 100]
-- `readiness_score` (INTEGER): Readiness score in range [1, 100]
-- `readiness_temperature_deviation` (FLOAT): Temperature deviation in degrees Celsius
-- `readiness_temperature_trend_deviation` (FLOAT): Temperature trend deviation in degrees Celsius
-- `readiness_score_delta` (INTEGER): Effect on readiness score caused by this sleep period
-- `rem_sleep_duration` (INTEGER): Duration spent in REM sleep in seconds
-- `restless_periods` (INTEGER): Number of restless periods during sleep
+- `period` (INT): ECore sleep period identifier
+- `readiness_contributors_activity_balance` (INT): Contribution of cumulative activity balance in range [1, 100]
+- `readiness_contributors_body_temperature` (INT): Contribution of body temperature in range [1, 100]
+- `readiness_contributors_hrv_balance` (INT): Contribution of heart rate variability balance in range [1, 100]
+- `readiness_contributors_previous_day_activity` (INT): Contribution of previous day's activity in range [1, 100]
+- `readiness_contributors_previous_night` (INT): Contribution of previous night's sleep in range [1, 100]
+- `readiness_contributors_recovery_index` (INT): Contribution of recovery index in range [1, 100]
+- `readiness_contributors_resting_heart_rate` (INT): Contribution of resting heart rate in range [1, 100]
+- `readiness_contributors_sleep_balance` (INT): Contribution of sleep balance in range [1, 100]
+- `readiness_contributors_sleep_regularity` (INT): Contribution of sleep regularity in range [1, 100]
+- `readiness_score` (INT): Readiness score in range [1, 100]
+- `readiness_temperature_deviation` (DOUBLE): Temperature deviation in degrees Celsius
+- `readiness_temperature_trend_deviation` (DOUBLE): Temperature trend deviation in degrees Celsius
+- `readiness_score_delta` (INT): Effect on readiness score caused by this sleep period
+- `rem_sleep_duration` (INT): Duration spent in REM sleep in seconds
+- `restless_periods` (INT): Number of restless periods during sleep
 - `sleep_algorithm_version` (STRING): Version of the sleep algorithm used to calculate the sleep data
 - `sleep_analysis_reason` (STRING): The reason for the creation or update of the latest version of this sleep
 - `sleep_phase_30_sec` (STRING): 30-second sleep phase classification string
 - `sleep_phase_5_min` (STRING): 5-minute sleep phase classification string
-- `sleep_score_delta` (INTEGER): Effect on sleep score caused by this sleep period
-- `time_in_bed` (INTEGER): Duration spent in bed in seconds
-- `total_sleep_duration` (INTEGER): Total sleep duration in seconds
+- `sleep_score_delta` (INT): Effect on sleep score caused by this sleep period
+- `time_in_bed` (INT): Duration spent in bed in seconds
+- `total_sleep_duration` (INT): Total sleep duration in seconds
 - `type` (STRING): Type of period: deleted, sleep, long_sleep, late_nap, or rest. Oura uses `deleted` for a period the user deleted and `rest` for one it rejected as a false detection, and the connector syncs these rows like any other, so filter them out before you total sleep durations
 - `ring_id` (STRING): Identifier of the ring; deprecated by Oura and usually absent
 - `app_sleep_phase_5_min` (STRING): 5-minute sleep phase classification aligned with the Oura app

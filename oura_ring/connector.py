@@ -4,10 +4,9 @@ sleep period data from the Oura API v2 to your Fivetran destination.
 
 The connector authenticates with Oura's OAuth2 server-side flow: each sync spends the single-use
 refresh token, keeps its replacement encrypted in state, and checkpoints it before reading any data.
-It tracks a per-table date cursor, re-reads a
-short overlap window on every sync because Oura revises recent days after the ring syncs, and
-follows next_token pagination. Nested objects are flattened and arrays are serialized to JSON
-strings for warehouse compatibility.
+It tracks a per-table date cursor, re-reads a 7-day overlap on every sync because days can reach
+Oura late, after the ring syncs, and follows next_token pagination. Nested objects are flattened
+and arrays are serialized to JSON strings for warehouse compatibility.
 
 See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference)
 and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
@@ -65,6 +64,14 @@ __DEFAULT_LOOKBACK_DAYS = 90
 __MAX_LOOKBACK_DAYS = 3650
 # Days can reach Oura late, after the ring syncs to the app, so every sync re-reads this many days
 __INCREMENTAL_OVERLAP_DAYS = 7
+# Tables synced before the OAuth change, which kept one shared last_sync_date in state
+__LEGACY_CURSOR_TABLES = [
+    "daily_activity",
+    "daily_sleep",
+    "daily_readiness",
+    "daily_stress",
+    "heart_rate",
+]
 
 
 class OuraAccessError(RuntimeError):
@@ -172,6 +179,9 @@ def validate_configuration(configuration: dict):
     for key in ("client_id", "client_secret", "refresh_token", "fernet_key"):
         if _is_placeholder(configuration.get(key)):
             raise ValueError(f"Missing required configuration value: {key}")
+        value = configuration[key]
+        if isinstance(value, str) and value != value.strip():
+            raise ValueError(f"{key} has leading or trailing whitespace; remove it")
     check_fernet_key(configuration["fernet_key"])
 
     lookback_days = configuration.get("lookback_days")
@@ -280,11 +290,14 @@ def fetch_data_with_retry(session, url, params=None):
                 status_code,
                 f"HTTP 401: Oura rejected the access token from this sync's refresh. URL: {url}",
             )
-        if status_code in __ACCESS_RESTRICTED_STATUS_CODES:
+        if status_code == 403:
             raise OuraAccessError(
                 status_code,
-                f"HTTP {status_code}: check the token's scopes and the Oura subscription. "
-                f"URL: {url}",
+                f"HTTP 403: check the token's scopes and the Oura subscription. URL: {url}",
+            )
+        if status_code == 426:
+            raise OuraAccessError(
+                status_code, f"HTTP 426: Oura asks for an account upgrade. URL: {url}"
             )
         if status_code in __RETRYABLE_STATUS_CODES and not is_last_attempt:
             delay_seconds = get_retry_delay(response, attempt)
@@ -322,7 +335,8 @@ def build_date_params(table_config: dict, window_start: date, window_end: date) 
     end_value = window_end.isoformat()
     if table_config.get("uses_datetime"):
         start_value = f"{start_value}T00:00:00Z"
-        end_value = f"{end_value}T23:59:59Z"
+        # End at the next midnight, where the next window starts, so no second falls between them
+        end_value = f"{(window_end + timedelta(days=1)).isoformat()}T00:00:00Z"
     return {table_config["start_param"]: start_value, table_config["end_param"]: end_value}
 
 
@@ -388,6 +402,32 @@ def resolve_start_date(state: dict, table_name: str, today: date, lookback_days:
     return saved_date - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
 
 
+def migrate_legacy_state(state: dict):
+    """
+    Carry state from the personal-access-token version of this connector over to per-table dates.
+
+    That version saved one last_sync_date for all tables and a next_token per table. The tables it
+    synced resume from that date, the sleep table it did not have starts from the lookback, and
+    the old keys are removed so they are never read again.
+
+    Args:
+        state: State dictionary, updated in place
+    """
+    legacy_date = state.pop("last_sync_date", None)
+    for key in [key for key in state if key.endswith("_next_token")]:
+        state.pop(key)
+    if not legacy_date:
+        return
+    try:
+        resume_date = date.fromisoformat(legacy_date)
+    except (TypeError, ValueError):
+        log.warning("Ignoring an unreadable last_sync_date from the previous connector version")
+        return
+    for table_name in __LEGACY_CURSOR_TABLES:
+        state.setdefault(f"{table_name}_synced_through", resume_date.isoformat())
+    log.info(f"Resuming the original tables from the previous version's date {resume_date}")
+
+
 def sync_window(session, table_name, table_config, window_start, window_end, state):
     """
     Sync one date window of a table, following next_token until the window is drained.
@@ -413,6 +453,7 @@ def sync_window(session, table_name, table_config, window_start, window_end, sta
     primary_key_field = table_config["primary_key"][0]
     url = f"{__BASE_URL}{table_config['endpoint']}"
     next_token = None
+    seen_tokens = set()
     record_count = 0
     skipped_count = 0
 
@@ -444,12 +485,12 @@ def sync_window(session, table_name, table_config, window_start, window_end, sta
         # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
         op.checkpoint(state=state)
 
-        previous_token = next_token
         next_token = page.get("next_token")
         if not next_token:
             return record_count, skipped_count
-        if next_token == previous_token:
+        if next_token in seen_tokens:
             raise RuntimeError(f"The API repeated a next_token for {table_name}")
+        seen_tokens.add(next_token)
 
 
 def sync_table(session, table_name, table_config, start_date, today, state):
@@ -536,6 +577,7 @@ def update(configuration: dict, state: dict):
 
     lookback_days = _optional_int(configuration, "lookback_days", __DEFAULT_LOOKBACK_DAYS)
     today = get_current_date()
+    migrate_legacy_state(state)
     access_token = refresh_access_token(configuration, state, __USER_AGENT)
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -560,12 +602,14 @@ def update(configuration: dict, state: dict):
                 skipped_count += table_skipped
             except OuraAccessError as e:
                 is_restricted = e.status_code in __ACCESS_RESTRICTED_STATUS_CODES
-                if not (table_config.get("is_optional") and is_restricted):
-                    raise OuraAccessError(
-                        e.status_code,
-                        f"{table_name} needs the {table_config['scope']} scope. {e}",
-                    ) from e
-                restricted_tables.append(table_name)
+                if table_config.get("is_optional") and is_restricted:
+                    restricted_tables.append(table_name)
+                    continue
+                if e.status_code != 403:
+                    raise
+                raise OuraAccessError(
+                    e.status_code, f"{table_name} needs the {table_config['scope']} scope. {e}"
+                ) from e
 
         report_degraded_sync(restricted_tables, skipped_count)
 
