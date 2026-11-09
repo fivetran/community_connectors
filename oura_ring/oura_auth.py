@@ -36,6 +36,8 @@ __TOKEN_MAX_RETRY_AFTER_SECONDS = 300
 __TOKEN_RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 # OAuth error codes are short lowercase words; anything else in the body is not repeated in errors
 __OAUTH_ERROR_CODE_PATTERN = re.compile(r"^[a-z_]{1,40}$")
+# A Retry-After given in seconds; [0-9] matches ASCII digits only
+__RETRY_AFTER_SECONDS_PATTERN = re.compile(r"[0-9]{1,6}")
 
 STATE_TOKEN_KEY = "encrypted_refresh_token"
 STATE_SOURCE_KEY = "refresh_token_source_sha256"
@@ -131,6 +133,23 @@ def oauth_error_code(response):
     return code if __OAUTH_ERROR_CODE_PATTERN.match(code) else None
 
 
+def parse_retry_after(value):
+    """
+    Read a Retry-After header given in seconds.
+
+    Args:
+        value: the header value, or None
+
+    Returns:
+        the number of seconds when the value is 1 to 6 ASCII digits, otherwise None (an HTTP date,
+        a sign, a decimal or a non-ASCII digit all fall back to the caller's backoff)
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return int(text) if __RETRY_AFTER_SECONDS_PATTERN.fullmatch(text) else None
+
+
 def token_retry_delay(response, attempt: int) -> int:
     """
     Choose the wait before retrying the token request: exponential backoff, or Retry-After on a
@@ -145,9 +164,11 @@ def token_retry_delay(response, attempt: int) -> int:
     """
     backoff = __TOKEN_BASE_DELAY_SECONDS * (2**attempt)
     if response.status_code == 429:
-        retry_after = (getattr(response, "headers", None) or {}).get("Retry-After")
-        if retry_after and str(retry_after).strip().isdigit():
-            return min(max(int(retry_after), backoff), __TOKEN_MAX_RETRY_AFTER_SECONDS)
+        retry_after = parse_retry_after(
+            (getattr(response, "headers", None) or {}).get("Retry-After")
+        )
+        if retry_after is not None:
+            return min(max(retry_after, backoff), __TOKEN_MAX_RETRY_AFTER_SECONDS)
     return backoff
 
 

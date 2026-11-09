@@ -46,7 +46,7 @@ fivetran init --template oura_ring
 - A 7-day overlap on every sync to pick up days that reach Oura late, after the ring syncs to the app
 - `next_token` pagination, with a guard that stops the sync if the API repeats a token
 - Heart rate requests split into 29-day windows, within Oura's 30-day limit
-- Retries that follow the `Retry-After` header on HTTP 429
+- Retries with exponential backoff that wait longer when a `Retry-After` header in seconds asks for it
 - A setup form with a setup test that validates the configuration
 
 ## Configuration file
@@ -119,9 +119,9 @@ Daily endpoints use `start_date` and `end_date` in YYYY-MM-DD format. The heart 
 
 ## Error handling
 
-The `def fetch_data_with_retry(session, url, params)` function retries HTTP 429, 500, 502, 503, and 504 responses, connection errors, and timeouts, up to 3 attempts with exponential backoff. When a retried response carries a numeric `Retry-After` header, it waits for the longer of that header and the backoff, capped at 300 seconds.
+The `def fetch_data_with_retry(session, url, params)` function retries HTTP 429, 500, 502, 503, and 504 responses, connection errors, and timeouts, up to 3 attempts with exponential backoff. When a retried response carries a `Retry-After` header in plain seconds, it waits for the longer of that header and the backoff, capped at 300 seconds. Any other form of the header, such as an HTTP date, falls back to the backoff.
 
-A token refresh rejected with HTTP 400 or 401 stops the sync before any data request. When Oura's error code is `invalid_grant`, the message says the refresh token was already used or revoked; otherwise it asks you to check `client_id` and `client_secret`. The token request is retried on a connection error, an HTTP 429 (waiting for the longer of a numeric `Retry-After` header and the backoff, capped at 300 seconds), or a 5xx response, because those usually mean Oura did not complete it. A gateway 502 or 504 can still arrive after Oura rotated the token, and then the next sync reports `invalid_grant`. A read timeout is not retried, because Oura may already have rotated the token.
+A token refresh rejected with HTTP 400 or 401 stops the sync before any data request. When Oura's error code is `invalid_grant`, the message says the refresh token was already used or revoked; otherwise it asks you to check `client_id` and `client_secret`. The token request is retried on a connection error, an HTTP 429 (waiting for the longer of a `Retry-After` header in plain seconds and the backoff, capped at 300 seconds), or a 5xx response, because those usually mean Oura did not complete it. A gateway 502 or 504 can still arrive after Oura rotated the token, and then the next sync reports `invalid_grant`. A read timeout is not retried, because Oura may already have rotated the token.
 
 An HTTP 401 on a data request stops the sync at once. An HTTP 403 means a missing scope or a lapsed subscription, and an HTTP 426 means the account needs an upgrade. On `daily_stress` the connector skips the table for either one and reports it with `op.warning`, because stress data depends on the subscription. On any other table a 403 stops the sync with a message that names the scope, and a 426 stops it with the upgrade message. Records with no primary key are skipped and counted in one `op.warning` summary.
 

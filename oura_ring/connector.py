@@ -43,7 +43,7 @@ from setup_form import build_form
 from tables import TABLE_CONFIG
 
 # OAuth2 refresh with the rotated refresh token kept encrypted in state
-from oura_auth import check_fernet_key, refresh_access_token
+from oura_auth import check_fernet_key, parse_retry_after, refresh_access_token
 
 # API Configuration Constants
 __BASE_URL = "https://api.ouraring.com"
@@ -229,20 +229,18 @@ def get_retry_delay(response, attempt: int) -> int:
     Choose how long to wait before retrying a failed response.
 
     Args:
-        response: the HTTP response, whose Retry-After header wins when it holds a number of seconds
+        response: the HTTP response; a Retry-After of plain seconds is used when it is longer than
+            the backoff
         attempt: zero-based attempt number, used for exponential backoff
 
     Returns:
         The number of seconds to wait, capped so a large header cannot stall the sync
     """
     backoff_seconds = __BASE_DELAY_SECONDS * (2**attempt)
-    retry_after = response.headers.get("Retry-After")
+    retry_after = parse_retry_after(response.headers.get("Retry-After"))
     if retry_after is None:
         return backoff_seconds
-    try:
-        return min(max(int(retry_after), backoff_seconds), __MAX_RETRY_AFTER_SECONDS)
-    except ValueError:
-        return backoff_seconds
+    return min(max(retry_after, backoff_seconds), __MAX_RETRY_AFTER_SECONDS)
 
 
 def fetch_data_with_retry(session, url, params=None):
