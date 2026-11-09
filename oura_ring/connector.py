@@ -65,7 +65,8 @@ __MAX_LOOKBACK_DAYS = 3650
 # Days can reach Oura late, after the ring syncs to the app, so every sync re-reads this many days
 __INCREMENTAL_OVERLAP_DAYS = 7
 # Tables that resume from the shared last_sync_date the personal-access-token version kept.
-# daily_stress is left out because that version advanced the date even when it skipped stress.
+# daily_stress is handled on its own because that version advanced the date even when it skipped
+# stress on a 403 or 426.
 __LEGACY_CURSOR_TABLES = ["daily_activity", "daily_sleep", "daily_readiness", "heart_rate"]
 
 
@@ -397,17 +398,20 @@ def resolve_start_date(state: dict, table_name: str, today: date, lookback_days:
     return saved_date - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
 
 
-def migrate_legacy_state(state: dict):
+def migrate_legacy_state(state: dict, today: date, lookback_days: int):
     """
     Carry state from the personal-access-token version of this connector over to per-table dates.
 
     That version saved one last_sync_date for all tables and a next_token per table. Four of its
-    tables resume from that date. daily_stress starts from the lookback, because that version
-    advanced the date even when it skipped stress, and so does the sleep table it did not have.
-    The old keys are removed so they are never read again.
+    tables resume from that date. daily_stress starts from that date or from the lookback,
+    whichever is earlier, because that version advanced the date even when it skipped stress.
+    The sleep table, which that version did not have, starts from the lookback. The old keys are
+    removed so they are never read again.
 
     Args:
         state: State dictionary, updated in place
+        today: The current UTC date
+        lookback_days: Days to read on a table's first sync
     """
     legacy_date = state.pop("last_sync_date", None)
     for key in [key for key in state if key.endswith("_next_token")]:
@@ -421,7 +425,12 @@ def migrate_legacy_state(state: dict):
         return
     for table_name in __LEGACY_CURSOR_TABLES:
         state.setdefault(f"{table_name}_synced_through", resume_date.isoformat())
-    log.info(f"Resuming four tables from the previous version's date {resume_date}")
+    # resolve_start_date subtracts the overlap, so this starts stress at the earlier of
+    # (resume_date - overlap) and (today - lookback_days)
+    lookback_seed = today - timedelta(days=lookback_days - __INCREMENTAL_OVERLAP_DAYS)
+    stress_seed = min(resume_date, lookback_seed)
+    state.setdefault("daily_stress_synced_through", stress_seed.isoformat())
+    log.info(f"Carried the previous version's last_sync_date {resume_date} into per-table dates")
 
 
 def sync_window(session, table_name, table_config, window_start, window_end, state):
@@ -573,7 +582,7 @@ def update(configuration: dict, state: dict):
 
     lookback_days = _optional_int(configuration, "lookback_days", __DEFAULT_LOOKBACK_DAYS)
     today = get_current_date()
-    migrate_legacy_state(state)
+    migrate_legacy_state(state, today, lookback_days)
     access_token = refresh_access_token(configuration, state, __USER_AGENT)
 
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
