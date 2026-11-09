@@ -151,6 +151,8 @@ def parse_retry_after(value):
     text = str(value).strip(" \t")
     if not __RETRY_AFTER_SECONDS_PATTERN.fullmatch(text):
         return None
+    # Leading zeros carry no value, so they do not count toward the length guard
+    text = text.lstrip("0") or "0"
     # int() refuses digit strings over 4,300 characters, and any value this long is past the cap
     return int(text) if len(text) <= __RETRY_AFTER_MAX_DIGITS else 10**__RETRY_AFTER_MAX_DIGITS
 
@@ -261,7 +263,12 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
             return body
         is_retryable = response.status_code in __TOKEN_RETRYABLE_STATUS_CODES
         if is_retryable and attempt < __TOKEN_MAX_RETRIES:
-            time.sleep(token_retry_delay(response, attempt))
+            delay_seconds = token_retry_delay(response, attempt)
+            log.info(
+                f"Oura token request returned HTTP {response.status_code}, "
+                f"retrying in {delay_seconds}s"
+            )
+            time.sleep(delay_seconds)
             continue
         message = describe_token_failure(response)
         if response.status_code not in (400, 401):
