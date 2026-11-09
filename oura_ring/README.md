@@ -43,11 +43,11 @@ fivetran init --template oura_ring
 
 - Six tables, including per-period sleep detail
 - Per-table date cursors, so a failure in one table does not re-read the others
-- A 3-day overlap on every sync to pick up days Oura revises after the ring syncs
+- A 7-day overlap on every sync to pick up days that reach Oura late, after the ring syncs to the app
 - `next_token` pagination, with a guard that stops the sync if the API repeats a token
 - Heart rate requests split into windows of at most 30 days
 - Retries that follow the `Retry-After` header on HTTP 429
-- A setup form with a setup test that reads one day of data
+- A setup form with a setup test that validates the configuration
 
 ## Configuration file
 
@@ -73,9 +73,13 @@ The `configuration.json` file contains the parameters needed to connect to the O
 
 ## Requirements file
 
-This connector has no `requirements.txt` because it needs no packages beyond the pre-installed ones. It uses `cryptography` for the Fernet key, which is installed with `fivetran_connector_sdk`. Declaring a different version would conflict with the SDK's pinned one.
+The `requirements.txt` file declares `cryptography`, which the connector uses to encrypt the rotated refresh token in state with the `fernet_key`:
 
-> Note: The `fivetran_connector_sdk` and `requests` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+```
+cryptography==50.0.2
+```
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 
@@ -86,7 +90,12 @@ The connector uses Oura's OAuth2 authorization-code (server-side) flow. To set i
 3. After consent, Oura redirects to the redirect URI with a `code`. Exchange it within a few minutes at `https://api.ouraring.com/oauth/token` with `grant_type=authorization_code`, the code, the redirect URI, and your client credentials.
 4. Add the `client_id`, `client_secret`, the returned `refresh_token`, and a new `fernet_key` to your `configuration.json` file.
 
-At the start of every sync, the `def refresh_access_token(configuration, state, user_agent)` function in `oura_auth.py` exchanges the refresh token for a new access token. Oura invalidates a refresh token once it is used and returns a new one, so the connector encrypts the new refresh token with the `fernet_key`, stores it in state, and checkpoints that state before it requests any data. The configuration's `refresh_token` is only spent again after a new consent: state records a SHA-256 fingerprint of the configured token, and a different configured token replaces the one in state.
+At the start of every sync, the `def refresh_access_token(configuration, state, user_agent)` function in `oura_auth.py` exchanges the refresh token for a new access token. Oura invalidates a refresh token once it is used and returns a new one, so the connector encrypts the new refresh token with the `fernet_key`, stores it in state, and checkpoints that state before it requests any data. After the first sync the connector uses the token in state, and the configured `refresh_token` is spent. State records a SHA-256 fingerprint of the configured token, so a new consent with a different `refresh_token` replaces the token in state.
+
+Because the configured `refresh_token` works only once, two situations need a new consent:
+
+- A full re-sync, or any reset of the connector's state, removes the token in state. The next sync falls back to the configured `refresh_token`, which is already spent, and stops with an error that says so. Complete the consent again and set the new `refresh_token` before the next sync.
+- A local `fivetran debug` run spends the configured `refresh_token` into the local state. Complete the consent again after testing locally and before you deploy, so the deployed connection starts with an unspent token.
 
 To rotate the `fernet_key`, run the consent again and set the new `refresh_token` and the new `fernet_key` together. The first sync after that encrypts the next token with the new key. If only the key changes, the connector cannot decrypt the token in state and falls back to the configured `refresh_token`, which fails if it was already spent.
 
@@ -98,7 +107,7 @@ The Oura API v2 returns a `next_token` field when more records remain. The `def 
 
 ## Data handling
 
-The `def update(configuration, state)` function walks the six tables in turn, and the `def sync_table(session, table_name, table_config, start_date, today, state)` function reads each one through today. State holds a `<table>_synced_through` date per table. The next sync starts 3 days before that date, and the date filters are inclusive, so the overlap re-reads those days and upserts the same primary keys.
+The `def update(configuration, state)` function walks the six tables in turn, and the `def sync_table(session, table_name, table_config, start_date, today, state)` function reads each one through today. State holds a `<table>_synced_through` date per table. The next sync starts 7 days before that date, and the date filters are inclusive, so the overlap re-reads those days and upserts the same primary keys. The saved date follows the clock rather than the records returned, so a day that reaches Oura more than 7 days late, for example from a ring that stayed out of range of the app for longer than that, is not read again.
 
 The query runs through tomorrow in UTC because Oura dates records in the wearer's time zone, which can be ahead of UTC. The saved date never passes today.
 
@@ -258,7 +267,7 @@ The `SLEEP` table consists of the following columns:
 - `sleep_score_delta` (INTEGER): Effect on sleep score caused by this sleep period
 - `time_in_bed` (INTEGER): Duration spent in bed in seconds
 - `total_sleep_duration` (INTEGER): Total sleep duration in seconds
-- `type` (STRING): Type of period: deleted, sleep, long_sleep, late_nap, or rest
+- `type` (STRING): Type of period: deleted, sleep, long_sleep, late_nap, or rest. Oura uses `deleted` for a period the user deleted and `rest` for one it rejected as a false detection, and the connector syncs these rows like any other, so filter them out before you total sleep durations
 - `ring_id` (STRING): Identifier of the ring; deprecated by Oura and usually absent
 - `app_sleep_phase_5_min` (STRING): 5-minute sleep phase classification aligned with the Oura app
 

@@ -63,8 +63,8 @@ __ACCESS_RESTRICTED_STATUS_CODES = [403, 426]
 # Sync Configuration Constants
 __DEFAULT_LOOKBACK_DAYS = 90
 __MAX_LOOKBACK_DAYS = 3650
-# Oura revises recent days after the ring syncs to the app, so every sync re-reads this many days
-__INCREMENTAL_OVERLAP_DAYS = 3
+# Days can reach Oura late, after the ring syncs to the app, so every sync re-reads this many days
+__INCREMENTAL_OVERLAP_DAYS = 7
 
 
 class OuraAccessError(RuntimeError):
@@ -85,11 +85,12 @@ def _is_placeholder(value) -> bool:
     Returns:
         True when the value is missing, empty, or a <PLACEHOLDER> string
     """
-    if value is None or value == "":
+    if value is None:
         return True
     if not isinstance(value, str):
         return False
-    return value.startswith("<") and value.endswith(">")
+    stripped = value.strip()
+    return not stripped or (stripped.startswith("<") and stripped.endswith(">"))
 
 
 def _optional_int(configuration: dict, key: str, default: int) -> int:
@@ -608,7 +609,7 @@ def configuration_form() -> ConfigurationForm:
     Declare the setup form Fivetran renders for this connector and the setup test it can run.
 
     The field layout lives in setup_form.py; this function supplies the default and the setup
-    test, which needs the connector's own validation and fetch code.
+    test, which needs the connector's own validation code.
 
     Returns:
         ConfigurationForm with one field per configuration key and one setup test

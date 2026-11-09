@@ -30,7 +30,8 @@ __TOKEN_URL = "https://api.ouraring.com/oauth/token"
 __TOKEN_TIMEOUT_SECONDS = 30
 __TOKEN_MAX_RETRIES = 3
 __TOKEN_BASE_DELAY_SECONDS = 2
-# Oura did not process a request that failed with one of these, so the refresh token is unspent
+# These usually mean Oura did not complete the request, so the refresh token is unspent. A gateway
+# 502 or 504 can still arrive after a rotation; the next refresh then reports invalid_grant.
 __TOKEN_RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 # OAuth error codes are short lowercase words; anything else in the body is not repeated in errors
 __OAUTH_ERROR_CODE_PATTERN = re.compile(r"^[a-z_]{1,40}$")
@@ -103,6 +104,26 @@ def select_refresh_token(configuration: dict, state: dict) -> str:
         return configured_token
 
 
+def oauth_error_code(response):
+    """
+    Read the OAuth error code from a failed token response, without keeping the rest of the body.
+
+    Args:
+        response: the token endpoint response
+
+    Returns:
+        the error code when the body is JSON with a plain lowercase code, otherwise None
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    code = body.get("error") if isinstance(body, dict) else None
+    if isinstance(code, str) and __OAUTH_ERROR_CODE_PATTERN.match(code):
+        return code
+    return None
+
+
 def describe_token_failure(response) -> str:
     """
     Build an error message from a failed token response without repeating its body.
@@ -113,14 +134,8 @@ def describe_token_failure(response) -> str:
     Returns:
         message with the HTTP status and, when it is a plain OAuth code, the error code
     """
-    code = None
-    try:
-        body = response.json()
-        if isinstance(body, dict) and isinstance(body.get("error"), str):
-            code = body["error"]
-    except ValueError:
-        pass
-    suffix = f" ({code})" if code and __OAUTH_ERROR_CODE_PATTERN.match(code) else ""
+    code = oauth_error_code(response)
+    suffix = f" ({code})" if code else ""
     return f"Oura token refresh failed with HTTP {response.status_code}{suffix}"
 
 
@@ -154,7 +169,7 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
                 __TOKEN_URL, data=payload, headers=headers, timeout=__TOKEN_TIMEOUT_SECONDS
             )
         except requests.exceptions.ConnectionError as e:
-            # A connection error means the request never reached Oura, so the token is unspent
+            # A connection error usually means the request never reached Oura, so it is retried
             if attempt == __TOKEN_MAX_RETRIES:
                 raise RuntimeError("Oura token endpoint unreachable") from e
             time.sleep(__TOKEN_BASE_DELAY_SECONDS * (2**attempt))
@@ -162,8 +177,8 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
         except requests.exceptions.RequestException as e:
             # A read timeout may come after Oura rotated the token, so a retry could only fail
             raise RuntimeError(
-                f"Oura token request failed ({type(e).__name__}); if the next sync reports "
-                "invalid_grant, run the consent script again"
+                f"Oura token request failed ({type(e).__name__}). If the next sync reports "
+                "invalid_grant, complete the OAuth consent again and set the new refresh_token"
             ) from e
 
         if response.status_code == 200:
@@ -180,12 +195,17 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
             time.sleep(__TOKEN_BASE_DELAY_SECONDS * (2**attempt))
             continue
         message = describe_token_failure(response)
-        if response.status_code in (400, 401):
+        if response.status_code not in (400, 401):
+            raise RuntimeError(message)
+        if oauth_error_code(response) == "invalid_grant":
             raise OuraAuthError(
-                f"{message}. The refresh token was already used or revoked, or the client "
-                "credentials are wrong; run the consent script again"
+                f"{message}. Oura reports the refresh token as already used or revoked. "
+                "Complete the OAuth consent again and set the new refresh_token"
             )
-        raise RuntimeError(message)
+        raise OuraAuthError(
+            f"{message}. Check client_id and client_secret. If they are right, complete the "
+            "OAuth consent again and set the new refresh_token"
+        )
     raise RuntimeError("Oura token refresh did not complete")
 
 
@@ -203,8 +223,18 @@ def refresh_access_token(configuration: dict, state: dict, user_agent: str) -> s
     Returns:
         an access token for the Oura API
     """
+    state_had_token = bool(state.get(STATE_TOKEN_KEY))
     refresh_token = select_refresh_token(configuration, state)
-    body = post_refresh(configuration, refresh_token, user_agent)
+    try:
+        body = post_refresh(configuration, refresh_token, user_agent)
+    except OuraAuthError as e:
+        if state_had_token:
+            raise
+        raise OuraAuthError(
+            f"{e}. State held no saved token (a first sync, a full re-sync or a state reset), so "
+            "the configured refresh_token was used, and it is spent once any earlier sync or "
+            "local debug run has used it"
+        ) from e
     fernet = Fernet(configuration["fernet_key"])
     state[STATE_TOKEN_KEY] = fernet.encrypt(body["refresh_token"].encode()).decode()
     state[STATE_SOURCE_KEY] = fingerprint(configuration["refresh_token"])
