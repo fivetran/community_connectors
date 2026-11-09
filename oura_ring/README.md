@@ -1,6 +1,6 @@
 ---
 name: Oura Ring
-description: Sync daily activity, sleep, readiness, stress, and heart rate data from the Oura Ring API v2.
+description: Sync daily activity, sleep, readiness, stress, heart rate, and detailed sleep period data from the Oura API v2.
 category: SaaS & APIs
 ---
 
@@ -8,7 +8,13 @@ category: SaaS & APIs
 
 ## Connector overview
 
-This connector syncs health and wellness data from the Oura Ring API v2 into your Fivetran destination. It retrieves daily activity scores, sleep metrics, readiness assessments, stress levels, and continuous heart rate measurements. The connector supports incremental syncing using date-based cursors and handles cursor-based pagination via the Oura API's `next_token` mechanism. Nested contributor objects (activity, sleep, and readiness scores) are automatically flattened for warehouse compatibility, and time-series arrays are serialized to JSON strings.
+This connector syncs health and wellness data from the Oura API v2 into your Fivetran destination. It covers the daily activity, sleep, readiness, and stress summaries, continuous heart rate, and the detailed `sleep` table, which holds one row per sleep period with durations, HRV, and heart rate that the daily sleep score does not include.
+
+It authenticates with Oura's OAuth2 authorization-code flow, because Oura retired personal access tokens in December 2025. Oura's refresh tokens are single-use, so each sync spends one, keeps the replacement encrypted in state, and checkpoints it before reading any data. Each table keeps its own date cursor, and every sync re-reads a short overlap window because Oura revises recent days after the ring syncs to the app.
+
+## Accreditation
+
+This example was contributed by [Kelly Kohlleffel](https://github.com/kellykohlleffel).
 
 ## Requirements
 
@@ -17,29 +23,31 @@ This connector syncs health and wellness data from the Oura Ring API v2 into you
   - Windows: 10 or later (64-bit only)
   - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
   - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
-- An Oura Ring account with a Personal Access Token
+- An Oura account and a registered Oura API application
 
 ## Getting started
 
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
 ```bash
 fivetran init --template oura_ring
 ```
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
 
 > Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ## Features
 
-- Incremental syncing using date-based state tracking to avoid re-fetching historical data
-- Cursor-based pagination via `next_token` for reliable large dataset retrieval
-- Automatic flattening of nested contributor objects into top-level columns
-- Configurable lookback window for initial sync (default 90 days)
-- Graceful handling of restricted endpoints when stress data requires a higher subscription tier
-- Exponential backoff retry logic for transient API failures and rate limiting
+- Six tables, including per-period sleep detail
+- Per-table date cursors, so a failure in one table does not re-read the others
+- A 3-day overlap on every sync to pick up days Oura revises after the ring syncs
+- `next_token` pagination, with a guard that stops the sync if the API repeats a token
+- Heart rate requests split into windows of at most 30 days
+- Retries that follow the `Retry-After` header on HTTP 429
+- A setup form with a setup test that reads one day of data
 
 ## Configuration file
 
@@ -47,141 +55,219 @@ The `configuration.json` file contains the parameters needed to connect to the O
 
 ```json
 {
-    "personal_access_token": "<YOUR_PERSONAL_ACCESS_TOKEN>",
+    "client_id": "<YOUR_OURA_CLIENT_ID>",
+    "client_secret": "<YOUR_OURA_CLIENT_SECRET>",
+    "refresh_token": "<YOUR_OURA_REFRESH_TOKEN>",
+    "fernet_key": "<YOUR_FERNET_KEY>",
     "lookback_days": "<LOOKBACK_DAYS>"
 }
 ```
 
-- `personal_access_token` (required): Your Oura Personal Access Token generated from the Oura developer portal
-- `lookback_days` (optional): Number of days to look back on the initial sync, defaults to 90
+- `client_id` (required): Client ID of your Oura API application
+- `client_secret` (required): Client secret of the same application
+- `refresh_token` (required): Refresh token from the authorization-code consent, with the `daily` and `heartrate` scopes. It seeds the first sync. After that the connector uses the rotated token it keeps in state.
+- `fernet_key` (required): A Fernet key (32 url-safe base64-encoded bytes) that encrypts the rotated refresh token in state. Generate one with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+- `lookback_days` (optional): Number of days to read on a table's first sync, from 1 to 3650, defaults to 90
 
-> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+
+## Requirements file
+
+This connector has no `requirements.txt` because it needs no packages beyond the pre-installed ones. It uses `cryptography` for the Fernet key, which is installed with `fivetran_connector_sdk`. Declaring a different version would conflict with the SDK's pinned one.
+
+> Note: The `fivetran_connector_sdk` and `requests` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
 ## Authentication
 
-This connector uses Bearer token authentication with a Personal Access Token. To generate your token:
+The connector uses Oura's OAuth2 authorization-code (server-side) flow. To set it up:
 
-1. Log in to the Oura developer portal at https://cloud.ouraring.com/personal-access-tokens.
-2. Click **Create New Personal Access Token**.
-3. Copy the generated token and add it to your `configuration.json` file as the `personal_access_token` value.
+1. Register an API application at https://developer.ouraring.com/applications with a redirect URI, for example `http://localhost:8080/callback`, and the `daily` and `heartrate` scopes.
+2. Send the user to `https://cloud.ouraring.com/oauth/authorize` with `response_type=code`, your `client_id`, the redirect URI, the scopes, and a random `state` value.
+3. After consent, Oura redirects to the redirect URI with a `code`. Exchange it within a few minutes at `https://api.ouraring.com/oauth/token` with `grant_type=authorization_code`, the code, the redirect URI, and your client credentials.
+4. Add the `client_id`, `client_secret`, the returned `refresh_token`, and a new `fernet_key` to your `configuration.json` file.
 
-The token is sent in the `Authorization` header as `Bearer <token>` on every API request via a persistent `requests.Session`.
+At the start of every sync, the `def refresh_access_token(configuration, state, user_agent)` function in `oura_auth.py` exchanges the refresh token for a new access token. Oura invalidates a refresh token once it is used and returns a new one, so the connector encrypts the new refresh token with the `fernet_key`, stores it in state, and checkpoints that state before it requests any data. The configuration's `refresh_token` is only spent again after a new consent: state records a SHA-256 fingerprint of the configured token, and a different configured token replaces the one in state.
+
+To rotate the `fernet_key`, run the consent again and set the new `refresh_token` and the new `fernet_key` together. The first sync after that encrypts the next token with the new key. If only the key changes, the connector cannot decrypt the token in state and falls back to the configured `refresh_token`, which fails if it was already spent.
+
+The setup test (refer to `def verify_configuration(configuration)`) checks that every value is present and that the `fernet_key` is valid. It does not call Oura, because a setup test cannot save a rotated token and would spend the only valid one.
 
 ## Pagination
 
-The Oura API v2 uses cursor-based pagination via a `next_token` field in each response. The connector fetches pages in a loop, passing the `next_token` from the previous response as a query parameter to retrieve the next page. Pagination continues until the API returns no `next_token`. State is checkpointed after each page to support resumable syncs in case of interruptions.
+The Oura API v2 returns a `next_token` field when more records remain. The `def sync_window(session, table_name, table_config, window_start, window_end, state)` function passes it back until the API returns none. A `next_token` is never saved to state, because it is only valid for the window that produced it. An interrupted window is read again from its start, which upserts the same primary keys.
 
 ## Data handling
 
-The `def update(configuration, state)` function orchestrates the sync across all five tables. For each table, the `def sync_table(session, table_name, table_config, start_date_str, end_date_str, state)` function handles pagination, record processing, and checkpointing.
+The `def update(configuration, state)` function walks the six tables in turn, and the `def sync_table(session, table_name, table_config, start_date, today, state)` function reads each one through today. State holds a `<table>_synced_through` date per table. The next sync starts 3 days before that date, and the date filters are inclusive, so the overlap re-reads those days and upserts the same primary keys.
 
-Records with nested contributor objects (daily activity, sleep, and readiness) are flattened using the `def flatten_dict(d, parent_key, sep)` function. For example, `{"contributors": {"deep_sleep": 99}}` becomes `{"contributors_deep_sleep": 99}`. Lists and arrays are serialized to JSON strings.
+The query runs through tomorrow in UTC because Oura dates records in the wearer's time zone, which can be ahead of UTC. The saved date never passes today.
 
-Daily endpoints use `start_date` and `end_date` query parameters in YYYY-MM-DD format. The heart rate endpoint uses `start_datetime` and `end_datetime` in ISO 8601 format, handled by the `def build_date_params(table_name, table_config, start_date_str, end_date_str)` function.
+The `def flatten_record(record, columns)` function flattens nested objects, so `{"contributors": {"deep_sleep": 99}}` becomes `{"contributors_deep_sleep": 99}`. Lists are serialized to JSON strings. Every row holds all of the table's declared columns. A nested object such as `readiness` arrives as an explicit null when it is missing, and that null is left out so it does not add a stray column, while a field Oura adds later passes through once it has a value.
+
+Daily endpoints use `start_date` and `end_date` in YYYY-MM-DD format. The heart rate endpoint uses `start_datetime` and `end_datetime` in ISO 8601 format, handled by the `def build_date_params(table_config, window_start, window_end)` function.
 
 ## Error handling
 
-The `def fetch_data_with_retry(session, url, params)` function implements exponential backoff retry logic for transient failures. Retryable HTTP status codes (429, 500, 502, 503, 504) trigger up to 3 retry attempts with increasing delays. Connection errors and timeouts are also retried.
+The `def fetch_data_with_retry(session, url, params)` function retries HTTP 429, 500, 502, 503, and 504 responses, connection errors, and timeouts, up to 3 attempts with exponential backoff. On a 429 it waits for the `Retry-After` header, capped at 300 seconds.
 
-The daily_stress endpoint may return HTTP 403 (forbidden) or 426 (upgrade required) for accounts without the appropriate Oura subscription tier. The connector gracefully skips the stress table in these cases and continues syncing the remaining tables.
+A token refresh rejected with HTTP 400 or 401 stops the sync before any data request, with a message to run the consent again. The token request is retried only when Oura did not process it: on a connection error, an HTTP 429, or a 5xx response. A read timeout is not retried, because Oura may already have rotated the token. An HTTP 401 on a data request stops the sync at once. An HTTP 403 or 426 means a missing scope or a lapsed subscription. On `daily_stress` the connector skips the table and reports it with `op.warning`, because stress data depends on the subscription. On any other table the sync stops and the message names the scope. Records with no primary key are skipped and counted in one `op.warning` summary.
 
-Authentication and authorization failures (HTTP 401/403) surface immediately with a descriptive error message directing users to check their `personal_access_token` and API scopes.
+Error messages carry the status and the URL only. Response bodies can hold health data, so they are never logged. Token errors add only the OAuth error code, such as `invalid_grant`, and never the token or the client secret.
 
 ## Tables created
 
-### Daily activity
+### daily_activity
 
 The `DAILY_ACTIVITY` table consists of the following columns:
 
-- `id` (STRING, primary key): Unique identifier for the daily activity record
-- `day` (STRING): Date in YYYY-MM-DD format
-- `timestamp` (STRING): ISO 8601 timestamp
-- `score` (INTEGER): Overall activity score (0-100)
-- `active_calories` (INTEGER): Calories burned through activity
-- `steps` (INTEGER): Total steps for the day
-- `equivalent_walking_distance` (FLOAT): Equivalent walking distance in meters
-- `high_activity_met_minutes` (FLOAT): Minutes of high activity weighted by MET
-- `high_activity_time` (INTEGER): Seconds of high activity
-- `medium_activity_met_minutes` (FLOAT): Minutes of medium activity weighted by MET
-- `medium_activity_time` (INTEGER): Seconds of medium activity
-- `low_activity_met_minutes` (FLOAT): Minutes of low activity weighted by MET
-- `low_activity_time` (INTEGER): Seconds of low activity
-- `sedentary_met_minutes` (FLOAT): Minutes of sedentary time weighted by MET
-- `sedentary_time` (INTEGER): Seconds of sedentary time
-- `resting_time` (INTEGER): Seconds of resting time
-- `non_wear_time` (INTEGER): Seconds ring was not worn
-- `inactivity_alerts` (INTEGER): Number of inactivity alerts
+- `id` (STRING, primary key): Unique identifier of the record
+- `active_calories` (INTEGER): Active calories expended in kilocalories
 - `average_met_minutes` (FLOAT): Average MET minutes
-- `target_calories` (INTEGER): Target calorie goal
-- `target_meters` (INTEGER): Target distance goal in meters
-- `meters_to_target` (INTEGER): Remaining meters to daily goal
-- `met_interval` (FLOAT): Interval between MET samples in seconds
-- `met_items` (STRING): JSON-serialized array of MET sample values
-- `met_timestamp` (STRING): Timestamp of first MET sample
-- `class_5_min` (STRING): JSON-serialized 5-minute activity classification string
-- `contributors_meet_daily_targets` (INTEGER): Contributor score for meeting daily targets (1-100)
-- `contributors_move_every_hour` (INTEGER): Contributor score for hourly movement (1-100)
-- `contributors_recovery_time` (INTEGER): Contributor score for recovery time (1-100)
-- `contributors_stay_active` (INTEGER): Contributor score for staying active (1-100)
-- `contributors_training_frequency` (INTEGER): Contributor score for training frequency (1-100)
-- `contributors_training_volume` (INTEGER): Contributor score for training volume (1-100)
+- `class_5_min` (STRING): 5-minute activity classification string
+- `contributors_meet_daily_targets` (INTEGER): Contribution of meeting previous 7-day daily activity targets in range [1, 100]
+- `contributors_move_every_hour` (INTEGER): Contribution of previous 24-hour inactivity alerts in range [1, 100]
+- `contributors_recovery_time` (INTEGER): Contribution of previous 7-day recovery time in range [1, 100]
+- `contributors_stay_active` (INTEGER): Contribution of previous 24-hour activity in range [1, 100]
+- `contributors_training_frequency` (INTEGER): Contribution of previous 7-day exercise frequency in range [1, 100]
+- `contributors_training_volume` (INTEGER): Contribution of previous 7-day exercise volume in range [1, 100]
+- `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
+- `equivalent_walking_distance` (INTEGER): Equivalent walking distance of energe expenditure in meters
+- `high_activity_met_minutes` (INTEGER): The total METs of each minute classified as high activity
+- `high_activity_time` (INTEGER): The total time in seconds of each minute classified as high activity
+- `inactivity_alerts` (INTEGER): Number of inactivity alerts received
+- `low_activity_met_minutes` (INTEGER): The total METs of each minute classified as low activity
+- `low_activity_time` (INTEGER): The total time in seconds of each minute classified as low activity
+- `medium_activity_met_minutes` (INTEGER): The total METs of each minute classified as medium activity
+- `medium_activity_time` (INTEGER): The total time in seconds of each minute classified as medium activity
+- `met_interval` (FLOAT): Interval in seconds between the sampled items
+- `met_items` (STRING): JSON-serialized array of MET samples
+- `met_timestamp` (STRING): ISO 8601 timestamp of the first MET sample
+- `meters_to_target` (INTEGER): Meters remaining to target
+- `non_wear_time` (INTEGER): Ring non-wear time in seconds
+- `resting_time` (INTEGER): Resting time in seconds
+- `score` (INTEGER): Activity score in range [1, 100]
+- `sedentary_met_minutes` (INTEGER): Sedentary MET minutes
+- `sedentary_time` (INTEGER): Sedentary time in seconds
+- `steps` (INTEGER): Total number of steps taken
+- `target_calories` (INTEGER): Daily activity target in kilocalories
+- `target_meters` (INTEGER): Daily activity target in meters
+- `timestamp` (STRING): ISO 8601 timestamp
+- `total_calories` (INTEGER): Total calories expended in kilocalories
 
-### Daily sleep
+### daily_sleep
 
 The `DAILY_SLEEP` table consists of the following columns:
 
-- `id` (STRING, primary key): Unique identifier for the daily sleep record
-- `day` (STRING): Date in YYYY-MM-DD format
+- `id` (STRING, primary key): Unique identifier of the record
+- `contributors_deep_sleep` (INTEGER): Contribution of deep sleep in range [1, 100]
+- `contributors_efficiency` (INTEGER): Contribution of sleep efficiency in range [1, 100]
+- `contributors_latency` (INTEGER): Contribution of sleep latency in range [1, 100]
+- `contributors_rem_sleep` (INTEGER): Contribution of REM sleep in range [1, 100]
+- `contributors_restfulness` (INTEGER): Contribution of sleep restfulness in range [1, 100]
+- `contributors_timing` (INTEGER): Contribution of sleep timing in range [1, 100]
+- `contributors_total_sleep` (INTEGER): Contribution of total sleep in range [1, 100]
+- `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
+- `score` (INTEGER): Daily sleep score
 - `timestamp` (STRING): ISO 8601 timestamp
-- `score` (INTEGER): Overall sleep score (0-100)
-- `contributors_deep_sleep` (INTEGER): Contributor score for deep sleep (1-100)
-- `contributors_efficiency` (INTEGER): Contributor score for sleep efficiency (1-100)
-- `contributors_latency` (INTEGER): Contributor score for sleep latency (1-100)
-- `contributors_rem_sleep` (INTEGER): Contributor score for REM sleep (1-100)
-- `contributors_restfulness` (INTEGER): Contributor score for restfulness (1-100)
-- `contributors_timing` (INTEGER): Contributor score for sleep timing (1-100)
-- `contributors_total_sleep` (INTEGER): Contributor score for total sleep (1-100)
 
-### Daily readiness
+### daily_readiness
 
 The `DAILY_READINESS` table consists of the following columns:
 
-- `id` (STRING, primary key): Unique identifier for the daily readiness record
-- `day` (STRING): Date in YYYY-MM-DD format
+- `id` (STRING, primary key): Unique identifier of the record
+- `contributors_activity_balance` (INTEGER): Contribution of cumulative activity balance in range [1, 100]
+- `contributors_body_temperature` (INTEGER): Contribution of body temperature in range [1, 100]
+- `contributors_hrv_balance` (INTEGER): Contribution of heart rate variability balance in range [1, 100]
+- `contributors_previous_day_activity` (INTEGER): Contribution of previous day's activity in range [1, 100]
+- `contributors_previous_night` (INTEGER): Contribution of previous night's sleep in range [1, 100]
+- `contributors_recovery_index` (INTEGER): Contribution of recovery index in range [1, 100]
+- `contributors_resting_heart_rate` (INTEGER): Contribution of resting heart rate in range [1, 100]
+- `contributors_sleep_balance` (INTEGER): Contribution of sleep balance in range [1, 100]
+- `contributors_sleep_regularity` (INTEGER): Contribution of sleep regularity in range [1, 100]
+- `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
+- `score` (INTEGER): Daily readiness score
+- `temperature_deviation` (FLOAT): Temperature deviation in degrees Celsius
+- `temperature_trend_deviation` (FLOAT): Temperature trend deviation in degrees Celsius
 - `timestamp` (STRING): ISO 8601 timestamp
-- `score` (INTEGER): Overall readiness score (0-100)
-- `temperature_deviation` (FLOAT): Deviation from baseline body temperature
-- `temperature_trend_deviation` (FLOAT): Trend deviation from baseline temperature
-- `contributors_activity_balance` (INTEGER): Contributor score for activity balance (1-100)
-- `contributors_body_temperature` (INTEGER): Contributor score for body temperature (1-100)
-- `contributors_hrv_balance` (INTEGER): Contributor score for HRV balance (1-100)
-- `contributors_previous_day_activity` (INTEGER): Contributor score for previous day activity (1-100)
-- `contributors_previous_night` (INTEGER): Contributor score for previous night sleep (1-100)
-- `contributors_recovery_index` (INTEGER): Contributor score for recovery index (1-100)
-- `contributors_resting_heart_rate` (INTEGER): Contributor score for resting heart rate (1-100)
-- `contributors_sleep_balance` (INTEGER): Contributor score for sleep balance (1-100)
-- `contributors_sleep_regularity` (INTEGER): Contributor score for sleep regularity (1-100)
 
-### Daily stress
+### daily_stress
 
 The `DAILY_STRESS` table consists of the following columns:
 
-- `id` (STRING, primary key): Unique identifier for the daily stress record
-- `day` (STRING): Date in YYYY-MM-DD format
-- `stress_high` (INTEGER): Seconds of high stress during the day
-- `recovery_high` (INTEGER): Seconds of high recovery during the day
-- `day_summary` (STRING): Overall day classification (restored, normal, or stressful)
+- `id` (STRING, primary key): Unique identifier of the record
+- `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
+- `day_summary` (STRING): Stress summary of full day
+- `recovery_high` (INTEGER): Time spent in a high recovery zone (bottom quartile data) in seconds
+- `stress_high` (INTEGER): Time spent in a high stress zone (top quartile of data) in seconds
 
-### Heart rate
+### heart_rate
 
 The `HEART_RATE` table consists of the following columns:
 
-- `timestamp` (STRING, primary key): ISO 8601 timestamp of the heart rate reading
-- `bpm` (INTEGER): Beats per minute
-- `source` (STRING): Context of the reading (awake, rest, sleep, session, live, or workout)
+- `timestamp` (STRING, primary key): ISO 8601 timestamp of the reading
+- `timestamp_unix` (INTEGER): Timestamp of the discrete sample as unix time in milliseconds
+- `bpm` (INTEGER): Heart rate as beats per minute
+- `source` (STRING): Context of the reading: awake, rest, sleep, session, live, or workout
+- `producer_timestamp` (STRING): Timestamp the reading was produced, which Oura returns although its API specification does not list it
+
+### sleep
+
+The `SLEEP` table consists of the following columns:
+
+- `id` (STRING, primary key): Unique identifier of the record
+- `average_breath` (FLOAT): Average breathing rate during sleep as breaths/minute
+- `average_heart_rate` (FLOAT): Average heart rate during sleep in beats per minute
+- `average_hrv` (INTEGER): Average heart rate variability during sleep
+- `awake_time` (INTEGER): Duration spent awake in seconds
+- `bedtime_end` (STRING): ISO 8601 end of the sleep period
+- `bedtime_start` (STRING): ISO 8601 start of the sleep period
+- `day` (STRING): Date in YYYY-MM-DD format, in the wearer's time zone
+- `deep_sleep_duration` (INTEGER): Duration spent in deep sleep in seconds
+- `efficiency` (INTEGER): Sleep efficiency rating in range [1, 100]
+- `heart_rate_interval` (FLOAT): Interval in seconds between the sampled items
+- `heart_rate_items` (STRING): JSON-serialized array of heart rate samples
+- `heart_rate_timestamp` (STRING): ISO 8601 timestamp of the first heart rate sample
+- `hrv_interval` (FLOAT): Interval in seconds between the sampled items
+- `hrv_items` (STRING): JSON-serialized array of HRV samples
+- `hrv_timestamp` (STRING): ISO 8601 timestamp of the first HRV sample
+- `latency` (INTEGER): Time taken to fall asleep in seconds
+- `light_sleep_duration` (INTEGER): Duration spent in light sleep in seconds
+- `low_battery_alert` (BOOLEAN): Flag indicating if a low battery alert occurred
+- `lowest_heart_rate` (INTEGER): Lowest heart rate during sleep
+- `movement_30_sec` (STRING): 30-second movement classification string
+- `period` (INTEGER): ECore sleep period identifier
+- `readiness_contributors_activity_balance` (INTEGER): Contribution of cumulative activity balance in range [1, 100]
+- `readiness_contributors_body_temperature` (INTEGER): Contribution of body temperature in range [1, 100]
+- `readiness_contributors_hrv_balance` (INTEGER): Contribution of heart rate variability balance in range [1, 100]
+- `readiness_contributors_previous_day_activity` (INTEGER): Contribution of previous day's activity in range [1, 100]
+- `readiness_contributors_previous_night` (INTEGER): Contribution of previous night's sleep in range [1, 100]
+- `readiness_contributors_recovery_index` (INTEGER): Contribution of recovery index in range [1, 100]
+- `readiness_contributors_resting_heart_rate` (INTEGER): Contribution of resting heart rate in range [1, 100]
+- `readiness_contributors_sleep_balance` (INTEGER): Contribution of sleep balance in range [1, 100]
+- `readiness_contributors_sleep_regularity` (INTEGER): Contribution of sleep regularity in range [1, 100]
+- `readiness_score` (INTEGER): Readiness score in range [1, 100]
+- `readiness_temperature_deviation` (FLOAT): Temperature deviation in degrees Celsius
+- `readiness_temperature_trend_deviation` (FLOAT): Temperature trend deviation in degrees Celsius
+- `readiness_score_delta` (INTEGER): Effect on readiness score caused by this sleep period
+- `rem_sleep_duration` (INTEGER): Duration spent in REM sleep in seconds
+- `restless_periods` (INTEGER): Number of restless periods during sleep
+- `sleep_algorithm_version` (STRING): Version of the sleep algorithm used to calculate the sleep data
+- `sleep_analysis_reason` (STRING): The reason for the creation or update of the latest version of this sleep
+- `sleep_phase_30_sec` (STRING): 30-second sleep phase classification string
+- `sleep_phase_5_min` (STRING): 5-minute sleep phase classification string
+- `sleep_score_delta` (INTEGER): Effect on sleep score caused by this sleep period
+- `time_in_bed` (INTEGER): Duration spent in bed in seconds
+- `total_sleep_duration` (INTEGER): Total sleep duration in seconds
+- `type` (STRING): Type of period: deleted, sleep, long_sleep, late_nap, or rest
+- `ring_id` (STRING): Identifier of the ring; deprecated by Oura and usually absent
+- `app_sleep_phase_5_min` (STRING): 5-minute sleep phase classification aligned with the Oura app
+
+## Additional files
+
+- **`tables.py`** – The endpoint, date parameters, and column types of every table.
+- **`oura_auth.py`** – The OAuth2 token refresh, and the Fernet encryption of the rotated refresh token kept in state.
+- **`setup_form.py`** – The setup form Fivetran renders in the dashboard: one field per configuration key, with the client secret, refresh token, and Fernet key masked. The connector supplies the default and the setup test.
 
 ## Additional considerations
-
-This example was contributed by [Kelly Kohlleffel](https://github.com/kellykohlleffel).
 
 The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.
