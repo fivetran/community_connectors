@@ -403,10 +403,10 @@ def migrate_legacy_state(state: dict, today: date, lookback_days: int):
     Carry state from the personal-access-token version of this connector over to per-table dates.
 
     That version saved one last_sync_date for all tables and a next_token per table. Four of its
-    tables resume from that date. daily_stress starts from that date or from the lookback,
-    whichever is earlier, because that version advanced the date even when it skipped stress.
-    The sleep table, which that version did not have, starts from the lookback. The old keys are
-    removed so they are never read again.
+    tables resume from that date, less the usual overlap. daily_stress starts at the same point or
+    at the lookback start, whichever is earlier, because that version advanced the date even when
+    it skipped stress. The sleep table, which that version did not have, starts from the lookback.
+    The old keys are removed so they are never read again.
 
     Args:
         state: State dictionary, updated in place
