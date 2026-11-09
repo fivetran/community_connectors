@@ -1,3 +1,9 @@
+---
+name: SpecStream
+description: Sync live web data from SpecStream (companies, local businesses, job posts, filings, tenders and grants), each value with the page it was read from
+category: SaaS & APIs
+---
+
 # SpecStream Connector Example
 
 ## Connector overview
