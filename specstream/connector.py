@@ -19,11 +19,15 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
+# For reading a list's records one at a time from the response stream, so a large list is never held in memory
+import ijson
+
 # For calling the SpecStream API (pre-installed in the Connector SDK runtime)
 import requests
 
 __BASE_URL = "https://api.specstream.ai"
 __LISTS_PAGE_SIZE = 100
+__CHECKPOINT_INTERVAL = 1000
 __REQUEST_TIMEOUT_SECONDS = 60
 __MAX_RETRIES = 5
 __RETRY_BASE_DELAY_SECONDS = 2
@@ -100,6 +104,7 @@ def update(configuration: dict, state: dict):
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     The first sync reads every list the API key can open. Later syncs read only the lists created since the last one:
     a SpecStream schedule delivers new and changed records as a new list, so new lists are where new data arrives.
+    Lists are read one page at a time, newest first, and each list is synced before the next page is requested.
     See the technical reference documentation for more details on the update function
     https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
     Args:
@@ -110,23 +115,68 @@ def update(configuration: dict, state: dict):
     validate_configuration(configuration=configuration)
     session = create_session(configuration["api_key"])
     synced_through = state.get("lists_created_through")
+    synced_ids = set(state.get("list_ids_at_boundary") or [])
+    # A pass that an earlier sync started and did not finish: it resumes after the last list it synced.
+    in_progress = state.get("pass_in_progress") or {}
+    after = in_progress.get("after")
+    resumed = bool(after)
+    synced_count = 0
 
-    new_lists = fetch_lists_created_after(session, synced_through)
-    if not new_lists:
+    while True:
+        page = fetch_lists_page(session, after)
+        summaries = page.get("collections") or []
+        next_after = page.get("next_after")
+        if resumed and not summaries and not next_after:
+            # The list the pass stopped at is gone, so its position is lost. Start the pass again from the newest
+            # list: upserts make it safe to read the same lists twice.
+            log.warning("The list the last sync stopped at is gone; reading the new lists again")
+            state.pop("pass_in_progress", None)
+            in_progress, after, resumed = {}, None, False
+            continue
+        resumed = False
+
+        reached_synced = False
+        for position, summary in enumerate(summaries):
+            created_at = summary["created_at"]
+            if synced_through and created_at < synced_through:
+                reached_synced = True
+                break
+            # Lists can share a creation time, so the lists already synced at the boundary are known by ID.
+            if created_at == synced_through and summary["id"] in synced_ids:
+                continue
+            sync_list(session, summary, state)
+            synced_count += 1
+            if "newest_created_at" not in in_progress:
+                in_progress = {"newest_created_at": created_at, "newest_ids": []}
+            if created_at == in_progress["newest_created_at"]:
+                in_progress["newest_ids"].append(summary["id"])
+            in_progress["after"] = summary["id"]
+            state["pass_in_progress"] = in_progress
+            if next_after or position < len(summaries) - 1:
+                # Save the progress by checkpointing the state. This is important for ensuring that the sync process
+                # can resume from the correct position in case of next sync or interruptions.
+                # Learn more about how and where to checkpoint by reading our best practices documentation
+                # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+                op.checkpoint(state)
+
+        if reached_synced or not next_after:
+            break
+        after = next_after
+
+    if in_progress:
+        # The pass is complete: everything created up to its newest list is synced.
+        newest_ids = set(in_progress["newest_ids"])
+        if in_progress["newest_created_at"] == synced_through:
+            newest_ids |= synced_ids
+        state["lists_created_through"] = in_progress["newest_created_at"]
+        state["list_ids_at_boundary"] = sorted(newest_ids)
+        state.pop("pass_in_progress", None)
+    if synced_count:
+        log.info(f"Synced {synced_count} SpecStream list(s)")
+    else:
         log.info("No new SpecStream lists since the last sync")
-        op.checkpoint(state)
-        return
-
-    log.info(f"Syncing {len(new_lists)} SpecStream list(s)")
-    # Oldest first, so the checkpoint after each list moves forward and an interrupted sync resumes where it stopped.
-    for summary in sorted(new_lists, key=lambda item: item["created_at"]):
-        sync_list(session, summary)
-        state["lists_created_through"] = summary["created_at"]
-        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-        # from the correct position in case of next sync or interruptions.
-        # Learn more about how and where to checkpoint by reading our best practices documentation
-        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-        op.checkpoint(state)
+    # Save the completed pass, so the next sync reads only the lists created after it.
+    op.checkpoint(state)
 
 
 def create_session(api_key: str):
@@ -148,23 +198,27 @@ def create_session(api_key: str):
     return session
 
 
-def get_json(session, path: str, params=None):
+def send_request(session, path: str, params=None, stream: bool = False):
     """
-    Call the SpecStream API and return the `data` object of its JSON answer.
+    Call the SpecStream API and return the successful response.
     Retries rate limits and server errors with exponential backoff; fails at once on a refused API key.
     Args:
         session: the HTTP session.
         path: the API path, starting with /v1.
         params: optional query parameters.
+        stream: True to leave the body unread, so the caller can read it in pieces.
     Returns:
-        The response's data object.
+        The response.
     Raises:
         RuntimeError: if the API key is refused or the API keeps failing.
     """
     for attempt in range(__MAX_RETRIES):
         try:
             response = session.get(
-                __BASE_URL + path, params=params, timeout=__REQUEST_TIMEOUT_SECONDS
+                __BASE_URL + path,
+                params=params,
+                timeout=__REQUEST_TIMEOUT_SECONDS,
+                stream=stream,
             )
         except (requests.ConnectionError, requests.Timeout) as error:
             if attempt == __MAX_RETRIES - 1:
@@ -173,10 +227,12 @@ def get_json(session, path: str, params=None):
             time.sleep(__RETRY_BASE_DELAY_SECONDS * 2**attempt)
             continue
         if response.status_code in (401, 403):
+            response.close()
             raise RuntimeError(
                 "SpecStream refused the API key. Make a key under Agents & API in SpecStream and update the connection."
             )
         if response.status_code == 429 or response.status_code >= 500:
+            response.close()
             if attempt == __MAX_RETRIES - 1:
                 raise RuntimeError(f"SpecStream answered {response.status_code} for {path}")
             retry_after = response.headers.get("Retry-After", "")
@@ -191,48 +247,59 @@ def get_json(session, path: str, params=None):
             time.sleep(delay_seconds)
             continue
         response.raise_for_status()
-        return response.json()["data"]
+        return response
     raise RuntimeError(f"SpecStream did not answer {path}")
 
 
-def fetch_lists_created_after(session, synced_through):
+def fetch_lists_page(session, after):
     """
-    Page through the lists the API key can open, newest first, and keep those created after the last synced one.
-    The API returns `next_after` while more pages remain; paging stops at the first list that was already synced.
+    Read one page of the lists the API key can open, newest first.
+    The API returns `next_after` while more pages remain. Only one page of list summaries is held at a time.
     Args:
         session: the HTTP session.
-        synced_through: the creation time of the newest list already synced, or None for a full sync.
+        after: the ID of the list the page starts after, or None for the first page.
     Returns:
-        The summaries of the lists to sync.
+        The page, with its `collections` and its `next_after`.
     """
-    new_lists = []
-    after = None
-    while True:
-        params = {"limit": __LISTS_PAGE_SIZE, "sort": "recent"}
-        if after:
-            params["after"] = after
-        page = get_json(session, "/v1/workspace/collections", params)
-        for summary in page.get("collections") or []:
-            if synced_through and summary["created_at"] <= synced_through:
-                return new_lists
-            new_lists.append(summary)
-        after = page.get("next_after")
-        if not after:
-            return new_lists
+    params = {"limit": __LISTS_PAGE_SIZE, "sort": "recent"}
+    if after:
+        params["after"] = after
+    return send_request(session, "/v1/workspace/collections", params).json()["data"]
 
 
-def sync_list(session, summary: dict):
+def stream_list_records(session, list_id: str):
+    """
+    Read the records of one list from the response stream, one record at a time.
+    The list endpoint returns every record in one response, so the body is parsed as it arrives.
+    Args:
+        session: the HTTP session.
+        list_id: the list to read.
+    Returns:
+        A generator of the list's records.
+    """
+    with send_request(session, f"/v1/workspace/collections/{list_id}", stream=True) as response:
+        # Let urllib3 decompress the body while it is read.
+        response.raw.decode_content = True
+        yield from ijson.items(response.raw, "data.rows.item", use_float=True)
+
+
+def sync_list(session, summary: dict, state: dict):
     """
     Read one list with its records and upsert the list, each record, and each value with its source page.
     Args:
         session: the HTTP session.
         summary: the list summary from the lists endpoint.
+        state: the sync state, which does not count this list as synced until update() says so.
     """
     list_id = summary["id"]
-    detail = get_json(session, f"/v1/workspace/collections/{list_id}")
-    rows = detail.get("rows") or []
-    for row in rows:
+    record_count = 0
+    for row in stream_list_records(session, list_id):
         upsert_record(list_id, row)
+        record_count += 1
+        if record_count % __CHECKPOINT_INTERVAL == 0:
+            # Checkpoint inside a large list to send its records on. The state still points before this list, so
+            # an interrupted sync reads the list again from its first record.
+            op.checkpoint(state)
     # The 'upsert' operation is used to insert or update data in the destination table.
     # The list is upserted after its records, so a list in the destination always has all of its records.
     op.upsert(
@@ -243,10 +310,10 @@ def sync_list(session, summary: dict):
             "project_id": summary.get("project_id"),
             "imported": bool(summary.get("imported")),
             "created_at": summary.get("created_at"),
-            "row_count": len(rows),
+            "row_count": record_count,
         },
     )
-    log.info(f"Synced list {list_id} with {len(rows)} record(s)")
+    log.info(f"Synced list {list_id} with {record_count} record(s)")
 
 
 def upsert_record(list_id: str, row: dict):

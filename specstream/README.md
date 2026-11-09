@@ -41,6 +41,7 @@ fivetran init --template specstream
 - Incremental syncs read only the lists created since the last sync. A SpecStream schedule delivers new and changed records as a new list, so they arrive on the next sync.
 - Retries rate limits and server errors with exponential backoff and honors `Retry-After`.
 - Checkpoints after each list, so an interrupted sync resumes where it stopped.
+- Holds one page of lists and one record at a time, so memory does not grow with the workspace or with the size of a list.
 
 ## Configuration file
 
@@ -58,7 +59,11 @@ Configuration parameters:
 
 ## Requirements file
 
-The connector uses only `requests`, which is pre-installed in the Connector SDK runtime, so it has no `requirements.txt` file.
+The `requirements.txt` file lists the one library the connector needs besides `requests`: `ijson`, which reads a list's records from the response one at a time.
+
+```
+ijson==3.6.0
+```
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
@@ -72,7 +77,7 @@ The connector sends the API key as a Bearer token (`Authorization: Bearer <key>`
 
 ## Pagination
 
-The lists endpoint (`GET /v1/workspace/collections`) returns up to 100 lists per page, newest first, with a `next_after` value while more pages remain. The connector follows `next_after` and stops at the first list it has already synced. Each list's records come from `GET /v1/workspace/collections/{id}`. Refer to `def fetch_lists_created_after(session, synced_through)` and `def sync_list(session, summary)`.
+The lists endpoint (`GET /v1/workspace/collections`) returns up to 100 lists per page, newest first, with a `next_after` value while more pages remain. The connector syncs the lists of one page before it asks for the next, and stops at the first list created before the last completed sync. `GET /v1/workspace/collections/{id}` returns all the records of a list in one response, so the connector parses the response as a stream and upserts each record as it arrives, with a checkpoint every 1,000 records. Refer to `def fetch_lists_page(session, after)` and `def stream_list_records(session, list_id)`.
 
 ## Data handling
 
@@ -80,7 +85,7 @@ The lists endpoint (`GET /v1/workspace/collections`) returns up to 100 lists per
 - A value SpecStream couldn't read is written as null.
 - Rows of a list you imported carry the columns you provided, without a source page. Refer to `def upsert_imported_record(list_id, row)`.
 - A list you made by combining lists keeps each column's values together; the connector writes the value the list shows. Refer to `def read_found_record(row)`.
-- The state holds `lists_created_through`, the creation time of the newest synced list. Clear it to re-sync everything.
+- The state holds `lists_created_through`, the creation time of the newest list of the last completed sync, and `list_ids_at_boundary`, the IDs of the lists synced at that exact time, so a list that shares the time is not skipped. While a sync runs, `pass_in_progress` holds the last list it finished, so an interrupted sync resumes there. Clear the state to re-sync everything.
 
 ## Error handling
 
@@ -88,7 +93,7 @@ The lists endpoint (`GET /v1/workspace/collections`) returns up to 100 lists per
 - Rate limits and server errors: up to five attempts with exponential backoff, using `Retry-After` when SpecStream sends it.
 - Connection errors and timeouts: retried the same way.
 
-Refer to `def get_json(session, path, params=None)`.
+Refer to `def send_request(session, path, params=None, stream=False)`.
 
 ## Tables created
 
