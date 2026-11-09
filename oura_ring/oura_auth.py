@@ -133,8 +133,8 @@ def oauth_error_code(response):
 
 def token_retry_delay(response, attempt: int) -> int:
     """
-    Choose the wait before retrying the token request: Retry-After on a 429, capped, otherwise
-    exponential backoff.
+    Choose the wait before retrying the token request: exponential backoff, or Retry-After on a
+    429 when it is longer, capped.
 
     Args:
         response: the token endpoint response
@@ -143,11 +143,12 @@ def token_retry_delay(response, attempt: int) -> int:
     Returns:
         seconds to wait
     """
+    backoff = __TOKEN_BASE_DELAY_SECONDS * (2**attempt)
     if response.status_code == 429:
         retry_after = (getattr(response, "headers", None) or {}).get("Retry-After")
         if retry_after and str(retry_after).strip().isdigit():
-            return min(int(retry_after), __TOKEN_MAX_RETRY_AFTER_SECONDS)
-    return __TOKEN_BASE_DELAY_SECONDS * (2**attempt)
+            return min(max(int(retry_after), backoff), __TOKEN_MAX_RETRY_AFTER_SECONDS)
+    return backoff
 
 
 def describe_token_failure(response) -> str:

@@ -1,7 +1,7 @@
 """Table definitions for the Oura Ring connector: endpoints, date parameters, and column types."""
 
 # Oura rejects a heart rate request that spans more than 30 days. Each window covers 29 days and
-# ends at the following midnight, so a request spans at most 30 days.
+# ends at the following midnight, so a request spans 29 days.
 HEART_RATE_MAX_RANGE_DAYS = 29
 
 # Maps each destination table to its API endpoint and its columns

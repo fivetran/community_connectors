@@ -64,14 +64,9 @@ __DEFAULT_LOOKBACK_DAYS = 90
 __MAX_LOOKBACK_DAYS = 3650
 # Days can reach Oura late, after the ring syncs to the app, so every sync re-reads this many days
 __INCREMENTAL_OVERLAP_DAYS = 7
-# Tables synced before the OAuth change, which kept one shared last_sync_date in state
-__LEGACY_CURSOR_TABLES = [
-    "daily_activity",
-    "daily_sleep",
-    "daily_readiness",
-    "daily_stress",
-    "heart_rate",
-]
+# Tables that resume from the shared last_sync_date the personal-access-token version kept.
+# daily_stress is left out because that version advanced the date even when it skipped stress.
+__LEGACY_CURSOR_TABLES = ["daily_activity", "daily_sleep", "daily_readiness", "heart_rate"]
 
 
 class OuraAccessError(RuntimeError):
@@ -406,9 +401,10 @@ def migrate_legacy_state(state: dict):
     """
     Carry state from the personal-access-token version of this connector over to per-table dates.
 
-    That version saved one last_sync_date for all tables and a next_token per table. The tables it
-    synced resume from that date, the sleep table it did not have starts from the lookback, and
-    the old keys are removed so they are never read again.
+    That version saved one last_sync_date for all tables and a next_token per table. Four of its
+    tables resume from that date. daily_stress starts from the lookback, because that version
+    advanced the date even when it skipped stress, and so does the sleep table it did not have.
+    The old keys are removed so they are never read again.
 
     Args:
         state: State dictionary, updated in place
@@ -425,7 +421,7 @@ def migrate_legacy_state(state: dict):
         return
     for table_name in __LEGACY_CURSOR_TABLES:
         state.setdefault(f"{table_name}_synced_through", resume_date.isoformat())
-    log.info(f"Resuming the original tables from the previous version's date {resume_date}")
+    log.info(f"Resuming four tables from the previous version's date {resume_date}")
 
 
 def sync_window(session, table_name, table_config, window_start, window_end, state):
