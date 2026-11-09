@@ -37,7 +37,8 @@ __TOKEN_RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 # OAuth error codes are short lowercase words; anything else in the body is not repeated in errors
 __OAUTH_ERROR_CODE_PATTERN = re.compile(r"^[a-z_]{1,40}$")
 # A Retry-After given in seconds; [0-9] matches ASCII digits only
-__RETRY_AFTER_SECONDS_PATTERN = re.compile(r"[0-9]{1,6}")
+__RETRY_AFTER_SECONDS_PATTERN = re.compile(r"[0-9]+")
+__RETRY_AFTER_MAX_DIGITS = 18
 
 STATE_TOKEN_KEY = "encrypted_refresh_token"
 STATE_SOURCE_KEY = "refresh_token_source_sha256"
@@ -141,19 +142,44 @@ def parse_retry_after(value):
         value: the header value, or None
 
     Returns:
-        the number of seconds when the value is 1 to 6 ASCII digits, otherwise None (an HTTP date,
-        a sign, a decimal or a non-ASCII digit all fall back to the caller's backoff)
+        the number of seconds when the value is ASCII digits with optional spaces or tabs around
+        them, otherwise None (an HTTP date, a sign, a decimal or a non-ASCII digit all fall back to
+        the caller's backoff). A value too long to be a real wait reads as the longest one.
     """
     if value is None:
         return None
-    text = str(value).strip()
-    return int(text) if __RETRY_AFTER_SECONDS_PATTERN.fullmatch(text) else None
+    text = str(value).strip(" \t")
+    if not __RETRY_AFTER_SECONDS_PATTERN.fullmatch(text):
+        return None
+    # int() refuses digit strings over 4,300 characters, and any value this long is past the cap
+    return int(text) if len(text) <= __RETRY_AFTER_MAX_DIGITS else 10**__RETRY_AFTER_MAX_DIGITS
+
+
+def retry_delay(response, attempt: int, base_seconds: int, cap_seconds: int) -> int:
+    """
+    Choose the wait before a retry: exponential backoff, or the Retry-After header when it asks
+    for longer, capped. Shared by the data requests and the token request.
+
+    Args:
+        response: the response being retried
+        attempt: zero-based attempt number
+        base_seconds: backoff for the first retry
+        cap_seconds: the longest wait a Retry-After header can set
+
+    Returns:
+        seconds to wait
+    """
+    backoff = base_seconds * (2**attempt)
+    headers = getattr(response, "headers", None) or {}
+    retry_after = parse_retry_after(headers.get("Retry-After"))
+    if retry_after is None:
+        return backoff
+    return min(max(retry_after, backoff), cap_seconds)
 
 
 def token_retry_delay(response, attempt: int) -> int:
     """
-    Choose the wait before retrying the token request: exponential backoff, or Retry-After on a
-    429 when it is longer, capped.
+    Choose the wait before retrying the token request.
 
     Args:
         response: the token endpoint response
@@ -162,14 +188,9 @@ def token_retry_delay(response, attempt: int) -> int:
     Returns:
         seconds to wait
     """
-    backoff = __TOKEN_BASE_DELAY_SECONDS * (2**attempt)
-    if response.status_code == 429:
-        retry_after = parse_retry_after(
-            (getattr(response, "headers", None) or {}).get("Retry-After")
-        )
-        if retry_after is not None:
-            return min(max(retry_after, backoff), __TOKEN_MAX_RETRY_AFTER_SECONDS)
-    return backoff
+    return retry_delay(
+        response, attempt, __TOKEN_BASE_DELAY_SECONDS, __TOKEN_MAX_RETRY_AFTER_SECONDS
+    )
 
 
 def describe_token_failure(response) -> str:
