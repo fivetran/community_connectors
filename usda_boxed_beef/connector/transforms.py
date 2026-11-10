@@ -142,27 +142,40 @@ class RowIssues:
         self.unparseable_numbers = 0
         self.unparseable_published_dates = 0
         self.rows_without_key = 0
-        self.prices_without_trades = 0
+        self.rows_with_prices_without_trades = 0
+        self.missing_fields = set()
+        # True while reading by published date, where every row may replace one already loaded
+        self.strict_layout = True
 
 
-def _require(raw: dict, field: str):
+def _require(raw: dict, field: str, issues: RowIssues) -> bool:
     """
-    Fail when a row lacks a field this connector reads.
+    Check that a row carries a field this connector reads.
 
-    Every row the API sends carries every field of its section, with null for an empty value. A missing field means
-    the layout changed, and reading it as null would overwrite values already loaded.
+    Every row the API sends today carries every field of its section, with null for an empty value. When the
+    incremental sync reads a row without one, the layout has changed, and reading the field as null would overwrite a
+    value already loaded, so the sync fails. The backfill writes new report dates, whose older layouts this connector
+    has not seen, so there a missing field is written as null and named in a warning.
 
     Args:
         raw: one API row
         field: the field the connector reads
+        issues: the counts to add to, which also say whether the layout is checked strictly
+
+    Returns:
+        True when the field is in the row
 
     Raises:
-        ReportLayoutError: if the field is not in the row
+        ReportLayoutError: if the field is missing and the layout is checked strictly
     """
-    if field not in raw:
+    if field in raw:
+        return True
+    if issues.strict_layout:
         raise ReportLayoutError(
             f"Rows from the API have no {field!r} field, so the report layout has changed"
         )
+    issues.missing_fields.add(field)
+    return False
 
 
 def _number(raw: dict, field: str, issues: RowIssues):
@@ -177,7 +190,8 @@ def _number(raw: dict, field: str, issues: RowIssues):
     Returns:
         The number, or None
     """
-    _require(raw, field)
+    if not _require(raw, field, issues):
+        return None
     try:
         return as_float(raw.get(field))
     except ValueError:
@@ -230,11 +244,11 @@ def _price_measures(raw: dict, issues: RowIssues) -> dict:
         "total_pounds": _number(raw, "total_pounds", issues),
     }
     traded = (measures["number_trades"] or 0) > 0
-    for field in __PRICE_FIELDS:
-        price = _number(raw, field, issues)
-        if price and not traded:
-            # A price on a row without a readable trade count above zero is not written, and is counted
-            issues.prices_without_trades += 1
+    prices = {field: _number(raw, field, issues) for field in __PRICE_FIELDS}
+    if not traded and any(prices.values()):
+        # Prices on a row without a readable trade count above zero are not written, and the row is counted
+        issues.rows_with_prices_without_trades += 1
+    for field, price in prices.items():
         measures[field] = price if traded and price else None
     if not traded and not measures["total_pounds"]:
         measures["total_pounds"] = None
@@ -255,7 +269,7 @@ def build_report_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
         A list with one row, or an empty list when the row has no report date
     """
     for field in ("report_title", "is_correction", "narrative"):
-        _require(raw, field)
+        _require(raw, field, issues)
     row = _key_fields(slug_id, raw, issues)
     if row is None:
         return []
@@ -306,7 +320,7 @@ def build_primal_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     Returns:
         A list with one row, or an empty list when the row has no report date or primal name
     """
-    _require(raw, "primal_desc")
+    _require(raw, "primal_desc", issues)
     row = _key_fields(slug_id, raw, issues)
     primal = (raw.get("primal_desc") or "").strip()
     if row is None or not primal:
@@ -342,6 +356,10 @@ def build_volume_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     rows = []
     for volume_class in section["volume_classes"]:
         loads_field, pounds_field = VOLUME_CLASSES[volume_class]
+        if not issues.strict_layout and loads_field not in raw and pounds_field not in raw:
+            # An older layout without this class: name the fields and write no row for the class
+            issues.missing_fields.update((loads_field, pounds_field))
+            continue
         rows.append(
             {
                 **key,
@@ -353,35 +371,36 @@ def build_volume_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     return rows
 
 
-def _raw_description(raw: dict) -> str:
+def _raw_description(raw: dict, issues: RowIssues) -> str:
     """
     Return the item text of a price row as sent.
 
-    The API names the field item_description or trim_description, depending on the section. A row with neither
-    means the layout changed.
+    The API names the field item_description or trim_description, depending on the section.
 
     Args:
         raw: one API row
+        issues: the counts to add to
 
     Returns:
         The item text, or an empty string
     """
-    if "item_description" not in raw and "trim_description" not in raw:
-        _require(raw, "item_description")
+    if "trim_description" not in raw:
+        _require(raw, "item_description", issues)
     return raw.get("item_description") or raw.get("trim_description") or ""
 
 
-def _description(raw: dict):
+def _description(raw: dict, issues: RowIssues):
     """
     Return the item text of a price row with surrounding whitespace removed.
 
     Args:
         raw: one API row
+        issues: the counts to add to
 
     Returns:
         The item text, or None when it is empty
     """
-    return _raw_description(raw).strip() or None
+    return _raw_description(raw, issues).strip() or None
 
 
 def build_cut_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues) -> list:
@@ -398,8 +417,8 @@ def build_cut_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues) ->
         A list with one row, or an empty list when the row has no report date or item
     """
     row = _key_fields(slug_id, raw, issues)
-    raw_text = _raw_description(raw)
-    description = _description(raw)
+    raw_text = _raw_description(raw, issues)
+    description = raw_text.strip() or None
     if row is None or description is None:
         if row is not None:
             issues.rows_without_key += 1
@@ -432,7 +451,7 @@ def build_ground_beef_rows(slug_id: str, section: dict, raw: dict, issues: RowIs
         A list with one row, or an empty list when the row has no report date or item
     """
     row = _key_fields(slug_id, raw, issues)
-    description = _description(raw)
+    description = _description(raw, issues)
     if row is None or description is None:
         if row is not None:
             issues.rows_without_key += 1
@@ -461,7 +480,7 @@ def build_trimmings_rows(slug_id: str, section: dict, raw: dict, issues: RowIssu
         A list with one row, or an empty list when the row has no report date or item
     """
     row = _key_fields(slug_id, raw, issues)
-    description = _description(raw)
+    description = _description(raw, issues)
     if row is None or description is None:
         if row is not None:
             issues.rows_without_key += 1

@@ -18,13 +18,15 @@ The tables are built by the pack's dbt project into `usda_local.duckdb`. Open th
 set search_path = 'usda';
 ```
 
+When this statement fails because there is no `usda` schema, the pack has never been built: say so and stop.
+
 The tables hold the last build whose data passed the pack's tests, so the session never opens the connector's warehouse. A rebuild cannot write the file while a session holds it open, so close the session before the next `dbt build`. When a table below does not exist, say the pack is not built, and do not answer from anything else.
 
 ## Rules every query of yours follows
 
 1. Read only the tables listed under Tables, in the `usda` schema. Never read the staging views in `usda_staging`: they read the connector's raw tables directly, so they change with every sync before any test has run.
 2. Units. Quote a price per pound from a `_per_lb` column, and say "per pound". A `_usd_cwt` column is per 100 pounds: never quote it as a per-pound price. When you quote a USDA figure as USDA prints it, say "per hundredweight (100 pounds)". The cutout and primal values are per 100 pounds of carcass and have no per-pound column; do not divide them for a cut price.
-3. No-trade rows. A cut with `has_trades = false` did not trade that day, and its prices are null. A row with `has_trades = true` can have null prices too: USDA withheld them, or the sync could not read them (the sync reports those with a warning). Say the price is not available, not that USDA withheld it. Never treat a null price as zero, never average it in, and when you count cuts, give both numbers: "20 of 42 Select cuts traded".
+3. No-trade rows. A cut with `has_trades = false` has no readable trade count above zero: it did not trade that day, or, rarely, the sync could not read its count and said so in a warning. Its prices are null. A row with `has_trades = true` can have null prices too: USDA withheld them, or the sync could not read them (the sync reports those with a warning). Say the price is not available, not that USDA withheld it. Never treat a null price as zero, never average it in, and when you count cuts, give both numbers: "20 of 42 Select cuts traded".
 4. Cadence. Prime (`grade = 'Prime'`) comes only from the weekly report (`cadence = 'weekly'`); Choice and Select are daily. Never put weekly and daily prices in one average or one trend line. To compare Prime with Choice, compare each Prime report with the average Choice price over the Choice report dates from the previous Prime report date up to the day before this one. The Prime report is published on the morning of its report date and covers the sales since the previous report, so that day's daily report is not part of its week (checked question 2).
 5. Corrections. USDA corrects a report by republishing the same report date; the tables hold the latest version loaded. Every table but `report_coverage` has `is_correction`, true when that version is a correction. Say so when an answer uses a corrected report, including inside an average (`n_corrected_reports_7d`, `n_corrected_reports_28d` in `cut_price_trend`), and say that the most recent report dates can still be revised.
 6. Days without a report are missing, not zero. There is no row for a weekend, a federal holiday or a day USDA did not publish. Averages run over report dates only. When you quote an average from `cut_price_trend`, give its `n_reports_7d` or `n_reports_28d`.
@@ -180,6 +182,7 @@ select
   round(t.price_per_lb, 2) as price_per_lb,
   round(t.avg_price_per_lb_28d, 2) as avg_price_per_lb_28d,
   t.n_reports_28d,
+  t.n_corrected_reports_28d,
   t.pct_vs_28d_avg
 from cut_price_trend as t
 inner join latest
@@ -190,15 +193,15 @@ order by abs(t.pct_vs_28d_avg) desc, t.item_description
 limit 5
 ```
 
-| item_description | price_per_lb | avg_price_per_lb_28d | n_reports_28d | pct_vs_28d_avg |
-|---|---|---|---|---|
-| Round, bottom gooseneck (170  1) | 3.29 | 3.76 | 11 | -12.38 |
-| Loin, ball-tip, bnls, heavy (185B  1) | 4.89 | 5.31 | 20 | -7.82 |
-| Loin, strip, bnls, 0x1 (180  3) | 8.47 | 9.17 | 20 | -7.61 |
-| Chuck, clod tender (114F  5) | 7.14 | 7.64 | 20 | -6.65 |
-| Flank, flank steak (193  4) | 5.67 | 6.01 | 20 | -5.58 |
+| item_description | price_per_lb | avg_price_per_lb_28d | n_reports_28d | n_corrected_reports_28d | pct_vs_28d_avg |
+|---|---|---|---|---|---|
+| Round, bottom gooseneck (170  1) | 3.29 | 3.76 | 11 | 0 | -12.38 |
+| Loin, ball-tip, bnls, heavy (185B  1) | 4.89 | 5.31 | 20 | 0 | -7.82 |
+| Loin, strip, bnls, 0x1 (180  3) | 8.47 | 9.17 | 20 | 0 | -7.61 |
+| Chuck, clod tender (114F  5) | 7.14 | 7.64 | 20 | 0 | -6.65 |
+| Flank, flank steak (193  4) | 5.67 | 6.01 | 20 | 0 | -5.58 |
 
-Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window.
+Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates; none of the five averages includes a corrected report. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window.
 
 ### 5. Which Select cuts traded above $20 per pound on the latest report date?
 

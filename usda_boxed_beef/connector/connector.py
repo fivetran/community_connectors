@@ -48,7 +48,7 @@ from usda_client import UsdaApiError, UsdaClient, fetch_section
 # Configuration defaults and limits
 __DEFAULT_REPORT_IDS = "2453,2460"
 __DEFAULT_START_DATE = "2024-01-01"
-# The first report date the API holds for report 2453
+# The lower bound start_date is validated against: the lowest first_report_date in tables.REPORTS
 __EARLIEST_START_DATE = min(report["first_report_date"] for report in REPORTS.values())
 __DEFAULT_MAX_WINDOW_DAYS = 180
 # The API documents 180 days as the longest date range one request may span
@@ -285,7 +285,7 @@ def get_current_date() -> date:
 
 
 def report_progress(
-    start_date, backfill_through, backfill_complete: bool, published_through
+    start_date, backfill_through, backfill_complete: bool, published_through, last_report_date=None
 ) -> dict:
     """
     Build one report's saved progress. Every key is always written, so no checkpoint can drop one.
@@ -295,6 +295,7 @@ def report_progress(
         backfill_through: the last report date the backfill has read, or None before the first window
         backfill_complete: whether the backfill has reached the current date
         published_through: the last published date the incremental sync has read
+        last_report_date: the latest report date the backfill has loaded, or None before the first report
 
     Returns:
         The progress as JSON-safe values
@@ -304,6 +305,7 @@ def report_progress(
         "backfill_through": backfill_through.isoformat() if backfill_through else None,
         "backfill_complete": backfill_complete,
         "published_through": published_through.isoformat(),
+        "last_report_date": last_report_date.isoformat() if last_report_date else None,
     }
 
 
@@ -346,7 +348,7 @@ def load_progress(saved, start_date: date, today: date, slug_id: str) -> dict:
         slug_id: the report id
 
     Returns:
-        A dict with start_date, backfill_through, backfill_complete and published_through as dates and a bool
+        A dict with start_date, backfill_through, backfill_complete, published_through and last_report_date
     """
     saved = saved if isinstance(saved, dict) else {}
     saved_start = _saved_date(saved, "start_date", slug_id)
@@ -361,17 +363,26 @@ def load_progress(saved, start_date: date, today: date, slug_id: str) -> dict:
             "backfill_through": None,
             "backfill_complete": False,
             "published_through": min(published_through, today),
+            "last_report_date": None,
         }
     return {
         "start_date": saved_start,
         "backfill_through": _saved_date(saved, "backfill_through", slug_id),
         "backfill_complete": bool(saved.get("backfill_complete")),
         "published_through": published_through,
+        "last_report_date": _saved_date(saved, "last_report_date", slug_id),
     }
 
 
 def sync_window(
-    client: UsdaClient, slug_id: str, field: str, window_start, window_end, issues, counts
+    client: UsdaClient,
+    slug_id: str,
+    field: str,
+    window_start,
+    window_end,
+    issues,
+    counts,
+    report_dates=None,
 ) -> int:
     """
     Read every section of one report for one date window and upsert the rows.
@@ -384,6 +395,7 @@ def sync_window(
         window_end: the last date of the window
         issues: counts of values the sync could not use
         counts: rows written per table, updated in place
+        report_dates: when given, the report date of every reports row written is added to it
 
     Returns:
         The number of rows written for the window
@@ -401,6 +413,8 @@ def sync_window(
                         {key: value for key, value in row.items() if value is not None}
                     )
                     continue
+                if report_dates is not None and section["table"] == REPORTS_TABLE:
+                    report_dates.add(date.fromisoformat(row["report_date"]))
                 # The 'upsert' operation is used to insert or update data in the destination table.
                 # The first argument is the name of the destination table.
                 # The second argument is a dictionary containing the record to be upserted.
@@ -448,26 +462,40 @@ def sync_report(
 
     if not progress["backfill_complete"]:
         first_report_date = date.fromisoformat(REPORTS[slug_id]["first_report_date"])
-        # The first report date of a run of consecutive windows with no report, within this sync
-        empty_since = None
         while not progress["backfill_complete"] and windows_left > 0:
             if progress["backfill_through"] is None:
                 window_start = progress["start_date"]
             else:
                 window_start = progress["backfill_through"] + timedelta(days=1)
             window_end = min(window_start + timedelta(days=window_days - 1), today)
-            reports_before = counts.get(REPORTS_TABLE, 0)
+            report_dates = set()
+            issues.strict_layout = False
             written = sync_window(
-                client, slug_id, __BACKFILL_FIELD, window_start, window_end, issues, counts
+                client,
+                slug_id,
+                __BACKFILL_FIELD,
+                window_start,
+                window_end,
+                issues,
+                counts,
+                report_dates,
             )
-            # The backfill never reads these report dates again, so a long run of dates with no report is reported
-            # at once: a warning kept for the end of the sync would be lost if a later window failed.
-            if counts.get(REPORTS_TABLE, 0) > reports_before or window_start < first_report_date:
-                empty_since = None
-            else:
-                empty_since = empty_since or window_start
-                if (window_end - empty_since).days + 1 >= __MIN_DAYS_TO_EXPECT_A_REPORT:
-                    report_empty_dates(slug_id, empty_since, window_end)
+            # The backfill never reads these report dates again, so each gap between report dates long enough to be
+            # unexpected is reported once, when the report after it arrives or the backfill reaches today. The last
+            # report date is saved with the progress, so a gap that spans windows or syncs is still found.
+            previous = progress["last_report_date"] or (
+                max(progress["start_date"], first_report_date) - timedelta(days=1)
+            )
+            for report_date in sorted(report_dates):
+                if (report_date - previous).days - 1 >= __MIN_DAYS_TO_EXPECT_A_REPORT:
+                    report_empty_dates(
+                        slug_id, previous + timedelta(days=1), report_date - timedelta(days=1)
+                    )
+                previous = max(previous, report_date)
+            if report_dates:
+                progress["last_report_date"] = previous
+            if window_end >= today and (today - previous).days >= __MIN_DAYS_TO_EXPECT_A_REPORT:
+                report_empty_dates(slug_id, previous + timedelta(days=1), today)
             log.info(
                 f"Report {slug_id}: report dates {window_start} to {window_end}, {written} rows"
             )
@@ -494,6 +522,7 @@ def sync_report(
     window_start = progress["published_through"] - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
     while window_start <= today and windows_left > 0:
         window_end = min(window_start + timedelta(days=window_days - 1), today)
+        issues.strict_layout = True
         written = sync_window(
             client, slug_id, __INCREMENTAL_FIELD, window_start, window_end, issues, counts
         )
@@ -514,7 +543,7 @@ def sync_report(
         op.checkpoint(state=state)
 
 
-def report_empty_dates(slug_id: str, first, last):
+def report_empty_dates(slug_id: str, first: date, last: date):
     """
     Report a run of report dates the API returned no report for, which the backfill does not read again.
 
@@ -548,8 +577,18 @@ def report_issues(issues: RowIssues):
         )
         log.warning(message)
         op.warning(message)
-    if issues.prices_without_trades:
-        message = f"Wrote null for {issues.prices_without_trades} price(s) on rows without a trade count above zero."
+    if issues.rows_with_prices_without_trades:
+        message = (
+            f"Wrote null prices on {issues.rows_with_prices_without_trades} row(s) without a readable trade "
+            "count above zero."
+        )
+        log.warning(message)
+        op.warning(message)
+    if issues.missing_fields:
+        message = (
+            "The backfill read rows without these fields and wrote them as null: "
+            f"{', '.join(sorted(issues.missing_fields))}."
+        )
         log.warning(message)
         op.warning(message)
     if issues.unparseable_published_dates:

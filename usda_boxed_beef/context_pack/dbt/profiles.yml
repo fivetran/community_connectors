@@ -4,7 +4,8 @@ usda_boxed_beef_context:
   outputs:
     # The connector's local debug warehouse, attached read-only. `fivetran debug`, run from the sibling connector/
     # directory, writes it to connector/files/warehouse.db. Set USDA_WAREHOUSE to read a copy somewhere else.
-    # Sources: usda_wh.tester.<table>. The staging views and the agent's tables build into usda_local.duckdb, or into USDA_LOCAL_DB when it is set.
+    # Sources: usda_wh.tester.<table>. The staging views and the agent's
+    # tables build into usda_local.duckdb, or into USDA_LOCAL_DB when it is set.
     local:
       type: duckdb
       path: "{{ env_var('USDA_LOCAL_DB', 'usda_local.duckdb') }}"

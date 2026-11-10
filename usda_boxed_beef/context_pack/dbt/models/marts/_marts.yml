@@ -43,7 +43,7 @@ models:
       - name: cut_family
         description: The first word group of cut_name. Values are Loin, Round, Chuck, Rib, Brisket, Plate (the skirts), Short Plate (short ribs), Flank, Cap and Wedge Meat, and Pectoral Meat.
       - name: has_trades
-        description: True when the cut traded that day. Only these rows can have prices. USDA sometimes reports trades but withholds the prices, so a row with has_trades true can still have null prices.
+        description: True when the row has a readable trade count above zero. Only these rows can have prices. A row with has_trades true can still have null prices (withheld by USDA, or a value the sync could not read); call that price not available. False means no trades, or a trade count the sync could not read, which the sync reports with a warning.
       - name: number_trades
         description: Number of negotiated trades.
       - name: total_pounds
