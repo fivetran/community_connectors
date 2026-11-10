@@ -1,8 +1,7 @@
--- Every price, primal, volume and cutout row belongs to a report date in reports, and each report's latest report
--- date carries every section that report publishes. A latest date missing a section is a sync that stopped partway,
--- and an answer would then name a latest report date that report_coverage does not. Only the latest date is checked
--- that way, so a light date far back in the history cannot hold the marts back for good. It runs on the staging
--- views, so a failure keeps the marts at their last passing build.
+-- Every price, primal, volume and cutout row belongs to a report date in reports, and every report date carries
+-- every section its report publishes. A date missing a section is a sync that stopped partway, and report_coverage
+-- would then name report dates the prices do not cover. It runs on the staging views, so a failure keeps the marts
+-- at their last passing build.
 with reported as (
   select slug_id, report_date from {{ ref('stg_usda__reports') }}
 ),
@@ -20,7 +19,8 @@ loaded as (
   select slug_id, report_date, 'cutout values' from {{ ref('stg_usda__cutout_values') }}
 ),
 
--- The sections each report publishes on every report date
+-- The sections each report publishes on every report date, as connector/tables.py REPORTS maps them. All 729 daily
+-- and 150 weekly report dates from 2024-01-02 to 2026-11-09 carry every one.
 expected (slug_id, part) as (
   values
     ('2453', 'cuts: Choice'),
@@ -34,10 +34,6 @@ expected (slug_id, part) as (
     ('2453', 'cutout values'),
     ('2460', 'cuts: Prime'),
     ('2460', 'volume')
-),
-
-latest as (
-  select slug_id, max(report_date) as report_date from reported group by slug_id
 )
 
 select l.slug_id, l.report_date, l.part || ' row without a reports row' as problem
@@ -47,12 +43,12 @@ left join reported as r
   and l.report_date = r.report_date
 where r.report_date is null
 union all
-select latest.slug_id, latest.report_date, 'latest report date without ' || e.part as problem
-from latest
+select r.slug_id, r.report_date, 'report date without ' || e.part as problem
+from reported as r
 inner join expected as e
-  on e.slug_id = latest.slug_id
+  on e.slug_id = r.slug_id
 left join loaded as l
-  on l.slug_id = latest.slug_id
-  and l.report_date = latest.report_date
+  on l.slug_id = r.slug_id
+  and l.report_date = r.report_date
   and l.part = e.part
 where l.part is null
