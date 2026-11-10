@@ -37,7 +37,7 @@ from fivetran_connector_sdk import Operations as op
 from setup_form import build_form
 
 # Every destination table and the sections of each supported report
-from tables import CUTOUT_VALUES_TABLE, REPORTS, TABLE_CONFIG
+from tables import CUTOUT_VALUES_TABLE, REPORTS, REPORTS_TABLE, TABLE_CONFIG
 
 # Row building: number, date and item parsing
 from transforms import BUILDERS, SOURCE_TIME_ZONE, RowIssues
@@ -62,6 +62,8 @@ __MAX_REQUEST_DELAY_SECONDS = 30.0
 # Each incremental sync re-reads this many days of published dates before its saved position, so a report the
 # API publishes a little after its published time is not missed. Upserts make the re-read idempotent.
 __INCREMENTAL_OVERLAP_DAYS = 3
+# Both reports publish at least once in any 14 days, so a backfill window this long with no report is unexpected
+__MIN_DAYS_TO_EXPECT_A_REPORT = 14
 
 # The date fields the API filters on: report_date for the first sync, published_date afterwards
 __BACKFILL_FIELD = "report_date"
@@ -146,7 +148,10 @@ def parse_start_date_config(value: str) -> date:
     Raises:
         ValueError: if the value is not a date, is before the API's history, or is in the future
     """
+    # date.fromisoformat also takes forms such as 20240101 and 2024-W01-1, so the shape is checked first
     try:
+        if not (value.isascii() and len(value) == 10 and value[4] == "-" and value[7] == "-"):
+            raise ValueError(value)
         start_date = date.fromisoformat(value)
     except ValueError as e:
         raise ValueError("start_date must be a YYYY-MM-DD date") from e
@@ -172,7 +177,10 @@ def parse_positive_int_config(key: str, value: str, ceiling: int) -> int:
     Raises:
         ValueError: if the value is not a whole number between 1 and the ceiling
     """
+    # int() also reads digits from other scripts, so only ASCII text is accepted
     try:
+        if not value.isascii():
+            raise ValueError(value)
         number = int(value)
     except ValueError as e:
         raise ValueError(f"{key} must be a whole number") from e
@@ -442,9 +450,16 @@ def sync_report(
             else:
                 window_start = progress["backfill_through"] + timedelta(days=1)
             window_end = min(window_start + timedelta(days=window_days - 1), today)
+            reports_before = counts.get(REPORTS_TABLE, 0)
             written = sync_window(
                 client, slug_id, __BACKFILL_FIELD, window_start, window_end, issues, counts
             )
+            # The backfill never reads these report dates again, so a long window with no report is reported
+            no_report = counts.get(REPORTS_TABLE, 0) == reports_before
+            long_window = (window_end - window_start).days + 1 >= __MIN_DAYS_TO_EXPECT_A_REPORT
+            first_date = date.fromisoformat(REPORTS[slug_id]["first_report_date"])
+            if no_report and long_window and window_start >= first_date:
+                issues.empty_windows.append(f"{slug_id} {window_start} to {window_end}")
             log.info(
                 f"Report {slug_id}: report dates {window_start} to {window_end}, {written} rows"
             )
@@ -505,6 +520,20 @@ def report_issues(issues: RowIssues):
     if issues.rows_without_key:
         message = (
             f"Skipped {issues.rows_without_key} row(s) with no report date or item description."
+        )
+        log.warning(message)
+        op.warning(message)
+    if issues.unparseable_published_dates:
+        message = (
+            f"Wrote a null published_at for {issues.unparseable_published_dates} row(s) whose published "
+            "date was not in the API's format."
+        )
+        log.warning(message)
+        op.warning(message)
+    if issues.empty_windows:
+        message = (
+            "The API returned no report for these report dates, which the backfill does not read again: "
+            f"{'; '.join(issues.empty_windows)}. Move start_date earlier to read them again."
         )
         log.warning(message)
         op.warning(message)

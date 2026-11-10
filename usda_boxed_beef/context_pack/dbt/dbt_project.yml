@@ -1,12 +1,16 @@
 # usda_boxed_beef_context: the dbt project behind the USDA boxed beef context pack.
 #
-# It builds the views an agent reads instead of the connector's seven raw tables. The views put every price in two
-# units side by side (U.S. dollars per 100 pounds, as USDA reports it, and dollars per pound), drop no-trade rows from
-# every average, mark the weekly Prime report apart from the daily report, and carry each report's correction flag
-# and published time.
+# It builds the tables an agent reads instead of the connector's seven raw tables. They put every price in two units
+# side by side (U.S. dollars per 100 pounds, as USDA reports it, and dollars per pound), drop no-trade rows from every
+# average, mark the weekly Prime report apart from the daily report, and carry each report's correction flag and
+# published time.
 #
-# The local target reads the connector's debug warehouse (profiles.yml). Run from this dbt/ directory:
-#   dbt build --profiles-dir .
+# The staging models are views over the connector's tables, in the usda_staging schema. The marts the agent reads are
+# tables in the usda schema. The data tests on the synced data run on the staging views, in a build of their own, and
+# the marts are built only when it passes, so they keep the last build whose data passed. (dbt 2.0.11 does not skip
+# a model downstream of a failed singular test inside one build, so a single `dbt build` would not hold them back.)
+# Rebuild after every sync. Run from this dbt/ directory:
+#   dbt build --profiles-dir . --select tag:staging && dbt build --profiles-dir . --select tag:marts
 
 name: usda_boxed_beef_context
 version: "1.0.0"
@@ -28,7 +32,6 @@ vars:
 
 models:
   usda_boxed_beef_context:
-    # Views only: the tables are small, and a view always reads the latest sync.
     +materialized: view
     +tags: ["usda_boxed_beef_context"]
     # Descriptions land in the warehouse, where an agent reading the catalog sees them.
@@ -37,8 +40,12 @@ models:
       columns: true
     staging:
       +tags: ["staging"]
+      # usda_staging: views over the connector's tables, read by dbt only
+      +schema: staging
     marts:
       +tags: ["marts"]
+      # Tables, so the agent reads the last tested build and never opens the connector's warehouse
+      +materialized: table
 
 data_tests:
   usda_boxed_beef_context:

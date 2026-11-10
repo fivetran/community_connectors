@@ -1,6 +1,6 @@
 # USDA definitions quoted in agent/AGENTS.md
 
-Read on 2026-11-10. Each quote is copied from the source named under it. The pages as fetched are in `raw_2026-11-10/` in the staging copy of this pack.
+Read on 2026-11-10. Each quote is copied from the source linked under it.
 
 ## Boxed beef
 

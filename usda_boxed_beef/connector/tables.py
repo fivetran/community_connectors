@@ -112,6 +112,8 @@ TABLE_CONFIG = {
 REPORTS = {
     "2453": {
         "title": "National Daily Boxed Beef Cutout and Boxed Beef Cuts, Negotiated Sales, Afternoon (LM_XB403)",
+        # The first report date the DataMart holds
+        "first_report_date": "2001-04-03",
         "sections": [
             {"name": "Summary", "table": REPORTS_TABLE, "builder": "report"},
             {"name": "Current Cutout Values", "table": CUTOUT_VALUES_TABLE, "builder": "cutout"},
@@ -147,6 +149,7 @@ REPORTS = {
     },
     "2460": {
         "title": "National Weekly Boxed Beef Cuts for Prime Product, Negotiated Sales (LM_XB456)",
+        "first_report_date": "2002-06-17",
         "sections": [
             {"name": "Summary", "table": REPORTS_TABLE, "builder": "report"},
             {"name": "Current Volume", "table": VOLUME_TABLE, "builder": "volume"},

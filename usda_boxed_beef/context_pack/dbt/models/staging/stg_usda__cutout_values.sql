@@ -9,4 +9,3 @@ select
   select_change as select_change_usd_cwt,
   published_at
 from {{ source('usda', 'cutout_values') }}
-where not coalesce(_fivetran_deleted, false)

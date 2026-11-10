@@ -110,10 +110,11 @@ def rows_from_body(body, label: str) -> list:
         label: the report, section and range, for error messages
 
     Returns:
-        The section's rows; an empty list only for the API's documented no-results body
+        The section's rows; an empty list for the API's documented no-results body or an empty results list
 
     Raises:
-        UsdaApiError: for any other string, a body of the wrong shape, or a response the API truncated
+        UsdaApiError: for any other string, a body of the wrong shape, a result that is not a row, or a
+            response the API truncated
     """
     if isinstance(body, str):
         if body.strip() == __NO_RESULTS_MESSAGE:
@@ -130,7 +131,9 @@ def rows_from_body(body, label: str) -> list:
         raise UsdaApiError(
             f"{label}: the API returned {returned_rows} of {total_rows} rows. Lower max_window_days."
         )
-    return [row for row in body["results"] if isinstance(row, dict)]
+    if not all(isinstance(row, dict) for row in body["results"]):
+        raise UsdaApiError(f"{label}: the response holds a result that is not a row")
+    return body["results"]
 
 
 def create_session():

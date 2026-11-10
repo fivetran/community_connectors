@@ -4,14 +4,12 @@ with ground_beef as (
   select slug_id, report_date, section, item_description, number_trades, total_pounds,
     price_range_low, price_range_high, weighted_average, published_at
   from {{ source('usda', 'ground_beef_prices') }}
-  where not coalesce(_fivetran_deleted, false)
 ),
 
 trimmings as (
   select slug_id, report_date, 'Beef Trimmings' as section, item_description, number_trades, total_pounds,
     price_range_low, price_range_high, weighted_average, published_at
   from {{ source('usda', 'trimmings_prices') }}
-  where not coalesce(_fivetran_deleted, false)
 ),
 
 unioned as (

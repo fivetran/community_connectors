@@ -7,4 +7,3 @@ select
   select_value as select_value_usd_cwt,
   published_at
 from {{ source('usda', 'primal_values') }}
-where not coalesce(_fivetran_deleted, false)

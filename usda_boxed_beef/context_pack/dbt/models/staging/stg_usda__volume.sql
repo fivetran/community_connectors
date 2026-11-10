@@ -2,9 +2,9 @@
 select
   slug_id,
   report_date,
+  {{ cadence('slug_id') }} as cadence,
   volume_class,
   loads,
   pounds,
   published_at
 from {{ source('usda', 'volume') }}
-where not coalesce(_fivetran_deleted, false)

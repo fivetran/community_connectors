@@ -5,14 +5,13 @@
 with source as (
   select *
   from {{ source('usda', 'cut_prices') }}
-  where not coalesce(_fivetran_deleted, false)
 )
 
 select
   slug_id || '|' || cast(report_date as varchar) || '|' || grade || '|' || item_description as price_key,
   slug_id,
   report_date,
-  case slug_id when '2460' then 'weekly' else 'daily' end as cadence,
+  {{ cadence('slug_id') }} as cadence,
   grade,
   item_description,
   imps_code,

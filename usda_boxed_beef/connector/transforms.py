@@ -131,12 +131,18 @@ def split_item_description(description):
     return None, None, text.strip() or None
 
 
+class ReportLayoutError(ValueError):
+    """Raised when rows from the API lack a field this connector reads, which means the report layout changed."""
+
+
 class RowIssues:
     """Counts of values a sync could not use, reported once at the end of the sync."""
 
     def __init__(self):
         self.unparseable_numbers = 0
+        self.unparseable_published_dates = 0
         self.rows_without_key = 0
+        self.empty_windows = []
 
 
 def _number(raw: dict, field: str, issues: RowIssues):
@@ -151,6 +157,12 @@ def _number(raw: dict, field: str, issues: RowIssues):
     Returns:
         The number, or None
     """
+    # Every row the API sends carries every field of its section, with null for an empty value. A missing field
+    # means the layout changed, and reading it as null would overwrite prices already loaded with nulls.
+    if field not in raw:
+        raise ReportLayoutError(
+            f"Rows from the API have no {field!r} field, so the report layout has changed"
+        )
     try:
         return as_float(raw.get(field))
     except ValueError:
@@ -178,6 +190,7 @@ def _key_fields(slug_id: str, raw: dict, issues: RowIssues):
     try:
         published_at = parse_published_at(raw.get("published_date"))
     except ValueError:
+        issues.unparseable_published_dates += 1
         published_at = None
     return {"slug_id": slug_id, "report_date": report_date, "published_at": published_at}
 
@@ -187,7 +200,8 @@ def _price_measures(raw: dict, issues: RowIssues) -> dict:
     Read the trade count, pounds and prices of one negotiated-sales row.
 
     An item with no trades that day comes back with ".00" prices. Those are not prices of zero, so they are
-    written as null.
+    written as null. A price is kept only on a row with at least one trade and is never zero, so a row whose
+    trade count is missing or unreadable carries no price.
 
     Args:
         raw: one API row
@@ -203,7 +217,7 @@ def _price_measures(raw: dict, issues: RowIssues) -> dict:
     traded = bool(measures["number_trades"])
     for field in __PRICE_FIELDS:
         price = _number(raw, field, issues)
-        measures[field] = price if traded or price else None
+        measures[field] = price if traded and price else None
     if not traded and not measures["total_pounds"]:
         measures["total_pounds"] = None
     return measures
@@ -320,18 +334,32 @@ def build_volume_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     return rows
 
 
-def _description(raw: dict):
+def _raw_description(raw: dict) -> str:
     """
-    Return the item text of a price row, which the API names item_description or trim_description by section.
+    Return the item text of a price row as sent.
+
+    The API names the field item_description or trim_description, depending on the section.
 
     Args:
         raw: one API row
 
     Returns:
-        The item text with surrounding whitespace removed, or None
+        The item text, or an empty string
     """
-    text = raw.get("item_description") or raw.get("trim_description") or ""
-    return text.strip() or None
+    return raw.get("item_description") or raw.get("trim_description") or ""
+
+
+def _description(raw: dict):
+    """
+    Return the item text of a price row with surrounding whitespace removed.
+
+    Args:
+        raw: one API row
+
+    Returns:
+        The item text, or None when it is empty
+    """
+    return _raw_description(raw).strip() or None
 
 
 def build_cut_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues) -> list:
@@ -348,7 +376,7 @@ def build_cut_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues) ->
         A list with one row, or an empty list when the row has no report date or item
     """
     row = _key_fields(slug_id, raw, issues)
-    raw_text = raw.get("item_description") or raw.get("trim_description") or ""
+    raw_text = _raw_description(raw)
     description = _description(raw)
     if row is None or description is None:
         if row is not None:

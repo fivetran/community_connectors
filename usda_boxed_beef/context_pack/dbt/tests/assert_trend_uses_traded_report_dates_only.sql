@@ -1,5 +1,5 @@
 -- Every trend row is a report date the cut traded, and every average holds at least that date. No day without a
--- report or without trades is counted.
+-- report or without trades is counted. A weekly Prime average holds one report over 7 days and at most four over 28.
 with traded as (
   select grade, item_description, report_date
   from {{ ref('cut_prices_daily') }}
@@ -15,3 +15,4 @@ left join traded as d
 where d.report_date is null
    or t.n_reports_7d < 1
    or t.n_reports_28d < t.n_reports_7d
+   or (t.cadence = 'weekly' and (t.n_reports_7d <> 1 or t.n_reports_28d > 4))
