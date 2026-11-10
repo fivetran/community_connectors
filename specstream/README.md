@@ -46,6 +46,7 @@ fivetran init --template specstream
 - Writes each value with the page it was read from and when it was read.
 - Incremental syncs read only the lists created since the last sync. A SpecStream schedule delivers new and changed records as a new list, so they arrive on the next sync.
 - Retries rate limits and server errors with exponential backoff and honors `Retry-After`.
+- Retries a list read that fails part way through the response.
 - Checkpoints after each list, so an interrupted sync resumes where it stopped.
 - Holds one page of lists and one record at a time, so memory does not grow with the workspace or with the size of a list.
 
@@ -88,23 +89,27 @@ The lists endpoint (`GET /v1/workspace/collections`) returns up to 100 lists per
 ## Data handling
 
 - Records SpecStream found carry one cell per column. Each cell becomes a row in `RECORD_VALUE` with its label, its displayed value, its raw value, the page it came from and when it was read. Refer to `def upsert_record(list_id, row)`.
+- The `matches` and `open` columns are buttons in the SpecStream workspace, not facts, so they are not synced to `RECORD` or `RECORD_VALUE`.
+- In `RECORD.values`, each value is keyed by its label. When two columns share a label, the later one is keyed by its column ID, so no value replaces another.
 - A value SpecStream couldn't read is written as null.
 - Rows of a list you imported carry the columns you provided, without a source page. Refer to `def upsert_imported_record(list_id, row)`.
 - A list you made by combining lists keeps each column's values together; the connector writes the value the list shows. Refer to `def read_found_record(row)`.
-- The state holds `lists_created_through`, the creation time of the newest list of the last completed sync, and `list_ids_at_boundary`, the IDs of the lists synced at that exact time, so a list that shares the time is not skipped. While a sync runs, `pass_in_progress` holds the last list it finished, so an interrupted sync resumes there. Clear the state to re-sync everything.
+- The connector writes a list's `LIST` row before its records, with `row_count` empty, and sets `row_count` when all the records are synced. An empty `row_count` marks a list whose sync was interrupted; the next sync completes it.
+- The state holds `lists_created_through`, the creation time in UTC of the newest list of the last completed sync, and `list_ids_at_boundary`, the IDs of the lists synced at that exact time, so a list that shares the time is not skipped. While a sync runs, `pass_in_progress` holds the last list it finished, so an interrupted sync resumes there. Clear the state to re-sync everything.
 
 ## Error handling
 
 - Refused API key: the sync fails at once with a message to create a new key under **Agents & API**.
-- Rate limits and server errors: up to five attempts with exponential backoff, using `Retry-After` when SpecStream sends it.
-- Connection errors and timeouts: retried the same way.
+- Rate limits and server errors: up to five attempts with exponential backoff, using `Retry-After` when SpecStream sends it, in seconds or as an HTTP date.
+- Connection errors and timeouts: retried the same way. A list read that fails part way through the response is read again from its first record, up to five times.
+- Any other error status: the sync fails with the status and the path.
 
-Refer to `def send_request(session, path, params=None, stream=False)`.
+Refer to `def send_request(session, path, params=None, stream=False)` and `def sync_list(session, summary, state)`.
 
 ## Tables created
 
-- `LIST`: one row per list. Primary key `id`. Columns `name`, `project_id`, `imported`, `created_at` and `row_count`.
-- `RECORD`: one row per record. Primary key `list_id`, `record_id`. Columns `entity_id` (stable across lists for the same company, place, person or posting), `values` (JSON object of label to value) and `sources` (JSON array of the pages the record's values came from).
+- `LIST`: one row per list. Primary key `id`. Columns `name`, `project_id`, `imported`, `created_at` and `row_count` (empty while the list's records are being synced).
+- `RECORD`: one row per record. Primary key `list_id`, `record_id`. `record_id` depends on the kind of list: for a record SpecStream found, it is the record's `entity_id`, which is unique within the list and does not change if the list is re-ordered; for a row of a list you imported, it is the row's `id`; for a record of a list you combined, it is the combined record's `id`. Columns `entity_id` (stable across lists for the same company, place, person or posting), `values` (JSON object of label to value) and `sources` (JSON array of the pages the record's values came from).
 - `RECORD_VALUE`: one row per value. Primary key `list_id`, `record_id`, `column_id`. Columns `label`, `value`, `raw_value` (JSON), `source_url` and `observed_at`.
 
 ## Additional considerations

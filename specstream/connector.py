@@ -10,6 +10,13 @@ import json
 # For pausing between retries
 import time
 
+# For reading a time with any number of fractional-second digits
+import re
+
+# For comparing list creation times as times, and reading a Retry-After header given as a date
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
 # Import required classes from fivetran_connector_sdk
 from fivetran_connector_sdk import Connector
 
@@ -24,6 +31,9 @@ import ijson
 
 # For calling the SpecStream API (pre-installed in the Connector SDK runtime)
 import requests
+
+# For the errors raised while a streamed response body is read (installed with requests)
+import urllib3
 
 __BASE_URL = "https://api.specstream.ai"
 __LISTS_PAGE_SIZE = 100
@@ -114,7 +124,8 @@ def update(configuration: dict, state: dict):
     """
     validate_configuration(configuration=configuration)
     session = create_session(configuration["api_key"])
-    synced_through = state.get("lists_created_through")
+    synced_through = normalize_timestamp(state.get("lists_created_through"))
+    synced_time = parse_timestamp(synced_through) if synced_through else None
     synced_ids = set(state.get("list_ids_at_boundary") or [])
     # A pass that an earlier sync started and did not finish: it resumes after the last list it synced.
     in_progress = state.get("pass_in_progress") or {}
@@ -137,18 +148,19 @@ def update(configuration: dict, state: dict):
 
         reached_synced = False
         for position, summary in enumerate(summaries):
-            created_at = summary["created_at"]
-            if synced_through and created_at < synced_through:
+            created_at = normalize_timestamp(summary["created_at"])
+            created_time = parse_timestamp(created_at)
+            if synced_time and created_time < synced_time:
                 reached_synced = True
                 break
             # Lists can share a creation time, so the lists already synced at the boundary are known by ID.
-            if created_at == synced_through and summary["id"] in synced_ids:
+            if created_time == synced_time and summary["id"] in synced_ids:
                 continue
             sync_list(session, summary, state)
             synced_count += 1
             if "newest_created_at" not in in_progress:
                 in_progress = {"newest_created_at": created_at, "newest_ids": []}
-            if created_at == in_progress["newest_created_at"]:
+            if created_time == parse_timestamp(in_progress["newest_created_at"]):
                 in_progress["newest_ids"].append(summary["id"])
             in_progress["after"] = summary["id"]
             state["pass_in_progress"] = in_progress
@@ -166,9 +178,10 @@ def update(configuration: dict, state: dict):
     if in_progress:
         # The pass is complete: everything created up to its newest list is synced.
         newest_ids = set(in_progress["newest_ids"])
-        if in_progress["newest_created_at"] == synced_through:
+        newest_created_at = normalize_timestamp(in_progress["newest_created_at"])
+        if parse_timestamp(newest_created_at) == synced_time:
             newest_ids |= synced_ids
-        state["lists_created_through"] = in_progress["newest_created_at"]
+        state["lists_created_through"] = newest_created_at
         state["list_ids_at_boundary"] = sorted(newest_ids)
         state.pop("pass_in_progress", None)
     if synced_count:
@@ -177,6 +190,66 @@ def update(configuration: dict, state: dict):
         log.info("No new SpecStream lists since the last sync")
     # Save the completed pass, so the next sync reads only the lists created after it.
     op.checkpoint(state)
+
+
+def parse_timestamp(value: str):
+    """
+    Read an ISO 8601 time from the API or the state as a UTC datetime.
+    The API may send a time with or without fractional seconds, and with `Z` or `+00:00`, so times are compared
+    as datetimes and never as strings.
+    Args:
+        value: an ISO 8601 time.
+    Returns:
+        The time as a timezone-aware UTC datetime.
+    """
+    # Python 3.10 reads only 3 or 6 fractional digits, so the fraction is padded or cut to 6.
+    value = re.sub(
+        r"\.(\d+)",
+        lambda match: "." + match.group(1)[:6].ljust(6, "0"),
+        value.replace("Z", "+00:00"),
+    )
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def normalize_timestamp(value):
+    """
+    Write an ISO 8601 time in one fixed form, so the time saved in the state reads back the same way.
+    Args:
+        value: an ISO 8601 time, or None.
+    Returns:
+        The time as `YYYY-MM-DDTHH:MM:SS.ffffffZ` in UTC, or None.
+    """
+    if not value:
+        return None
+    return parse_timestamp(value).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def retry_delay_seconds(retry_after: str, attempt: int):
+    """
+    Read how long to wait before the next attempt.
+    `Retry-After` can be a number of seconds or an HTTP date; without it, the delay grows exponentially.
+    Args:
+        retry_after: the Retry-After header, or an empty string.
+        attempt: the number of the attempt that failed, from 0.
+    Returns:
+        The delay in seconds, never negative.
+    """
+    retry_after = retry_after.strip()
+    if retry_after.isdigit():
+        return int(retry_after)
+    if retry_after:
+        try:
+            retry_at = parsedate_to_datetime(retry_after)
+        except (TypeError, ValueError):
+            retry_at = None
+        if retry_at is not None:
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0, int((retry_at - datetime.now(timezone.utc)).total_seconds()))
+    return __RETRY_BASE_DELAY_SECONDS * 2**attempt
 
 
 def create_session(api_key: str):
@@ -235,18 +308,17 @@ def send_request(session, path: str, params=None, stream: bool = False):
             response.close()
             if attempt == __MAX_RETRIES - 1:
                 raise RuntimeError(f"SpecStream answered {response.status_code} for {path}")
-            retry_after = response.headers.get("Retry-After", "")
-            delay_seconds = (
-                int(retry_after)
-                if retry_after.isdigit()
-                else __RETRY_BASE_DELAY_SECONDS * 2**attempt
-            )
+            delay_seconds = retry_delay_seconds(response.headers.get("Retry-After", ""), attempt)
             log.warning(
                 f"SpecStream answered {response.status_code} for {path}; retrying in {delay_seconds}s"
             )
             time.sleep(delay_seconds)
             continue
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as error:
+            response.close()
+            raise RuntimeError(f"SpecStream answered {response.status_code} for {path}") from error
         return response
     raise RuntimeError(f"SpecStream did not answer {path}")
 
@@ -286,22 +358,19 @@ def stream_list_records(session, list_id: str):
 def sync_list(session, summary: dict, state: dict):
     """
     Read one list with its records and upsert the list, each record, and each value with its source page.
+    The list row is written before its records, with `row_count` empty, so every record synced has its list.
+    `row_count` is set once all the records are read.
+    A read that fails part way through the response is retried from the first record: upserts make it safe to
+    write the same records twice.
     Args:
         session: the HTTP session.
         summary: the list summary from the lists endpoint.
         state: the sync state, which does not count this list as synced until update() says so.
+    Raises:
+        RuntimeError: if the list cannot be read after every retry.
     """
     list_id = summary["id"]
-    record_count = 0
-    for row in stream_list_records(session, list_id):
-        upsert_record(list_id, row)
-        record_count += 1
-        if record_count % __CHECKPOINT_INTERVAL == 0:
-            # Checkpoint inside a large list to send its records on. The state still points before this list, so
-            # an interrupted sync reads the list again from its first record.
-            op.checkpoint(state)
     # The 'upsert' operation is used to insert or update data in the destination table.
-    # The list is upserted after its records, so a list in the destination always has all of its records.
     op.upsert(
         table="list",
         data={
@@ -310,9 +379,33 @@ def sync_list(session, summary: dict, state: dict):
             "project_id": summary.get("project_id"),
             "imported": bool(summary.get("imported")),
             "created_at": summary.get("created_at"),
-            "row_count": record_count,
+            "row_count": None,
         },
     )
+    for attempt in range(__MAX_RETRIES):
+        record_count = 0
+        try:
+            for row in stream_list_records(session, list_id):
+                upsert_record(list_id, row)
+                record_count += 1
+                if record_count % __CHECKPOINT_INTERVAL == 0:
+                    # Checkpoint inside a large list to send its records on. The state still points before this
+                    # list, so an interrupted sync reads the list again from its first record.
+                    op.checkpoint(state)
+            break
+        except (
+            requests.RequestException,
+            urllib3.exceptions.HTTPError,
+            ijson.IncompleteJSONError,
+        ) as error:
+            if attempt == __MAX_RETRIES - 1:
+                raise RuntimeError(
+                    f"SpecStream list {list_id} could not be read: {error}"
+                ) from error
+            log.warning(f"Reading list {list_id} stopped after {record_count} record(s); retrying")
+            time.sleep(__RETRY_BASE_DELAY_SECONDS * 2**attempt)
+    # The 'update' operation is used to update an existing row in the destination table.
+    op.update(table="list", modified={"id": list_id, "row_count": record_count})
     log.info(f"Synced list {list_id} with {record_count} record(s)")
 
 
@@ -339,7 +432,7 @@ def upsert_record(list_id: str, row: dict):
         provenance = cell.get("provenance") or {}
         source_url = provenance.get("source_url")
         label = cell.get("label") or column_id
-        values[label if label not in values else column_id] = (
+        values[unique_value_key(values, label, column_id)] = (
             None if missing else cell.get("display")
         )
         if source_url and source_url not in sources:
@@ -369,18 +462,41 @@ def upsert_record(list_id: str, row: dict):
     )
 
 
+def unique_value_key(values: dict, label: str, column_id: str):
+    """
+    Choose the key a value takes in a record's `values`, so no value replaces another.
+    A value is keyed by its label. When two columns share a label, the later one is keyed by its column ID, and
+    when that is taken too, by its column ID with a number.
+    Args:
+        values: the values of the record so far.
+        label: the column's label.
+        column_id: the column's ID.
+    Returns:
+        A key that `values` does not hold yet.
+    """
+    if label not in values:
+        return label
+    key = column_id
+    suffix = 2
+    while key in values:
+        key = f"{column_id}_{suffix}"
+        suffix += 1
+    return key
+
+
 def read_found_record(row: dict):
     """
     Read the record ID, the entity ID and the cells of a record SpecStream found.
-    A list you made by combining lists keeps each column's values under `field_values`, with the value the list
-    shows first.
+    A found record is known by its `entity_id`, which SpecStream keeps unique within a list and the same in every
+    list for the same company, place, person or posting. A list you made by combining lists keeps each column's
+    values under `field_values`, with the value the list shows first, and is known by its own `id`.
     Args:
         row: the record as returned by the list endpoint.
     Returns:
         A tuple of the record ID, the entity ID (or None) and the list of cells.
     """
     if "field_values" not in row:
-        return str(row["ordinal"]), row.get("entity_id"), row.get("cells") or []
+        return str(row["entity_id"]), row["entity_id"], row.get("cells") or []
     cells = []
     for column_id, entries in (row.get("field_values") or {}).items():
         if not entries:
