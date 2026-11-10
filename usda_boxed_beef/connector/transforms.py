@@ -142,7 +142,27 @@ class RowIssues:
         self.unparseable_numbers = 0
         self.unparseable_published_dates = 0
         self.rows_without_key = 0
-        self.empty_windows = []
+        self.prices_without_trades = 0
+
+
+def _require(raw: dict, field: str):
+    """
+    Fail when a row lacks a field this connector reads.
+
+    Every row the API sends carries every field of its section, with null for an empty value. A missing field means
+    the layout changed, and reading it as null would overwrite values already loaded.
+
+    Args:
+        raw: one API row
+        field: the field the connector reads
+
+    Raises:
+        ReportLayoutError: if the field is not in the row
+    """
+    if field not in raw:
+        raise ReportLayoutError(
+            f"Rows from the API have no {field!r} field, so the report layout has changed"
+        )
 
 
 def _number(raw: dict, field: str, issues: RowIssues):
@@ -157,12 +177,7 @@ def _number(raw: dict, field: str, issues: RowIssues):
     Returns:
         The number, or None
     """
-    # Every row the API sends carries every field of its section, with null for an empty value. A missing field
-    # means the layout changed, and reading it as null would overwrite prices already loaded with nulls.
-    if field not in raw:
-        raise ReportLayoutError(
-            f"Rows from the API have no {field!r} field, so the report layout has changed"
-        )
+    _require(raw, field)
     try:
         return as_float(raw.get(field))
     except ValueError:
@@ -214,9 +229,12 @@ def _price_measures(raw: dict, issues: RowIssues) -> dict:
         "number_trades": _number(raw, "number_trades", issues),
         "total_pounds": _number(raw, "total_pounds", issues),
     }
-    traded = bool(measures["number_trades"])
+    traded = (measures["number_trades"] or 0) > 0
     for field in __PRICE_FIELDS:
         price = _number(raw, field, issues)
+        if price and not traded:
+            # A price on a row without a readable trade count above zero is not written, and is counted
+            issues.prices_without_trades += 1
         measures[field] = price if traded and price else None
     if not traded and not measures["total_pounds"]:
         measures["total_pounds"] = None
@@ -236,6 +254,8 @@ def build_report_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     Returns:
         A list with one row, or an empty list when the row has no report date
     """
+    for field in ("report_title", "is_correction", "narrative"):
+        _require(raw, field)
     row = _key_fields(slug_id, raw, issues)
     if row is None:
         return []
@@ -268,9 +288,8 @@ def build_cutout_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     row = _key_fields(slug_id, raw, issues)
     if row is None:
         return []
-    for column, field in CUTOUT_FIELDS.items():
-        if field in raw:
-            row[column] = _number(raw, field, issues)
+    for column, field in CUTOUT_FIELDS[section["name"]].items():
+        row[column] = _number(raw, field, issues)
     return [row]
 
 
@@ -287,6 +306,7 @@ def build_primal_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
     Returns:
         A list with one row, or an empty list when the row has no report date or primal name
     """
+    _require(raw, "primal_desc")
     row = _key_fields(slug_id, raw, issues)
     primal = (raw.get("primal_desc") or "").strip()
     if row is None or not primal:
@@ -305,7 +325,7 @@ def build_primal_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
 
 def build_volume_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues) -> list:
     """
-    Build one volume row per volume class present in a Current Volume row.
+    Build one volume row per volume class the report's Current Volume section carries.
 
     Args:
         slug_id: the report id
@@ -314,15 +334,14 @@ def build_volume_rows(slug_id: str, section: dict, raw: dict, issues: RowIssues)
         issues: the counts to add to
 
     Returns:
-        A list with one row per volume class the row reports
+        A list with one row per volume class in the section's volume_classes
     """
     key = _key_fields(slug_id, raw, issues)
     if key is None:
         return []
     rows = []
-    for volume_class, (loads_field, pounds_field) in VOLUME_CLASSES.items():
-        if loads_field not in raw and pounds_field not in raw:
-            continue
+    for volume_class in section["volume_classes"]:
+        loads_field, pounds_field = VOLUME_CLASSES[volume_class]
         rows.append(
             {
                 **key,
@@ -338,7 +357,8 @@ def _raw_description(raw: dict) -> str:
     """
     Return the item text of a price row as sent.
 
-    The API names the field item_description or trim_description, depending on the section.
+    The API names the field item_description or trim_description, depending on the section. A row with neither
+    means the layout changed.
 
     Args:
         raw: one API row
@@ -346,6 +366,8 @@ def _raw_description(raw: dict) -> str:
     Returns:
         The item text, or an empty string
     """
+    if "item_description" not in raw and "trim_description" not in raw:
+        _require(raw, "item_description")
     return raw.get("item_description") or raw.get("trim_description") or ""
 
 

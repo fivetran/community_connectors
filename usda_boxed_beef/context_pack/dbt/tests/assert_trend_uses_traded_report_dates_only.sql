@@ -1,5 +1,6 @@
 -- Every trend row is a report date the cut traded, and every average holds at least that date. No day without a
 -- report or without trades is counted. A weekly Prime average holds one report over 7 days and at most four over 28.
+-- It runs on the marts, so it guards their SQL; assert_one_weekly_report_per_week checks the synced data.
 with traded as (
   select grade, item_description, report_date
   from {{ ref('cut_prices_daily') }}

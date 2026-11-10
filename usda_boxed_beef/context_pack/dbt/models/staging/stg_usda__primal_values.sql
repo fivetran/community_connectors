@@ -6,4 +6,4 @@ select
   choice_value as choice_value_usd_cwt,
   select_value as select_value_usd_cwt,
   published_at
-from {{ source('usda', 'primal_values') }}
+from ({{ live_rows(source('usda', 'primal_values')) }})

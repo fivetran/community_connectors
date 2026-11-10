@@ -5,4 +5,4 @@ select price_key, 'cut' as kind from {{ ref('stg_usda__cut_prices') }}
 where weighted_average_usd_cwt = 0 or price_low_usd_cwt = 0 or price_high_usd_cwt = 0
 union all
 select price_key, 'grind' as kind from {{ ref('stg_usda__grind_prices') }}
-where weighted_average_usd_cwt = 0
+where weighted_average_usd_cwt = 0 or price_low_usd_cwt = 0 or price_high_usd_cwt = 0

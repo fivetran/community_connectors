@@ -24,9 +24,9 @@ The tables hold the last build whose data passed the pack's tests, so the sessio
 
 1. Read only the tables listed under Tables, in the `usda` schema. Never read the staging views in `usda_staging`: they read the connector's raw tables directly, so they change with every sync before any test has run.
 2. Units. Quote a price per pound from a `_per_lb` column, and say "per pound". A `_usd_cwt` column is per 100 pounds: never quote it as a per-pound price. When you quote a USDA figure as USDA prints it, say "per hundredweight (100 pounds)". The cutout and primal values are per 100 pounds of carcass and have no per-pound column; do not divide them for a cut price.
-3. No-trade rows. A cut with `has_trades = false` did not trade that day, and its prices are null. USDA also withholds the prices of some cuts that did trade, so a row with `has_trades = true` can have null prices too. Never treat a null price as zero, never average it in, and when you count cuts, give both numbers: "20 of 42 Select cuts traded".
+3. No-trade rows. A cut with `has_trades = false` did not trade that day, and its prices are null. A row with `has_trades = true` can have null prices too: USDA withheld them, or the sync could not read them (the sync reports those with a warning). Say the price is not available, not that USDA withheld it. Never treat a null price as zero, never average it in, and when you count cuts, give both numbers: "20 of 42 Select cuts traded".
 4. Cadence. Prime (`grade = 'Prime'`) comes only from the weekly report (`cadence = 'weekly'`); Choice and Select are daily. Never put weekly and daily prices in one average or one trend line. To compare Prime with Choice, compare each Prime report with the average Choice price over the Choice report dates from the previous Prime report date up to the day before this one. The Prime report is published on the morning of its report date and covers the sales since the previous report, so that day's daily report is not part of its week (checked question 2).
-5. Corrections. USDA corrects a report by republishing the same report date; the tables hold the latest version loaded. Every table but `report_coverage` has `is_correction`, true when that version is a correction. Say so when an answer uses a corrected report, and say that the most recent report dates can still be revised.
+5. Corrections. USDA corrects a report by republishing the same report date; the tables hold the latest version loaded. Every table but `report_coverage` has `is_correction`, true when that version is a correction. Say so when an answer uses a corrected report, including inside an average (`n_corrected_reports_7d`, `n_corrected_reports_28d` in `cut_price_trend`), and say that the most recent report dates can still be revised.
 6. Days without a report are missing, not zero. There is no row for a weekend, a federal holiday or a day USDA did not publish. Averages run over report dates only. When you quote an average from `cut_price_trend`, give its `n_reports_7d` or `n_reports_28d`.
 7. Wholesale, not cost. Say the figure is a wholesale market price. Never call it what a restaurant pays, and never call the cutout the price of a cut.
 8. Name the window. Read `report_coverage` and say which report dates the answer covers ("report dates 2026-10-12 to 2026-11-09"). When it has no row for a report, say that report is not loaded.
@@ -38,7 +38,7 @@ The tables hold the last build whose data passed the pack's tests, so the sessio
 | Table | Grain | Use it for |
 |---|---|---|
 | `cut_prices_daily` | one row per report, report date, grade and cut | the price of a cut: `price_per_lb`, `price_low_per_lb`, `price_high_per_lb`, `number_trades`, `total_pounds`, `has_trades`, `imps_code`, `fat_limitation`, `cut_name`, `cut_family`, `cadence`, `is_correction` |
-| `cut_price_trend` | one row per grade, cut and report date it traded | `price_per_lb` with `avg_price_per_lb_7d` and `avg_price_per_lb_28d` over the days ending that date (weekly Prime: by report week), `n_reports_7d`, `n_reports_28d`, and `pct_vs_28d_avg` |
+| `cut_price_trend` | one row per grade, cut and report date it traded | `price_per_lb` with `avg_price_per_lb_7d` and `avg_price_per_lb_28d` over the days ending that date (weekly Prime: by report week), `n_reports_7d`, `n_reports_28d`, `n_corrected_reports_7d`, `n_corrected_reports_28d`, `pct_vs_28d_avg`, `is_correction` |
 | `daily_cutout` | one row per report date and grade (Choice, Select) | the cutout value, `cutout_usd_cwt`, and USDA's change from the prior day, `change_usd_cwt` |
 | `choice_select_spread` | one row per report date | `spread_usd_cwt`, the Choice cutout minus the Select cutout |
 | `primal_values_daily` | one row per report date, primal and grade | `value_usd_cwt`; `primal` is `Primal Rib`, `Primal Chuck`, `Primal Round`, `Primal Loin`, `Primal Brisket`, `Primal Plate` or `Primal Flank` |
@@ -75,6 +75,7 @@ select
   round(t.avg_price_per_lb_28d, 2) as avg_price_per_lb_28d,
   t.n_reports_28d,
   t.pct_vs_28d_avg,
+  t.n_corrected_reports_28d,
   c.is_correction
 from cut_prices_daily as c
 inner join latest
@@ -87,11 +88,11 @@ where c.grade = 'Choice'
   and c.item_description = 'Rib, ribeye, lip-on, bn-in (109E  1)'
 ```
 
-| report_date | item_description | has_trades | price_per_lb | avg_price_per_lb_28d | n_reports_28d | pct_vs_28d_avg | is_correction |
-|---|---|---|---|---|---|---|---|
-| 2026-11-09 | Rib, ribeye, lip-on, bn-in (109E  1) | True | 13.86 | 13.91 | 20 | -0.39 | False |
+| report_date | item_description | has_trades | price_per_lb | avg_price_per_lb_28d | n_reports_28d | pct_vs_28d_avg | n_corrected_reports_28d | is_correction |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-09 | Rib, ribeye, lip-on, bn-in (109E  1) | True | 13.86 | 13.91 | 20 | -0.39 | 0 | False |
 
-Answer: on 2026-11-09, the latest report date, Choice lip-on, bone-in ribeye (IMPS 109E, fat limitation 1) traded at a wholesale $13.86 per pound, 0.39% below its average of $13.91 over the 20 report dates in the 28 days ending that date. When the cut did not trade on the latest report date, the row has `has_trades` false and null prices: say so rather than quote an older date.
+Answer: on 2026-11-09, the latest report date, Choice lip-on, bone-in ribeye (IMPS 109E, fat limitation 1) traded at a wholesale $13.86 per pound, 0.39% below its average of $13.91 over the 20 report dates in the 28 days ending that date, none of them a corrected report. When the cut did not trade on the latest report date, the row has `has_trades` false and null prices: say so rather than quote an older date.
 
 ### 2. How much more did Prime boneless strip loin cost than Choice in the latest Prime week?
 

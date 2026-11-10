@@ -5,8 +5,8 @@ sources:
     description: >
       The USDA boxed beef connector's tables, read-only. Report 2453 (LM_XB403) is daily; report 2460 (LM_XB456,
       Prime cuts) is weekly. Every price is U.S. dollars per 100 pounds, FOB plant, negotiated sales for delivery
-      within 0 to 21 days. The connector never deletes a row, so the staging models read every row and do not
-      filter on _fivetran_deleted, which fivetran debug does not add to a table that has never received a row.
+      within 0 to 21 days. The staging models drop rows Fivetran marks _fivetran_deleted, when the table has that
+      column; fivetran debug adds it only to a table that has received a row (macros/live_rows.sql).
     database: usda_wh
     schema: "{{ var('source_schema') }}"
     tables:

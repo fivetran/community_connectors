@@ -4,7 +4,7 @@
 -- (https://www.ams.usda.gov/mnreports/ams_2453.pdf, https://www.ams.usda.gov/mnreports/ams_2460.pdf).
 with source as (
   select *
-  from {{ source('usda', 'cut_prices') }}
+  from ({{ live_rows(source('usda', 'cut_prices')) }})
 )
 
 select

@@ -6,9 +6,10 @@
 # published time.
 #
 # The staging models are views over the connector's tables, in the usda_staging schema. The marts the agent reads are
-# tables in the usda schema. The data tests on the synced data run on the staging views, in a build of their own, and
-# the marts are built only when it passes, so they keep the last build whose data passed. (dbt 2.0.11 does not skip
-# a model downstream of a failed singular test inside one build, so a single `dbt build` would not hold them back.)
+# tables in the usda schema. Every test that checks the synced data runs on the staging views, in a build of its own,
+# and the marts are built only when it passes, so they keep the last build whose data passed. The tests on the marts
+# check their SQL. (Inside one `dbt build`, dbt 2.0.11 skipped nothing downstream of a failed singular test that reads
+# two models, so a single build would not hold the marts back.)
 # Rebuild after every sync. Run from this dbt/ directory:
 #   dbt build --profiles-dir . --select tag:staging && dbt build --profiles-dir . --select tag:marts
 

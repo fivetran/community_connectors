@@ -7,4 +7,4 @@ select
   loads,
   pounds,
   published_at
-from {{ source('usda', 'volume') }}
+from ({{ live_rows(source('usda', 'volume')) }})

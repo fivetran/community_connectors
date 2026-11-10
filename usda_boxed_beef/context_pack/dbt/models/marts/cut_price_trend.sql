@@ -27,7 +27,9 @@ windowed as (
     avg(price_per_lb) over w7 as avg_price_per_lb_7d,
     count(*) over w7 as n_reports_7d,
     avg(price_per_lb) over w28 as avg_price_per_lb_28d,
-    count(*) over w28 as n_reports_28d
+    count(*) over w28 as n_reports_28d,
+    count(*) filter (where is_correction) over w7 as n_corrected_reports_7d,
+    count(*) filter (where is_correction) over w28 as n_corrected_reports_28d
   from traded
   window
     w7 as (
@@ -55,6 +57,8 @@ select
   n_reports_7d,
   avg_price_per_lb_28d,
   n_reports_28d,
+  n_corrected_reports_7d,
+  n_corrected_reports_28d,
   round(100 * (price_per_lb / nullif(avg_price_per_lb_28d, 0) - 1), 2) as pct_vs_28d_avg,
   is_correction
 from windowed

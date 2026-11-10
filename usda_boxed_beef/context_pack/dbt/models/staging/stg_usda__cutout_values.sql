@@ -8,4 +8,4 @@ select
   choice_change as choice_change_usd_cwt,
   select_change as select_change_usd_cwt,
   published_at
-from {{ source('usda', 'cutout_values') }}
+from ({{ live_rows(source('usda', 'cutout_values')) }})

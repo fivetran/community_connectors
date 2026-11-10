@@ -98,6 +98,10 @@ models:
         description: Average of price_per_lb over the report dates with trades in the 28 days ending report_date (weekly Prime, the report week and the three before it).
       - name: n_reports_28d
         description: Report dates in the 28-day average.
+      - name: n_corrected_reports_7d
+        description: Report dates in the 7-day average whose loaded version is a correction.
+      - name: n_corrected_reports_28d
+        description: Report dates in the 28-day average whose loaded version is a correction.
       - name: pct_vs_28d_avg
         description: Percent difference of price_per_lb from avg_price_per_lb_28d, rounded to 2 places.
       - name: is_correction

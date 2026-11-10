@@ -119,7 +119,12 @@ REPORTS = {
             {"name": "Current Cutout Values", "table": CUTOUT_VALUES_TABLE, "builder": "cutout"},
             {"name": "Change From Prior Day", "table": CUTOUT_VALUES_TABLE, "builder": "cutout"},
             {"name": "Composite Primal Values", "table": PRIMAL_VALUES_TABLE, "builder": "primal"},
-            {"name": "Current Volume", "table": VOLUME_TABLE, "builder": "volume"},
+            {
+                "name": "Current Volume",
+                "table": VOLUME_TABLE,
+                "builder": "volume",
+                "volume_classes": ["choice", "select", "trimmings", "coarse"],
+            },
             {
                 "name": "Choice Cuts",
                 "table": CUT_PRICES_TABLE,
@@ -152,7 +157,12 @@ REPORTS = {
         "first_report_date": "2002-06-17",
         "sections": [
             {"name": "Summary", "table": REPORTS_TABLE, "builder": "report"},
-            {"name": "Current Volume", "table": VOLUME_TABLE, "builder": "volume"},
+            {
+                "name": "Current Volume",
+                "table": VOLUME_TABLE,
+                "builder": "volume",
+                "volume_classes": ["total"],
+            },
             {"name": "Prime Cuts", "table": CUT_PRICES_TABLE, "builder": "cut", "grade": "Prime"},
         ],
     },
@@ -167,10 +177,15 @@ VOLUME_CLASSES = {
     "total": ("loads", "pounds"),
 }
 
-# Cutout fields by destination column. The 600 to 900 pound carcass weight range is the only one reported.
+# Cutout fields by section and destination column. Each section carries half of a cutout_values row. The 600 to 900
+# pound carcass weight range is the only one reported.
 CUTOUT_FIELDS = {
-    "choice_cutout": "choice_600_900_current",
-    "select_cutout": "select_600_900_current",
-    "choice_change": "choice_600_900_change",
-    "select_change": "select_600_900_change",
+    "Current Cutout Values": {
+        "choice_cutout": "choice_600_900_current",
+        "select_cutout": "select_600_900_current",
+    },
+    "Change From Prior Day": {
+        "choice_change": "choice_600_900_change",
+        "select_change": "select_600_900_change",
+    },
 }

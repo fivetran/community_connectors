@@ -1,4 +1,4 @@
-# The dbt build writes its views to usda_local.duckdb (or USDA_LOCAL_DB); none of it is source.
+# The dbt build writes its views and tables to usda_local.duckdb (or USDA_LOCAL_DB); none of it is source.
 *.duckdb
 *.duckdb.wal
 *.db

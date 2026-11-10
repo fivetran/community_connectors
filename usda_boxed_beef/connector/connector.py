@@ -49,7 +49,7 @@ from usda_client import UsdaApiError, UsdaClient, fetch_section
 __DEFAULT_REPORT_IDS = "2453,2460"
 __DEFAULT_START_DATE = "2024-01-01"
 # The first report date the API holds for report 2453
-__EARLIEST_START_DATE = "2001-04-03"
+__EARLIEST_START_DATE = min(report["first_report_date"] for report in REPORTS.values())
 __DEFAULT_MAX_WINDOW_DAYS = 180
 # The API documents 180 days as the longest date range one request may span
 __MAX_WINDOW_DAYS_CEILING = 180
@@ -177,9 +177,9 @@ def parse_positive_int_config(key: str, value: str, ceiling: int) -> int:
     Raises:
         ValueError: if the value is not a whole number between 1 and the ceiling
     """
-    # int() also reads digits from other scripts, so only ASCII text is accepted
+    # int() also reads digits from other scripts, a sign, underscores and spaces, so only ASCII digits are accepted
     try:
-        if not value.isascii():
+        if not (value.isascii() and value.isdecimal()):
             raise ValueError(value)
         number = int(value)
     except ValueError as e:
@@ -202,7 +202,10 @@ def parse_request_delay_config(value: str) -> float:
     Raises:
         ValueError: if the value is not a finite number in the allowed range
     """
+    # float() also reads digits from other scripts and underscores, so only ASCII digits and a point are accepted
     try:
+        if not (value.isascii() and value.replace(".", "", 1).isdecimal()):
+            raise ValueError(value)
         seconds = float(value)
     except ValueError as e:
         raise ValueError("request_delay_seconds must be a number") from e
@@ -444,6 +447,9 @@ def sync_report(
     windows_left = settings["max_windows_per_sync"]
 
     if not progress["backfill_complete"]:
+        first_report_date = date.fromisoformat(REPORTS[slug_id]["first_report_date"])
+        # The first report date of a run of consecutive windows with no report, within this sync
+        empty_since = None
         while not progress["backfill_complete"] and windows_left > 0:
             if progress["backfill_through"] is None:
                 window_start = progress["start_date"]
@@ -454,12 +460,14 @@ def sync_report(
             written = sync_window(
                 client, slug_id, __BACKFILL_FIELD, window_start, window_end, issues, counts
             )
-            # The backfill never reads these report dates again, so a long window with no report is reported
-            no_report = counts.get(REPORTS_TABLE, 0) == reports_before
-            long_window = (window_end - window_start).days + 1 >= __MIN_DAYS_TO_EXPECT_A_REPORT
-            first_date = date.fromisoformat(REPORTS[slug_id]["first_report_date"])
-            if no_report and long_window and window_start >= first_date:
-                issues.empty_windows.append(f"{slug_id} {window_start} to {window_end}")
+            # The backfill never reads these report dates again, so a long run of dates with no report is reported
+            # at once: a warning kept for the end of the sync would be lost if a later window failed.
+            if counts.get(REPORTS_TABLE, 0) > reports_before or window_start < first_report_date:
+                empty_since = None
+            else:
+                empty_since = empty_since or window_start
+                if (window_end - empty_since).days + 1 >= __MIN_DAYS_TO_EXPECT_A_REPORT:
+                    report_empty_dates(slug_id, empty_since, window_end)
             log.info(
                 f"Report {slug_id}: report dates {window_start} to {window_end}, {written} rows"
             )
@@ -506,6 +514,23 @@ def sync_report(
         op.checkpoint(state=state)
 
 
+def report_empty_dates(slug_id: str, first, last):
+    """
+    Report a run of report dates the API returned no report for, which the backfill does not read again.
+
+    Args:
+        slug_id: the report id
+        first: the first report date of the run
+        last: the last report date of the run so far
+    """
+    message = (
+        f"The API returned no report {slug_id} for report dates {first} to {last}, which the backfill does not "
+        "read again. Move start_date earlier to read them again."
+    )
+    log.warning(message)
+    op.warning(message)
+
+
 def report_issues(issues: RowIssues):
     """
     Report values the sync could not use, in the connector log and on the Fivetran dashboard.
@@ -523,17 +548,14 @@ def report_issues(issues: RowIssues):
         )
         log.warning(message)
         op.warning(message)
+    if issues.prices_without_trades:
+        message = f"Wrote null for {issues.prices_without_trades} price(s) on rows without a trade count above zero."
+        log.warning(message)
+        op.warning(message)
     if issues.unparseable_published_dates:
         message = (
             f"Wrote a null published_at for {issues.unparseable_published_dates} row(s) whose published "
             "date was not in the API's format."
-        )
-        log.warning(message)
-        op.warning(message)
-    if issues.empty_windows:
-        message = (
-            "The API returned no report for these report dates, which the backfill does not read again: "
-            f"{'; '.join(issues.empty_windows)}. Move start_date earlier to read them again."
         )
         log.warning(message)
         op.warning(message)

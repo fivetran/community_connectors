@@ -1,5 +1,5 @@
 -- One row per report: the report dates loaded and the latest published time. Every answer names the window it
--- covers from this view.
+-- covers from this table.
 select
   slug_id,
   max(cadence) as cadence,

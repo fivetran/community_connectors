@@ -1,7 +1,7 @@
 -- One row per report and report date. cadence separates the daily report (2453) from the weekly Prime report (2460).
 with source as (
   select *
-  from {{ source('usda', 'reports') }}
+  from ({{ live_rows(source('usda', 'reports')) }})
 )
 
 select
