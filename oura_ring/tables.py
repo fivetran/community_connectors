@@ -118,7 +118,7 @@ TABLE_CONFIG = {
         "max_range_days": HEART_RATE_MAX_RANGE_DAYS,
         "columns": {
             "timestamp": "STRING",
-            "timestamp_unix": "INT",
+            "timestamp_unix": "LONG",
             "bpm": "INT",
             "source": "STRING",
             # Returned by the API although the OpenAPI specification does not list it

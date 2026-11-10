@@ -218,7 +218,7 @@ The `DAILY_STRESS` table consists of the following columns:
 The `HEART_RATE` table consists of the following columns:
 
 - `timestamp` (STRING, primary key): ISO 8601 timestamp of the reading
-- `timestamp_unix` (INT): Timestamp of the discrete sample as unix time in milliseconds
+- `timestamp_unix` (LONG): Timestamp of the discrete sample as unix time in milliseconds
 - `bpm` (INT): Heart rate as beats per minute
 - `source` (STRING): Context of the reading: awake, rest, sleep, session, live, or workout
 - `producer_timestamp` (STRING): Timestamp the reading was produced, which Oura returns although its API specification does not list it
