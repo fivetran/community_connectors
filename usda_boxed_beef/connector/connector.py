@@ -339,9 +339,7 @@ def load_progress(saved, start_date: date, today: date, slug_id: str) -> dict:
 
     A new backfill also records today as the published date the incremental sync starts from, so a correction
     published while the backfill runs is read by the first incremental sync. Moving start_date earlier than the
-    saved one starts the backfill again from the new date; moving it later keeps the rows already loaded. While the
-    backfill is still short of the new later date, it moves on to that date, so a backfill stopped by an older report
-    layout can be moved past it.
+    saved one starts the backfill again from the new date; moving it later keeps the rows already loaded.
 
     Args:
         saved: the report's saved progress, or None on its first sync
@@ -369,17 +367,6 @@ def load_progress(saved, start_date: date, today: date, slug_id: str) -> dict:
         }
     backfill_through = _saved_date(saved, "backfill_through", slug_id)
     backfill_complete = bool(saved.get("backfill_complete"))
-    if not backfill_complete and start_date > (backfill_through or saved_start):
-        log.info(
-            f"Report {slug_id}: start_date moved later to {start_date}, so the backfill continues there"
-        )
-        return {
-            "start_date": start_date,
-            "backfill_through": None,
-            "backfill_complete": False,
-            "published_through": published_through,
-            "last_report_date": None,
-        }
     return {
         "start_date": saved_start,
         "backfill_through": backfill_through,
