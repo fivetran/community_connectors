@@ -1,6 +1,6 @@
 -- Every cut price row with its report's correction flag. Prime comes from the weekly report 2460, Choice and Select
--- from the daily report 2453: cadence says which. A row with has_trades false is a cut USDA listed with no trades
--- that day; its prices are null, never zero.
+-- from the daily report 2453: cadence says which. A row with has_trades false is a cut USDA listed with no readable
+-- trade count above zero that day; its prices are null, never zero.
 with cuts as (
   select * from {{ ref('stg_usda__cut_prices') }}
 ),

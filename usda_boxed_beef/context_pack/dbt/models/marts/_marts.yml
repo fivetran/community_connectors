@@ -9,7 +9,8 @@ models:
       One row per report, report date, grade and cut: the negotiated price of each boxed beef cut, FOB plant, for
       delivery within 0 to 21 days. Prime comes from the weekly report 2460 (cadence weekly); Choice, Select and
       "Choice, Select and Ungraded" from the daily report 2453 (cadence daily). Rows with has_trades false had no
-      trades that day and carry null prices. A wholesale market price, not what a given buyer pays.
+      readable trade count above zero (no trades that day, or a count the sync could not read and warned about)
+      and carry null prices. A wholesale market price, not what a given buyer pays.
     columns:
       - name: price_key
         description: slug_id|report_date|grade|item_description, unique.
@@ -177,7 +178,7 @@ models:
       - name: item_description
         description: Item, for example Ground Beef 81% or Fresh 50% lean trimmings.
       - name: has_trades
-        description: True when the item traded that day.
+        description: True when the row has a readable trade count above zero. Only these rows can have prices. False means no trades, or a trade count the sync could not read, which the sync reports with a warning.
       - name: number_trades
         description: Number of negotiated trades.
       - name: total_pounds

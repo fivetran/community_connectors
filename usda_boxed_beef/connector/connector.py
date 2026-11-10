@@ -370,7 +370,13 @@ def load_progress(saved, start_date: date, today: date, slug_id: str) -> dict:
         "backfill_through": _saved_date(saved, "backfill_through", slug_id),
         "backfill_complete": bool(saved.get("backfill_complete")),
         "published_through": published_through,
-        "last_report_date": _saved_date(saved, "last_report_date", slug_id),
+        # Progress saved before last_report_date existed has no such key: the backfill loaded the dates through
+        # backfill_through, so no gap is measured across them
+        "last_report_date": _saved_date(
+            saved,
+            "last_report_date" if "last_report_date" in saved else "backfill_through",
+            slug_id,
+        ),
     }
 
 
@@ -469,7 +475,6 @@ def sync_report(
                 window_start = progress["backfill_through"] + timedelta(days=1)
             window_end = min(window_start + timedelta(days=window_days - 1), today)
             report_dates = set()
-            issues.strict_layout = False
             written = sync_window(
                 client,
                 slug_id,
@@ -494,8 +499,11 @@ def sync_report(
                 previous = max(previous, report_date)
             if report_dates:
                 progress["last_report_date"] = previous
-            if window_end >= today and (today - previous).days >= __MIN_DAYS_TO_EXPECT_A_REPORT:
-                report_empty_dates(slug_id, previous + timedelta(days=1), today)
+            # Today's report may not be published yet, so the gap at the end runs to yesterday
+            yesterday = today - timedelta(days=1)
+            trailing_gap = (yesterday - previous).days >= __MIN_DAYS_TO_EXPECT_A_REPORT
+            if window_end >= today and trailing_gap:
+                report_empty_dates(slug_id, previous + timedelta(days=1), yesterday)
             log.info(
                 f"Report {slug_id}: report dates {window_start} to {window_end}, {written} rows"
             )
@@ -522,7 +530,6 @@ def sync_report(
     window_start = progress["published_through"] - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
     while window_start <= today and windows_left > 0:
         window_end = min(window_start + timedelta(days=window_days - 1), today)
-        issues.strict_layout = True
         written = sync_window(
             client, slug_id, __INCREMENTAL_FIELD, window_start, window_end, issues, counts
         )
@@ -581,13 +588,6 @@ def report_issues(issues: RowIssues):
         message = (
             f"Wrote null prices on {issues.rows_with_prices_without_trades} row(s) without a readable trade "
             "count above zero."
-        )
-        log.warning(message)
-        op.warning(message)
-    if issues.missing_fields:
-        message = (
-            "The backfill read rows without these fields and wrote them as null: "
-            f"{', '.join(sorted(issues.missing_fields))}."
         )
         log.warning(message)
         op.warning(message)

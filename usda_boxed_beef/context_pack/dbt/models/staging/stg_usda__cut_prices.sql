@@ -1,5 +1,6 @@
 -- One row per report, report date, grade and cut. USDA reports prices in U.S. dollars per 100 pounds (cwt); the
--- _per_lb columns divide by 100. A cut with no trades that day keeps its row with null prices and has_trades false.
+-- _per_lb columns divide by 100. A cut without a trade count above zero keeps its row, with null
+-- prices and has_trades false.
 -- Source of the unit: LM_XB403 and LM_XB456, "Values reflect U.S. dollars per 100 pounds"
 -- (https://www.ams.usda.gov/mnreports/ams_2453.pdf, https://www.ams.usda.gov/mnreports/ams_2460.pdf).
 with source as (

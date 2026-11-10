@@ -18,7 +18,7 @@ The tables are built by the pack's dbt project into `usda_local.duckdb`. Open th
 set search_path = 'usda';
 ```
 
-When this statement fails because there is no `usda` schema, the pack has never been built: say so and stop.
+When the file does not exist, or this statement fails because there is no `usda` schema, the pack has never had a passing build: say so and stop.
 
 The tables hold the last build whose data passed the pack's tests, so the session never opens the connector's warehouse. A rebuild cannot write the file while a session holds it open, so close the session before the next `dbt build`. When a table below does not exist, say the pack is not built, and do not answer from anything else.
 
