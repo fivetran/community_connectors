@@ -1,0 +1,17 @@
+# The dbt build writes its views to usda_local.duckdb (or USDA_LOCAL_DB); none of it is source.
+*.duckdb
+*.duckdb.wal
+*.db
+*.db.wal
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# Local agent and tool config, which can hold catalog credentials
+.env
+.env.*
+
+__pycache__/
+.pytest_cache/
+logs/

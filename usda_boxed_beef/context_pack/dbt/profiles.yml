@@ -1,0 +1,16 @@
+# Run dbt from this dbt/ directory with --profiles-dir ., so the relative paths below resolve from here.
+usda_boxed_beef_context:
+  target: local
+  outputs:
+    # The connector's local debug warehouse, attached read-only. `fivetran debug`, run from the sibling connector/
+    # directory, writes it to connector/files/warehouse.db. Set USDA_WAREHOUSE to read a copy somewhere else.
+    # Sources: usda_wh.tester.<table>. The views build into usda_local.duckdb, or into USDA_LOCAL_DB when it is set.
+    local:
+      type: duckdb
+      path: "{{ env_var('USDA_LOCAL_DB', 'usda_local.duckdb') }}"
+      schema: usda
+      threads: 4
+      attach:
+        - path: "{{ env_var('USDA_WAREHOUSE', '../../connector/files/warehouse.db') }}"
+          alias: usda_wh
+          read_only: true

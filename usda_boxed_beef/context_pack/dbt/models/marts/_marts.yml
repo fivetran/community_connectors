@@ -1,0 +1,216 @@
+version: 2
+
+# The views an agent reads. Every price column says its unit in its name: _usd_cwt is U.S. dollars per 100 pounds,
+# as USDA reports it; _per_lb is dollars per pound. Sources of every definition: context_pack/evidence/.
+
+models:
+  - name: cut_prices_daily
+    description: >
+      One row per report, report date, grade and cut: the negotiated price of each boxed beef cut, FOB plant, for
+      delivery within 0 to 21 days. Prime comes from the weekly report 2460 (cadence weekly); Choice, Select and
+      "Choice, Select and Ungraded" from the daily report 2453 (cadence daily). Rows with has_trades false had no
+      trades that day and carry null prices. A wholesale market price, not what a given buyer pays.
+    columns:
+      - name: price_key
+        description: slug_id|report_date|grade|item_description, unique.
+        data_tests: [unique, not_null]
+      - name: slug_id
+        description: USDA report id, 2453 (daily) or 2460 (weekly Prime).
+      - name: report_date
+        description: Report date. For report 2460, the date of the weekly report.
+        data_tests: [not_null]
+      - name: cadence
+        description: daily (report 2453) or weekly (report 2460). Never mix the two in one average or trend.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["daily", "weekly"]
+      - name: grade
+        description: USDA quality grade, Prime, Choice, Select, or "Choice, Select and Ungraded".
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Prime", "Choice", "Select", "Choice, Select and Ungraded"]
+      - name: item_description
+        description: The cut as USDA lists it, with its IMPS number and fat limitation, for example "Rib, ribeye, lip-on, bn-in (109E  1)". Filter on this or on imps_code.
+        data_tests: [not_null]
+      - name: imps_code
+        description: Institutional Meat Purchase Specifications number, for example 109E (ribeye, lip-on) or 180 (strip loin). Null when USDA leaves it blank.
+      - name: fat_limitation
+        description: Fat limitation 1 to 6 from USDA's table, 1 the most external fat and 5 and 6 peeled or denuded.
+      - name: cut_name
+        description: The cut without its codes, for example "Loin, strip, bnls, 0x1".
+      - name: cut_family
+        description: The first word group of cut_name, for example Rib, Loin, Chuck, Round, Brisket, Short Plate, Flank.
+      - name: has_trades
+        description: True when the cut traded that day. Only these rows have prices.
+      - name: number_trades
+        description: Number of negotiated trades.
+      - name: total_pounds
+        description: Pounds traded.
+      - name: price_low_usd_cwt
+        description: Lowest price, U.S. dollars per 100 pounds.
+      - name: price_high_usd_cwt
+        description: Highest price, U.S. dollars per 100 pounds.
+      - name: weighted_average_usd_cwt
+        description: Weighted average price, U.S. dollars per 100 pounds, as USDA reports it.
+      - name: price_low_per_lb
+        description: Lowest price, dollars per pound.
+      - name: price_high_per_lb
+        description: Highest price, dollars per pound.
+      - name: price_per_lb
+        description: Weighted average price, dollars per pound (weighted_average_usd_cwt / 100). Quote this for "what does it cost per pound".
+      - name: published_at
+        description: When USDA published this version of the report, UTC. A corrected report carries the correction's time.
+      - name: is_correction
+        description: True when this report date was republished as a correction.
+
+  - name: cut_price_trend
+    description: >
+      One row per grade, cut and report date the cut traded: its price per pound and its average over the 7 and 28
+      calendar days ending that date. The averages use report dates with trades only, so weekends, holidays and
+      no-trade days are left out, not counted as zero. n_reports_7d and n_reports_28d give the number of report
+      dates in each average.
+    columns:
+      - name: trend_key
+        description: grade|item_description|report_date, unique.
+        data_tests: [unique, not_null]
+      - name: report_date
+        description: Report date.
+      - name: cadence
+        description: daily or weekly. A weekly Prime 7-day average holds one report.
+      - name: grade
+        description: USDA quality grade.
+      - name: item_description
+        description: The cut as USDA lists it.
+      - name: cut_name
+        description: The cut without its codes.
+      - name: cut_family
+        description: The first word group of cut_name.
+      - name: price_per_lb
+        description: Weighted average price that day, dollars per pound.
+      - name: avg_price_per_lb_7d
+        description: Average of price_per_lb over the report dates with trades in the 7 calendar days ending report_date.
+      - name: n_reports_7d
+        description: Report dates in the 7-day average.
+      - name: avg_price_per_lb_28d
+        description: Average of price_per_lb over the report dates with trades in the 28 calendar days ending report_date.
+      - name: n_reports_28d
+        description: Report dates in the 28-day average.
+      - name: pct_vs_28d_avg
+        description: Percent difference of price_per_lb from avg_price_per_lb_28d, rounded to 2 places.
+
+  - name: daily_cutout
+    description: >
+      The estimated boxed beef cutout value for 600 to 900 pound carcasses, one row per report date and grade
+      (Choice, Select), report 2453. USDA bases it on negotiated prices and volume of boxed beef cuts delivered
+      within 0 to 21 days and on average industry cutting yields. U.S. dollars per 100 pounds of carcass.
+    columns:
+      - name: report_date
+        description: Report date.
+        data_tests: [not_null]
+      - name: grade
+        description: Choice or Select.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Choice", "Select"]
+      - name: cutout_usd_cwt
+        description: Cutout value, U.S. dollars per 100 pounds of carcass.
+      - name: change_usd_cwt
+        description: Change from the prior report day, U.S. dollars per 100 pounds, as USDA reports it.
+      - name: published_at
+        description: When USDA published the report, UTC.
+      - name: is_correction
+        description: True when this report date was republished as a correction.
+
+  - name: choice_select_spread
+    description: The Choice cutout minus the Select cutout, one row per report date, U.S. dollars per 100 pounds.
+    columns:
+      - name: report_date
+        description: Report date.
+        data_tests: [unique, not_null]
+      - name: choice_cutout_usd_cwt
+        description: Choice cutout value.
+      - name: select_cutout_usd_cwt
+        description: Select cutout value.
+      - name: spread_usd_cwt
+        description: choice_cutout_usd_cwt minus select_cutout_usd_cwt.
+      - name: published_at
+        description: When USDA published the report, UTC.
+
+  - name: primal_values_daily
+    description: Composite primal values, one row per report date, primal and grade (Choice, Select), U.S. dollars per 100 pounds, report 2453.
+    columns:
+      - name: report_date
+        description: Report date.
+      - name: primal
+        description: Primal name, for example Primal Rib or Primal Loin.
+      - name: grade
+        description: Choice or Select.
+      - name: value_usd_cwt
+        description: Composite primal value, U.S. dollars per 100 pounds.
+      - name: published_at
+        description: When USDA published the report, UTC.
+
+  - name: grind_prices_daily
+    description: Ground beef, blended ground beef and 50% lean trimmings prices, one row per report date and item, report 2453.
+    columns:
+      - name: price_key
+        description: slug_id|report_date|item_description, unique.
+        data_tests: [unique, not_null]
+      - name: report_date
+        description: Report date.
+      - name: section
+        description: Ground Beef, Blended Ground Beef or Beef Trimmings.
+      - name: item_description
+        description: Item, for example Ground Beef 81% or Fresh 50% lean trimmings.
+      - name: has_trades
+        description: True when the item traded that day.
+      - name: number_trades
+        description: Number of negotiated trades.
+      - name: total_pounds
+        description: Pounds traded.
+      - name: weighted_average_usd_cwt
+        description: Weighted average price, U.S. dollars per 100 pounds.
+      - name: price_per_lb
+        description: Weighted average price, dollars per pound.
+      - name: published_at
+        description: When USDA published the report, UTC.
+
+  - name: volume_daily
+    description: Loads and pounds traded per report date and volume class. One load is 40,000 pounds.
+    columns:
+      - name: slug_id
+        description: USDA report id.
+      - name: report_date
+        description: Report date.
+      - name: cadence
+        description: daily or weekly.
+      - name: volume_class
+        description: choice, select, trimmings or coarse (ground beef) for report 2453; total for report 2460.
+      - name: loads
+        description: Loads traded.
+      - name: pounds
+        description: Pounds traded.
+
+  - name: report_coverage
+    description: One row per report with the report dates loaded. Name this window in every answer.
+    columns:
+      - name: slug_id
+        description: USDA report id.
+        data_tests: [unique, not_null]
+      - name: cadence
+        description: daily or weekly.
+      - name: report_title
+        description: Report title with its LMR code.
+      - name: first_report_date
+        description: Earliest report date loaded.
+      - name: last_report_date
+        description: Latest report date loaded.
+      - name: report_dates_loaded
+        description: Report dates loaded.
+      - name: corrected_reports
+        description: Report dates whose loaded version is a correction.
+      - name: last_published_at
+        description: Latest published time loaded, UTC.
