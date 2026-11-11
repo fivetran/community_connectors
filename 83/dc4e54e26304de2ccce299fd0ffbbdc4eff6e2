@@ -1,0 +1,23 @@
+.github/workflows/connector-tests.yml
+  f66dab29936f8b9d 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "83dc4e54e26304de2ccce299fd0ffbbdc4eff6e2",
+  "prompts": {
+    "f66dab29936f8b9d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e1590d4c-80d4-4112-8431-bb33d014a59f",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
