@@ -123,7 +123,6 @@ jobs:
           # runner.temp: a scratch directory unique to this job run, cleaned up
           # automatically afterward - used below to hold one venv per connector.
           temp = Path(os.environ["RUNNER_TEMP_DIR"])
-          coverage_min = os.environ["COVERAGE_MIN"]
           # Maps connector name -> list of human-readable failure reasons, built
           # up across the loop below and used both for the step summary and the
           # final exit-code decision.
