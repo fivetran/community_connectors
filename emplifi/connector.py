@@ -211,6 +211,10 @@ def _request_with_backoff(method, url, configuration, **kwargs):
     raise RuntimeError(f"{method} {url} failed after {__MAX_ATTEMPTS} attempts: {last_exception}")
 
 
+class HistoryLimitError(RuntimeError):
+    """Raised for a Code-6 response: part of the requested range predates the history limit."""
+
+
 def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
     """Check an Emplifi response body for application-level error codes.
 
@@ -225,9 +229,10 @@ def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
 
     Returns:
         The original body if successful, or an empty header/data body for a recoverable
-        application-level error (Code-6 or 7).
+        Code-7 error (insights not enabled).
 
     Raises:
+        HistoryLimitError: on Code-6, so the caller can retry with a narrower date range.
         RuntimeError: on a validation error (Code-3), a rate-limit error code (10/11), or
             any other unrecognized error.
     """
@@ -242,8 +247,7 @@ def _parse_body(body: dict, url: str, payload: dict = None) -> dict:
         raise RuntimeError(f"Rate limit (code {code}): {json.dumps(errors)}")
 
     if 6 in err_codes:
-        log.warning(f"Code-6 (before history limit): {url}")
-        return {"success": True, "header": [], "data": []}
+        raise HistoryLimitError(f"Code-6 (before history limit) at {url}")
 
     if 3 in err_codes:
         # A validation error is not recoverable by skipping: returning an empty result would
@@ -272,6 +276,68 @@ def _post(url: str, payload: dict, configuration: dict) -> dict:
     response = _request_with_backoff("POST", url, configuration, json=payload)
     response.raise_for_status()
     return _parse_body(response.json(), url, payload)
+
+
+def _post_within_history(url: str, payload: dict, configuration: dict) -> dict:
+    """POST a request, narrowing its date range if it reaches back past the history limit.
+
+    On a Code-6 response, binary-search the earliest date_start Emplifi accepts and re-request
+    from there, so history that is still available is not lost. If even the last day of the
+    range is rejected, the whole range predates the history limit and an empty result is
+    returned, since nothing in it can be fetched. A request without a date range, such as a
+    pagination cursor, cannot be narrowed and fails with an actionable error.
+
+    Args:
+        url: the request URL.
+        payload: the request payload; it is not modified.
+        configuration: the connector configuration.
+
+    Returns:
+        The decoded response body, or an empty header/data body when nothing is available.
+
+    Raises:
+        HistoryLimitError: if the request cannot be narrowed.
+    """
+    try:
+        return _post(url, payload, configuration)
+    except HistoryLimitError as error:
+        if "date_start" not in payload or "date_end" not in payload:
+            raise HistoryLimitError(
+                f"{error}. Reduce lookback_days so the sync window stays within the history "
+                "available to the account."
+            )
+
+    start = datetime.strptime(payload["date_start"], "%Y-%m-%d").date()
+    end = datetime.strptime(payload["date_end"], "%Y-%m-%d").date()
+    empty_body = {"success": True, "header": [], "data": []}
+
+    def attempt(offset_days: int):
+        narrowed = dict(payload, date_start=(start + timedelta(days=offset_days)).isoformat())
+        try:
+            return _post(url, narrowed, configuration)
+        except HistoryLimitError:
+            return None
+
+    last_offset = (end - start).days
+    accepted_body = attempt(last_offset) if last_offset > 0 else None
+    if accepted_body is None:
+        log.warning(f"Range {payload['date_start']}..{payload['date_end']} predates history limit")
+        return empty_body
+
+    rejected_offset = 0
+    accepted_offset = last_offset
+    while accepted_offset - rejected_offset > 1:
+        middle = (accepted_offset + rejected_offset) // 2
+        body = attempt(middle)
+        if body is None:
+            rejected_offset = middle
+        else:
+            accepted_offset, accepted_body = middle, body
+    log.warning(
+        f"Range starts before the history limit; synced from "
+        f"{(start + timedelta(days=accepted_offset)).isoformat()}"
+    )
+    return accepted_body
 
 
 def _date_chunks(date_start: str, date_end: str, chunk_days: int = __METRICS_CHUNK_DAYS):
@@ -454,7 +520,7 @@ def _sync_profile_metrics(configuration, state, profiles_by_network, date_start,
                     "metrics": metrics,
                     "dimensions": [{"type": "date.day"}],
                 }
-                body = _post(url, payload, configuration)
+                body = _post_within_history(url, payload, configuration)
 
                 for row in _parse_metrics_response(body, pid):
                     # The 'upsert' operation is used to insert or update data in the destination table.
@@ -532,7 +598,7 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
                 }
 
             while True:
-                body = _post(url, payload, configuration)
+                body = _post_within_history(url, payload, configuration)
 
                 data_obj = body.get("data", {})
                 if isinstance(data_obj, dict):
@@ -552,7 +618,7 @@ def _sync_posts(configuration, state, profiles_by_network, date_start, date_end)
                     for k, v in post.items():
                         if isinstance(v, (str, int, float, bool)) or v is None:
                             row[k] = v
-                        elif isinstance(v, dict):
+                        elif isinstance(v, (dict, list)):
                             row[k] = json.dumps(v)
                         else:
                             row[k] = str(v)
@@ -598,24 +664,39 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
     url = f"{base_url}/3/aggregated-metrics"
 
     all_profile_objs = [
-        {"id": str(p["id"]), "platform": network}
+        {"id": str(p["id"]), "platform": network, "insights_enabled": p.get("insights_enabled")}
         for network, profiles in profiles_by_network.items()
         for p in profiles
     ]
     if not all_profile_objs:
         return
 
-    batches = [
-        all_profile_objs[i : i + __AGGREGATED_METRICS_BATCH_SIZE]
-        for i in range(0, len(all_profile_objs), __AGGREGATED_METRICS_BATCH_SIZE)
-    ]
+    def build_batches(eligible: list) -> list:
+        """Split profiles into request batches, dropping the local insights_enabled marker."""
+        objs = [{"id": p["id"], "platform": p["platform"]} for p in eligible]
+        return [
+            objs[i : i + __AGGREGATED_METRICS_BATCH_SIZE]
+            for i in range(0, len(objs), __AGGREGATED_METRICS_BATCH_SIZE)
+        ]
+
+    # insights_ metrics raise Code-7 for a profile with insights disabled, which would empty the
+    # whole batch response, so those metrics are requested only for insights-enabled profiles.
+    batches_for_public_metrics = build_batches(all_profile_objs)
+    batches_for_insights_metrics = build_batches(
+        [p for p in all_profile_objs if p["insights_enabled"]]
+    )
 
     log.info(
-        f"  aggregated_post_metrics - {len(all_profile_objs)} profiles, {len(batches)} "
-        f"batch(es), {len(__AGGREGATED_METRICS)} metrics"
+        f"  aggregated_post_metrics - {len(all_profile_objs)} profiles, "
+        f"{len(batches_for_public_metrics)} batch(es), {len(__AGGREGATED_METRICS)} metrics"
     )
 
     for metric in __AGGREGATED_METRICS:
+        batches = (
+            batches_for_insights_metrics
+            if metric.startswith("insights_")
+            else batches_for_public_metrics
+        )
         for batch in batches:
             progress_key = f"aggregated:{metric}:{_batch_key(batch)}"
             if _is_done(state, progress_key):
@@ -630,7 +711,7 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
                     "dimensions": [{"type": "date.day"}, {"type": "profile"}],
                 }
                 try:
-                    body = _post(url, payload, configuration)
+                    body = _post_within_history(url, payload, configuration)
                 except requests.HTTPError as e:
                     status = e.response.status_code if e.response is not None else None
                     if status in (404, 405):

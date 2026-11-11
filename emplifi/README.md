@@ -91,9 +91,9 @@ Refer to `def _request_with_backoff` and `def _parse_body` in `connector.py`. Co
 
 Emplifi returns some errors as a 200 response with an `errors` array rather than a non-2xx status. `_parse_body` handles these application-level codes:
 - Codes 10 and 11 (rate limit) raise an exception, failing the sync.
-- Code 6 (requested date is before the account's history limit) logs a warning and returns an empty result for that request.
+- Code 6 (requested date is before the account's history limit) triggers a retry restricted to the available history: `_post_within_history` binary-searches the earliest accepted `date_start` and re-requests from there, so accessible history is kept. A range that lies entirely before the limit returns an empty result, and a request that cannot be narrowed, such as a pagination cursor, fails with an error suggesting a smaller `lookback_days`.
 - Code 3 (validation error) raises an exception, failing the sync. It is not skipped, because treating it as an empty result would mark the work complete and advance `last_synced_date`, so the history would never be backfilled after the configuration is fixed.
-- Code 7 (insights not enabled for a profile) logs a warning and returns an empty result for that request. To avoid losing accessible data, `insights_` metrics and post fields are not requested for profiles with `insights_enabled` set to false.
+- Code 7 (insights not enabled for a profile) logs a warning and returns an empty result for that request. To avoid losing accessible data, `insights_` metrics and post fields are not requested for profiles with `insights_enabled` set to false, and aggregated `insights_` metrics are batched from insights-enabled profiles only.
 
 If zero profiles are returned in step 1 (typically indicating the account is rate-limited), the sync logs a warning and returns without advancing `last_synced_date`, so the same window is retried on the next run.
 
