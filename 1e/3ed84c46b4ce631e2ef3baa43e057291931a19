@@ -1,0 +1,25 @@
+.github/workflows/connector-pr-comment.yml
+  f66dab29936f8b9d 1-93
+.github/workflows/connector-tests.yml
+  f66dab29936f8b9d 219,232-237,250-251,255-259,261-267,301-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "1e3ed84c46b4ce631e2ef3baa43e057291931a19",
+  "prompts": {
+    "f66dab29936f8b9d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e1590d4c-80d4-4112-8431-bb33d014a59f",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "fivetran-JenasVimal <jenas.vimal@fivetran.com>",
+      "messages": [],
+      "total_additions": 159,
+      "total_deletions": 66,
+      "accepted_lines": 125,
+      "overriden_lines": 0
+    }
+  }
+}
