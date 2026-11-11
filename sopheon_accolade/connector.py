@@ -11,6 +11,9 @@ import json
 # For retry backoff
 import time
 
+# For percent-encoding the report name in the request URL
+from urllib.parse import quote
+
 # For issuing HTTP requests to the Accolade token and report endpoints
 import requests
 
@@ -37,6 +40,11 @@ __ROW_CONTAINER_KEYS = ("value", "results", "table", "data", "items")
 def is_unset(value) -> bool:
     """Treat missing, empty, and '<PLACEHOLDER>' values as not configured."""
     return value in (None, "") or str(value).strip().startswith("<")
+
+
+def is_valid_name(value) -> bool:
+    """Return True for a non-empty string that is not an unreplaced '<PLACEHOLDER>'."""
+    return isinstance(value, str) and not is_unset(value.strip())
 
 
 def __int_setting(configuration: dict, key: str, default: int) -> int:
@@ -79,8 +87,10 @@ def get_reports(configuration: dict) -> list:
         if not isinstance(report, dict):
             raise ValueError("each report must be a JSON object")
         keys = report.get("primary_key")
-        if is_unset(report.get("report_name")) or not isinstance(keys, list) or not keys:
-            raise ValueError("each report needs a report_name and a non-empty primary_key list")
+        if not is_valid_name(report.get("report_name")):
+            raise ValueError("each report needs a non-empty report_name that is not a placeholder")
+        if not isinstance(keys, list) or not keys or not all(is_valid_name(k) for k in keys):
+            raise ValueError("each report needs a primary_key list of non-empty column names")
     return reports
 
 
@@ -121,21 +131,50 @@ def schema(configuration: dict):
     ]
 
 
+def request_with_retry(method: str, url: str, request_timeout_seconds: int, **kwargs):
+    """
+    Send an HTTP request, retrying timeouts, connection errors, HTTP 429 and 5xx with
+    exponential backoff. Any other response, including 4xx errors, is returned to the caller.
+    Args:
+        method: HTTP method.
+        url: request URL.
+        request_timeout_seconds: per-request timeout.
+    Raises:
+        RuntimeError: if every attempt fails.
+    """
+    for attempt in range(1, __RETRY_ATTEMPTS + 1):
+        try:
+            response = requests.request(method, url, timeout=request_timeout_seconds, **kwargs)
+            if response.status_code not in __RETRY_STATUS_CODES:
+                return response
+            error = f"HTTP {response.status_code}"
+        except (requests.Timeout, requests.ConnectionError) as e:
+            error = type(e).__name__
+        if attempt == __RETRY_ATTEMPTS:
+            raise RuntimeError(f"Request failed after {__RETRY_ATTEMPTS} attempts: {error}")
+        delay_seconds = min(__MAX_BACKOFF_SECONDS, 2**attempt)
+        log.warning(f"{error}; retry {attempt}/{__RETRY_ATTEMPTS - 1} in {delay_seconds}s")
+        time.sleep(delay_seconds)
+
+
 def authenticate(configuration: dict) -> str:
     """
-    Exchange the refresh token for an access token.
+    Exchange the refresh token for an access token. Transient failures are retried, while
+    permanent authentication errors such as HTTP 400 or 401 fail immediately.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     Returns:
         The access token.
     Raises:
-        RuntimeError: if the response has no access token.
+        requests.HTTPError: on a permanent HTTP error.
+        RuntimeError: if retries are exhausted or the response has no access token.
     """
-    response = requests.post(
+    response = request_with_retry(
+        "POST",
         configuration["auth_url"],
+        __AUTH_TIMEOUT_SECONDS,
         data={"grant_type": "refresh_token", "refresh_token": configuration["refresh_token"]},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=__AUTH_TIMEOUT_SECONDS,
         verify=__verify(configuration),
     )
     response.raise_for_status()
@@ -143,6 +182,14 @@ def authenticate(configuration: dict) -> str:
     if not token:
         raise RuntimeError("Authentication succeeded but no access_token was returned")
     return token
+
+
+def build_headers(configuration: dict) -> dict:
+    """Authenticate and return the request headers that carry the bearer token."""
+    return {
+        "Authorization": f"Bearer {authenticate(configuration)}",
+        "Accept": "application/json",
+    }
 
 
 def get_page(url: str, headers: dict, params: dict, configuration: dict):
@@ -162,26 +209,49 @@ def get_page(url: str, headers: dict, params: dict, configuration: dict):
     request_timeout_seconds = __int_setting(
         configuration, "request_timeout_seconds", __DEFAULT_REQUEST_TIMEOUT_SECONDS
     )
-    for attempt in range(1, __RETRY_ATTEMPTS + 1):
-        try:
-            response = requests.get(
-                url,
-                headers=headers,
-                params=params,
-                timeout=request_timeout_seconds,
-                verify=__verify(configuration),
-            )
-            if response.status_code not in __RETRY_STATUS_CODES:
-                response.raise_for_status()
-                return response.json()
-            error = f"HTTP {response.status_code}"
-        except (requests.Timeout, requests.ConnectionError) as e:
-            error = type(e).__name__
-        if attempt == __RETRY_ATTEMPTS:
-            raise RuntimeError(f"Request failed after {__RETRY_ATTEMPTS} attempts: {error}")
-        delay_seconds = min(__MAX_BACKOFF_SECONDS, 2**attempt)
-        log.warning(f"{error}; retry {attempt}/{__RETRY_ATTEMPTS - 1} in {delay_seconds}s")
-        time.sleep(delay_seconds)
+    response = request_with_retry(
+        "GET",
+        url,
+        request_timeout_seconds,
+        headers=headers,
+        params=params,
+        verify=__verify(configuration),
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_page_with_renewal(url: str, headers: dict, params: dict, configuration: dict):
+    """
+    Fetch one page and, if the token was rejected with HTTP 401, renew it once and retry.
+    The headers dictionary is updated in place, so later pages and reports use the new token.
+    A second 401 is treated as a real authorization failure and raised.
+    Args:
+        url: report endpoint URL.
+        headers: request headers with the bearer token. Updated in place on renewal.
+        params: $top and $skip paging parameters.
+        configuration: a dictionary that holds the configuration settings for the connector.
+    """
+    try:
+        return get_page(url, headers, params, configuration)
+    except requests.HTTPError as e:
+        if e.response is None or e.response.status_code != 401:
+            raise
+    log.warning("Access token was rejected; renewing it and retrying the page once")
+    headers.update(build_headers(configuration))
+    return get_page(url, headers, params, configuration)
+
+
+def build_report_url(base_url: str, report_name: str) -> str:
+    """
+    Build the RunReport endpoint URL. Apostrophes are doubled inside the OData string literal
+    and the name is percent-encoded, so characters such as '#' or '/' are sent intact.
+    Args:
+        base_url: Accolade API base URL.
+        report_name: name of the report.
+    """
+    literal = quote(report_name.replace("'", "''"), safe="")
+    return f"{base_url}/core/RunReport('{literal}')"
 
 
 def extract_rows(payload, report_name: str) -> list:
@@ -217,13 +287,14 @@ def sync_report(report: dict, base_url: str, headers: dict, configuration: dict,
     """
     report_name = report["report_name"]
     page_size = __int_setting(configuration, "page_size", __DEFAULT_PAGE_SIZE)
-    url = f"{base_url}/core/RunReport('{report_name}')"
+    url = build_report_url(base_url, report_name)
     params = {"$top": page_size, "$skip": 0}
     total = 0
 
     while True:
         log.info(f"Report {report_name}: fetching rows from offset {params['$skip']}")
-        rows = extract_rows(get_page(url, headers, params, configuration), report_name)
+        page = get_page_with_renewal(url, headers, params, configuration)
+        rows = extract_rows(page, report_name)
         for row in rows:
             # The 'upsert' operation is used to insert or update data in the destination table.
             # The first argument is the name of the destination table.
@@ -255,10 +326,7 @@ def update(configuration: dict, state: dict):
     log.warning("Example: Source Examples : Sopheon Accolade")
 
     validate_configuration(configuration)
-    headers = {
-        "Authorization": f"Bearer {authenticate(configuration)}",
-        "Accept": "application/json",
-    }
+    headers = build_headers(configuration)
     base_url = configuration["base_url"].rstrip("/")
     log.info("Authenticated with Accolade")
 

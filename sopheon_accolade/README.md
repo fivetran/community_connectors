@@ -36,7 +36,9 @@ fivetran init --template sopheon_accolade
 - Authenticates with an OAuth2 refresh token (`authenticate`).
 - Pages through large reports with `$top` and `$skip` and checkpoints after each page (`sync_report`).
 - Accepts the different wrapper shapes a report response can have (`extract_rows`).
-- Retries timeouts, connection errors, HTTP 429 and 5xx responses with exponential backoff (`get_page`).
+- Retries timeouts, connection errors, HTTP 429 and 5xx responses with exponential backoff, for both the token request and report pages (`request_with_retry`).
+- Renews the access token once and retries the same page when a request is rejected with HTTP 401 (`get_page_with_renewal`).
+- Escapes and percent-encodes the report name in the request URL (`build_report_url`).
 - Supports a custom CA bundle for environments with private certificates.
 
 ## Configuration file
@@ -64,7 +66,7 @@ fivetran init --template sopheon_accolade
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
-The connector posts the refresh token to `auth_url` with the `refresh_token` grant and uses the returned access token as a bearer token for the whole sync. Ask your Accolade administrator to create an API user with access to the reports you want to sync and to issue a refresh token for it.
+The connector posts the refresh token to `auth_url` with the `refresh_token` grant and uses the returned access token as a bearer token. If a page request is rejected with HTTP 401, for example because the token expired during a long sync, the connector requests a new token once and retries that page. Ask your Accolade administrator to create an API user with access to the reports you want to sync and to issue a refresh token for it.
 
 ## Pagination
 Each request sends `$top` set to `page_size` and `$skip` set to the number of rows already read. Paging stops when a page contains fewer rows than `page_size`.
@@ -74,7 +76,8 @@ Rows are upserted exactly as returned by the report. Every run reads the full re
 
 ## Error handling
 - `validate_configuration` fails fast on missing or invalid settings.
-- `get_page` retries transient failures with exponential backoff and raises on non-retryable errors.
+- `request_with_retry` retries transient failures with exponential backoff. Permanent errors, such as HTTP 400 or 401 from the token endpoint, fail immediately.
+- `get_reports` validation rejects report names and primary key entries that are empty, not strings, or still placeholders.
 - A failing report fails the sync instead of being skipped, so a partial result is never reported as a success.
 
 ## Tables created
