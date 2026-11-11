@@ -2,7 +2,7 @@
 # file (test_*.py / *_test.py). One job, one step: figures out which connectors
 # changed, then runs pytest for each. If detection logic raises an error, the
 # step itself fails - there's no separate job boundary to hide that behind.
-name: Connector Tests
+name: Run Connector Tests
 
 on:
   pull_request:
