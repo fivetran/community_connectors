@@ -117,7 +117,7 @@ latest as (
 choice as (
   select
     round(avg(c.price_per_lb), 2) as choice_avg_per_lb,
-    count(*) as choice_report_dates
+    count(c.price_per_lb) as choice_report_dates
   from cut_prices_daily as c
   cross join latest as l
   where c.grade = 'Choice'
@@ -154,10 +154,10 @@ with latest as (
 
 select
   latest.report_date as latest_report_date,
-  round(arg_max(s.spread_usd_cwt, s.report_date), 2) as latest_spread_usd_cwt,
+  round(max(s.spread_usd_cwt) filter (where s.report_date = latest.report_date), 2) as latest_spread_usd_cwt,
   round(avg(s.spread_usd_cwt), 2) as avg_spread_usd_cwt_28d,
-  count(*) as report_dates_28d,
-  count(*) filter (where s.is_correction) as corrected_report_dates_28d
+  count(s.spread_usd_cwt) as report_dates_28d,
+  count(s.spread_usd_cwt) filter (where s.is_correction) as corrected_report_dates_28d
 from choice_select_spread as s
 inner join latest
   on s.report_date between latest.report_date - interval 27 days and latest.report_date
@@ -174,7 +174,7 @@ Answer: on 2026-11-09 the Choice cutout was $9.01 per hundredweight (100 pounds 
 
 ```sql
 with latest as (
-  select max(report_date) as report_date from cut_price_trend where grade = 'Choice'
+  select max(report_date) as report_date from cut_prices_daily where grade = 'Choice'
 )
 
 select

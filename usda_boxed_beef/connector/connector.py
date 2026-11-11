@@ -529,14 +529,20 @@ def sync_report(
             )
         return
 
-    window_start = progress["published_through"] - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
-    while window_start <= today and windows_left > 0:
+    # The first window also rereads the overlap days before the saved published date. Those days do not count
+    # toward max_window_days, so every sync moves the cursor forward even with one window of one day.
+    overlap_start = progress["published_through"] - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
+    window_start = progress["published_through"] + timedelta(days=1)
+    first_window = True
+    while windows_left > 0 and (first_window or window_start <= today):
         window_end = min(window_start + timedelta(days=window_days - 1), today)
+        request_start = overlap_start if first_window else window_start
+        first_window = False
         written = sync_window(
-            client, slug_id, __INCREMENTAL_FIELD, window_start, window_end, issues, counts
+            client, slug_id, __INCREMENTAL_FIELD, request_start, window_end, issues, counts
         )
         log.info(
-            f"Report {slug_id}: published dates {window_start} to {window_end}, {written} rows"
+            f"Report {slug_id}: published dates {request_start} to {window_end}, {written} rows"
         )
         progress["published_through"] = max(progress["published_through"], window_end)
         reports_state[slug_id] = report_progress(**progress)
