@@ -41,8 +41,11 @@ __MAX_BACKOFF_SECONDS = 60
 __DEFAULT_POLL_INTERVAL_SECONDS = 5
 __DEFAULT_POLL_TIMEOUT_SECONDS = 900
 __DEFAULT_CHECKPOINT_ROWS = 2000
-# Renew the access token when less than a day of its lifetime is left.
-__REFRESH_MARGIN_MS = 24 * 3600 * 1000
+# Renew the access token when less than a minute of its lifetime is left.
+__REFRESH_MARGIN_MS = 60 * 1000
+__RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+__TOKEN_ATTEMPTS = 4
+__DOWNLOAD_ATTEMPTS = 4
 __DOWNLOAD_CHUNK_BYTES = 1 << 20
 __REQUIRED_KEYS = (
     "token_url",
@@ -155,29 +158,56 @@ def __expiry_ms(expires_in) -> int:
 
 
 def __request_token(configuration: dict, refresh_token: str):
-    """Exchange a refresh token for an access token at the identity provider."""
-    return requests.post(
-        configuration["token_url"],
-        data={
-            "grant_type": "refresh_token",
-            "client_id": configuration["client_id"],
-            "redirect_uri": configuration["redirect_uri"],
-            "refresh_token": refresh_token,
-        },
-        headers={"Accept": "application/json"},
-        timeout=60,
-    )
+    """
+    Exchange a refresh token for an access token at the identity provider.
+    HTTP 429 and 5xx responses are retried with exponential backoff, because the provider did not
+    process them. Timeouts and connection errors are not replayed: the exchange may have succeeded
+    and rotated the refresh token, so sending the old one again could invalidate the session.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        refresh_token: the refresh token to exchange.
+    Raises:
+        RuntimeError: if the provider keeps returning a retryable status or the request is ambiguous.
+    """
+    for attempt in range(1, __TOKEN_ATTEMPTS + 1):
+        try:
+            resp = requests.post(
+                configuration["token_url"],
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": configuration["client_id"],
+                    "redirect_uri": configuration["redirect_uri"],
+                    "refresh_token": refresh_token,
+                },
+                headers={"Accept": "application/json"},
+                timeout=60,
+            )
+        except (requests.Timeout, requests.ConnectionError) as e:
+            raise RuntimeError(
+                f"Token exchange did not complete ({type(e).__name__}). It is not retried, because "
+                "the refresh token may already have been rotated; run the sync again."
+            )
+        if resp.status_code not in __RETRY_STATUS_CODES or attempt == __TOKEN_ATTEMPTS:
+            return resp
+        delay_seconds = min(__MAX_BACKOFF_SECONDS, 5 * 2 ** (attempt - 1))
+        log.warning(
+            f"Token exchange -> HTTP {resp.status_code}; retry {attempt}/{__TOKEN_ATTEMPTS - 1} "
+            f"in {delay_seconds}s"
+        )
+        time.sleep(delay_seconds)
 
 
-def get_access_token(configuration: dict, state: dict) -> str:
+def get_access_token(configuration: dict, state: dict, force_refresh: bool = False) -> str:
     """
     Reuse the cached access token until it is near expiry, otherwise exchange a refresh token.
     The identity provider rotates the refresh token on every exchange, so the newest one is kept in
     state and the configured one is only the starting point. A refresh token newly pasted into the
-    configuration is tried first; if it is rejected, the one in state is tried.
+    configuration is tried first; if it is rejected, the one in state is tried. Every new token is
+    checkpointed straight away, so a rotated refresh token is never lost.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
         state: a dictionary that holds the state of the connector. It is updated in place.
+        force_refresh: ignore the cached access token, for example after a 401 response.
     Raises:
         RuntimeError: if every refresh token is rejected.
     """
@@ -190,7 +220,8 @@ def get_access_token(configuration: dict, state: dict) -> str:
     state["configured_refresh_token"] = configured
 
     expires_ms = state.get("access_expires_ms", 0)
-    if state.get("access_token") and expires_ms - __REFRESH_MARGIN_MS > time.time() * 1000:
+    is_cached_token_valid = expires_ms - __REFRESH_MARGIN_MS > time.time() * 1000
+    if state.get("access_token") and is_cached_token_valid and not force_refresh:
         return state["access_token"]
 
     candidates = list(
@@ -212,7 +243,15 @@ def get_access_token(configuration: dict, state: dict) -> str:
         state["refresh_token"] = body["refresh_token"]
     state["access_token"] = body["access_token"]
     state["access_expires_ms"] = __expiry_ms(body.get("expires_in", 0))
+    # The refresh token has rotated, so persist the new one before using the access token.
+    op.checkpoint(state)
     return body["access_token"]
+
+
+def auth_headers(configuration: dict, state: dict, force_refresh: bool = False) -> dict:
+    """Build request headers with a valid bearer token, renewing it when it is near expiry."""
+    token = get_access_token(configuration, state, force_refresh)
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
 
 def api_call(method: str, url: str, attempts: int = __RETRY_ATTEMPTS, **kwargs):
@@ -242,14 +281,35 @@ def api_call(method: str, url: str, attempts: int = __RETRY_ATTEMPTS, **kwargs):
         time.sleep(delay_seconds)
 
 
-def start_execution(base: str, headers: dict, report_id: int, timeout_seconds: int):
+def authed_call(configuration: dict, state: dict, method: str, url: str, **kwargs):
+    """
+    Call the API with a valid bearer token and retry once with a fresh token on HTTP 401.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: a dictionary that holds the state of the connector.
+        method: HTTP method.
+        url: request URL.
+    """
+    resp = api_call(method, url, headers=auth_headers(configuration, state), **kwargs)
+    if resp.status_code == 401:
+        log.warning("Received HTTP 401; renewing the access token and retrying once")
+        resp = api_call(
+            method, url, headers=auth_headers(configuration, state, force_refresh=True), **kwargs
+        )
+    return resp
+
+
+def start_execution(
+    configuration: dict, state: dict, base: str, report_id: int, timeout_seconds: int
+):
     """
     Start a report execution and return its id.
     The API allows one identical execution at a time, so when one is already running this waits and
     tries again. The POST is never retried after a timeout, because that could start a second run.
     Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: a dictionary that holds the state of the connector.
         base: base URL of the Report Wizard API.
-        headers: request headers with the bearer token.
         report_id: id of the report to run.
         timeout_seconds: seconds to keep waiting for a running execution to finish.
     Raises:
@@ -257,11 +317,12 @@ def start_execution(base: str, headers: dict, report_id: int, timeout_seconds: i
     """
     deadline = time.time() + timeout_seconds
     while True:
-        resp = api_call(
+        resp = authed_call(
+            configuration,
+            state,
             "POST",
             f"{base}/executions",
             attempts=1,
-            headers=headers,
             json={"reportId": report_id, "outputFormat": "application/csv"},
             timeout=300,
         )
@@ -281,13 +342,19 @@ def start_execution(base: str, headers: dict, report_id: int, timeout_seconds: i
 
 
 def wait_for_success(
-    base: str, headers: dict, exec_id, poll_interval_seconds: int, timeout_seconds: int
+    configuration: dict,
+    state: dict,
+    base: str,
+    exec_id,
+    poll_interval_seconds: int,
+    timeout_seconds: int,
 ):
     """
     Poll the execution status until it succeeds.
     Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: a dictionary that holds the state of the connector.
         base: base URL of the Report Wizard API.
-        headers: request headers with the bearer token.
         exec_id: execution id.
         poll_interval_seconds: seconds between polls.
         timeout_seconds: seconds to wait before giving up.
@@ -297,7 +364,9 @@ def wait_for_success(
     """
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        resp = api_call("GET", f"{base}/executions/{exec_id}/status", headers=headers, timeout=120)
+        resp = authed_call(
+            configuration, state, "GET", f"{base}/executions/{exec_id}/status", timeout=120
+        )
         resp.raise_for_status()
         try:
             body = resp.json()
@@ -315,59 +384,116 @@ def wait_for_success(
     raise TimeoutError(f"Report execution {exec_id} did not succeed within {timeout_seconds}s")
 
 
-def download_result(base: str, headers: dict, exec_id, attempts: int = 4) -> str:
+def is_transient_error(error: Exception) -> bool:
+    """Return True for network errors and HTTP 429/5xx responses, which are worth retrying."""
+    if isinstance(error, requests.HTTPError):
+        return error.response is not None and error.response.status_code in __RETRY_STATUS_CODES
+    return isinstance(
+        error,
+        (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError),
+    )
+
+
+def stream_result_to_file(
+    configuration: dict,
+    state: dict,
+    base: str,
+    exec_id,
+    path: str,
+    is_retry_after_401: bool = False,
+):
+    """
+    Stream the CSV result of an execution into the file at path.
+    On HTTP 401 the access token is renewed and the request is repeated once.
+    """
+    headers = auth_headers(configuration, state, force_refresh=is_retry_after_401)
+    with requests.get(
+        f"{base}/executions/{exec_id}/result",
+        headers={**headers, "Accept": "application/csv"},
+        timeout=(30, 300),
+        stream=True,
+    ) as resp:
+        if resp.status_code == 401 and not is_retry_after_401:
+            log.warning("Received HTTP 401 on download; renewing the access token")
+        else:
+            resp.raise_for_status()
+            with open(path, "wb") as output:
+                for chunk in resp.iter_content(chunk_size=__DOWNLOAD_CHUNK_BYTES):
+                    output.write(chunk)
+            return
+    stream_result_to_file(configuration, state, base, exec_id, path, is_retry_after_401=True)
+
+
+def download_result(configuration: dict, state: dict, base: str, exec_id) -> str:
     """
     Stream the CSV result to a temporary file and return its path.
     Reports can exceed 100 MB. The body is saved to disk first, because processing rows while
     streaming makes the API wait on slow writes and it drops slow readers. The file is read from
-    disk afterwards, so memory use stays flat.
+    disk afterwards, so memory use stays flat. Network errors and HTTP 429/5xx are retried with
+    exponential backoff, permanent errors are raised, and the temporary file is removed whenever
+    an attempt fails for any reason, including disk-write errors.
     Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: a dictionary that holds the state of the connector.
         base: base URL of the Report Wizard API.
-        headers: request headers with the bearer token.
         exec_id: execution id.
-        attempts: maximum number of download attempts.
     """
-    for attempt in range(1, attempts + 1):
-        temp_file = tempfile.NamedTemporaryFile(prefix="report_", suffix=".csv", delete=False)
+    for attempt in range(1, __DOWNLOAD_ATTEMPTS + 1):
+        file_descriptor, path = tempfile.mkstemp(prefix="report_", suffix=".csv")
+        os.close(file_descriptor)
         try:
-            with temp_file, requests.get(
-                f"{base}/executions/{exec_id}/result",
-                headers={**headers, "Accept": "application/csv"},
-                timeout=(30, 300),
-                stream=True,
-            ) as resp:
-                resp.raise_for_status()
-                for chunk in resp.iter_content(chunk_size=__DOWNLOAD_CHUNK_BYTES):
-                    temp_file.write(chunk)
-            return temp_file.name
-        except (
-            requests.ConnectionError,
-            requests.Timeout,
-            requests.exceptions.ChunkedEncodingError,
-        ) as e:
-            os.unlink(temp_file.name)
-            if attempt == attempts:
+            stream_result_to_file(configuration, state, base, exec_id, path)
+            return path
+        except Exception as e:
+            os.unlink(path)
+            if not is_transient_error(e) or attempt == __DOWNLOAD_ATTEMPTS:
                 raise
+            delay_seconds = min(__MAX_BACKOFF_SECONDS, 5 * attempt)
             log.warning(
-                f"Result download failed ({type(e).__name__}); retry {attempt}/{attempts - 1}"
+                f"Result download failed ({type(e).__name__}); "
+                f"retry {attempt}/{__DOWNLOAD_ATTEMPTS - 1} in {delay_seconds}s"
             )
-            time.sleep(5 * attempt)
+            time.sleep(delay_seconds)
 
 
 def row_hash(row: dict) -> str:
-    """Build a stable key from every column of a row, used when no primary key is configured."""
-    payload = "\x1f".join(f"{key}={value}" for key, value in row.items())
+    """
+    Build a stable key from every column of a row, used when no primary key is configured.
+    The row is serialized as JSON with sorted keys, so a null value and the text 'None' hash
+    differently and the key does not depend on column order.
+    """
+    payload = json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def load_report(configuration: dict, state: dict, base: str, headers: dict, report_id: int):
+def normalize_headers(headers) -> list:
+    """
+    Normalize CSV headers and fail clearly if two headers collide or a header is empty.
+    Args:
+        headers: the header names from the CSV file.
+    Raises:
+        ValueError: if a header is empty or two headers normalize to the same column name.
+    """
+    names = [column_name(header) for header in (headers or [])]
+    if not names:
+        raise ValueError("The report result has no CSV header row")
+    if any(not name for name in names):
+        raise ValueError("The report result has an empty or unusable CSV column header")
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"CSV headers collide after normalization: {', '.join(duplicates)}")
+    return names
+
+
+def load_report(configuration: dict, state: dict, base: str, report_id: int):
     """
     Run one report and upsert its rows.
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
         state: a dictionary that holds the state of the connector.
+        configuration: a dictionary that holds the configuration settings for the connector.
+        state: a dictionary that holds the state of the connector.
         base: base URL of the Report Wizard API.
-        headers: request headers with the bearer token.
         report_id: id of the report to run.
     """
     table = __table_for(configuration, report_id)
@@ -380,19 +506,26 @@ def load_report(configuration: dict, state: dict, base: str, headers: dict, repo
     checkpoint_rows = __int_setting(configuration, "checkpoint_rows", __DEFAULT_CHECKPOINT_ROWS)
     use_hash = not __primary_keys(configuration)
 
-    exec_id = start_execution(base, headers, report_id, timeout_seconds)
-    wait_for_success(base, headers, exec_id, poll_interval_seconds, timeout_seconds)
+    exec_id = start_execution(configuration, state, base, report_id, timeout_seconds)
+    wait_for_success(configuration, state, base, exec_id, poll_interval_seconds, timeout_seconds)
 
-    path = download_result(base, headers, exec_id)
+    path = download_result(configuration, state, base, exec_id)
     count = 0
     try:
         # The CSV is read row by row from disk, so the whole report is never held in memory.
         with open(path, encoding="utf-8-sig", newline="") as stream:
-            for raw_row in csv.DictReader(stream):
+            reader = csv.reader(stream)
+            names = normalize_headers(next(reader, None))
+            for values in reader:
+                if not values:
+                    continue
+                if len(values) > len(names):
+                    raise ValueError(
+                        f"Row {count + 2} has more values than the header has columns"
+                    )
+                values = values + [""] * (len(names) - len(values))
                 row = {
-                    column_name(key): (value if value != "" else None)
-                    for key, value in raw_row.items()
-                    if key
+                    name: (value if value != "" else None) for name, value in zip(names, values)
                 }
                 if use_hash:
                     row["row_hash"] = row_hash(row)
@@ -432,14 +565,12 @@ def update(configuration: dict, state: dict):
     base = configuration["base_url"].rstrip("/")
     log.info(f"Syncing {len(__report_ids(configuration))} report(s)")
 
-    token = get_access_token(configuration, state)
+    # Obtain the first access token up front; get_access_token checkpoints any rotated refresh token.
+    get_access_token(configuration, state)
     log.info("Access token ready")
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    # The refresh token rotates on every exchange, so persist the new one before doing anything else.
-    op.checkpoint(state)
 
     for report_id in __report_ids(configuration):
-        load_report(configuration, state, base, headers, report_id)
+        load_report(configuration, state, base, report_id)
 
 
 # This creates the connector object that will use the update and schema functions defined in this connector.py file.

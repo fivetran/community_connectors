@@ -33,10 +33,12 @@ fivetran init --template investran_report_wizard
 
 ## Features
 - Runs several reports in one sync, one destination table per report (`__table_for`).
-- Authenticates with an OAuth2 refresh token. The identity provider rotates the refresh token on each exchange, so the connector stores the latest one in state and checkpoints it before any data is read (`get_access_token`).
+- Authenticates with an OAuth2 refresh token. The identity provider rotates the refresh token on each exchange, so the connector stores the latest one in state and checkpoints it as soon as it changes (`get_access_token`).
 - Waits for an already running execution of the same report instead of failing (`start_execution`).
 - Streams large CSV results to disk and reads them row by row, so memory use stays flat (`download_result`, `load_report`).
-- Retries timeouts, connection errors, HTTP 429 and 5xx responses with exponential backoff (`api_call`).
+- Renews the access token shortly before it expires and once more after an HTTP 401, so long-running syncs and polls keep working (`auth_headers`, `authed_call`).
+- Retries timeouts, connection errors, HTTP 429 and 5xx responses with exponential backoff (`api_call`, `download_result`).
+- Fails clearly when two CSV headers normalize to the same column name (`normalize_headers`).
 - Checkpoints every `checkpoint_rows` rows and after each report.
 
 ## Configuration file
@@ -69,16 +71,16 @@ fivetran init --template investran_report_wizard
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Authentication
-The connector uses the OAuth2 refresh token grant. It exchanges the refresh token for an access token, reuses the access token until less than a day of its lifetime is left, and sends it as a bearer token. If the refresh token has been used elsewhere and is rejected, set a new `refresh_token` in the configuration. A newly configured token takes priority over the one stored in state.
+The connector uses the OAuth2 refresh token grant. It exchanges the refresh token for an access token, reuses the access token until less than a minute of its lifetime is left, and sends it as a bearer token. A request that returns HTTP 401 renews the token and is repeated once. Every rotated refresh token is checkpointed immediately, and exchanges that return HTTP 429 or 5xx are retried with backoff. An exchange that times out is not replayed, because it may already have rotated the refresh token, so the sync fails and the next run retries it. If the refresh token has been used elsewhere and is rejected, set a new `refresh_token` in the configuration. A newly configured token takes priority over the one stored in state.
 
 ## Data handling
-Each CSV header is normalized to a lowercase column name with underscores, for example `Unrealized Asset - AVM` becomes `unrealized_asset_avm`. Empty values are stored as null. Every run re-executes the reports and upserts the full result, so choose `primary_keys` that are unique per row, and avoid columns that change on every run, such as a run date.
+Each CSV header is normalized to a lowercase column name with underscores, for example `Unrealized Asset - AVM` becomes `unrealized_asset_avm`. Empty values are stored as null. If two headers normalize to the same name, or a header is empty, the sync fails before any row is loaded so no column is silently dropped. When no `primary_keys` are set, `row_hash` is a SHA-256 of the row serialized as JSON with sorted keys, so null and the text `None` produce different keys and column order does not matter. Every run re-executes the reports and upserts the full result, so choose `primary_keys` that are unique per row, and avoid columns that change on every run, such as a run date.
 
 ## Error handling
 - `validate_configuration` fails fast on missing or invalid settings.
 - `api_call` retries transient failures with exponential backoff. The execution POST is never retried after a timeout, because that could start a second execution.
 - A failed or timed out execution raises an error and fails the sync, so state is not advanced past incomplete data.
-- The temporary CSV file is always deleted.
+- The result download retries network errors and HTTP 429 and 5xx responses with backoff and raises permanent errors. The temporary CSV file is deleted after every failed attempt and after loading.
 
 ## Tables created
 The connector creates one table per report named `<table_prefix>_<report_id>`. Columns come from the report. The primary key is `primary_keys`, or `row_hash` when it is not set.
