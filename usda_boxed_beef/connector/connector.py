@@ -529,14 +529,16 @@ def sync_report(
             )
         return
 
-    # The first window starts with the overlap days before the saved published date. When max_window_days is too
-    # short to hold them and a new day, the first window still runs to the day after the saved date, so every sync
-    # moves the cursor forward. No request spans more than max(max_window_days, overlap + 2) days, within the API's
-    # 180-day limit.
+    # The first window rereads the overlap days and the saved published date, then reads up to max_window_days new
+    # days. No request spans more than the API's 180-day limit, so with max_window_days above 176 the first window
+    # reads fewer new days.
     window_start = progress["published_through"] - timedelta(days=__INCREMENTAL_OVERLAP_DAYS)
-    first_new_day = progress["published_through"] + timedelta(days=1)
+    window_end = min(
+        progress["published_through"] + timedelta(days=window_days),
+        window_start + timedelta(days=__MAX_WINDOW_DAYS_CEILING - 1),
+        today,
+    )
     while window_start <= today and windows_left > 0:
-        window_end = min(max(window_start + timedelta(days=window_days - 1), first_new_day), today)
         written = sync_window(
             client, slug_id, __INCREMENTAL_FIELD, window_start, window_end, issues, counts
         )
@@ -547,6 +549,7 @@ def sync_report(
         reports_state[slug_id] = report_progress(**progress)
         windows_left -= 1
         window_start = window_end + timedelta(days=1)
+        window_end = min(window_start + timedelta(days=window_days - 1), today)
 
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.

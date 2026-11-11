@@ -201,7 +201,7 @@ limit 5
 | Chuck, clod tender (114F  5) | 7.14 | 7.64 | 20 | 0 | -6.65 |
 | Flank, flank steak (193  4) | 5.67 | 6.01 | 20 | 0 | -5.58 |
 
-Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates; none of the five averages includes a corrected report. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window. When the query returns no rows, no Choice cut has a traded price on the latest report date: say so, and do not rank an older date.
+Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates; none of the five averages includes a corrected report. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window. When the query returns no rows, either no Choice cut has a traded price on the latest report date or none has 10 report dates in its window: check `cut_prices_daily` for that date, say which, and do not rank an older date.
 
 ### 5. Which Select cuts traded above $20 per pound on the latest report date?
 
