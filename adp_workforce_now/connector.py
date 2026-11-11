@@ -26,7 +26,7 @@ import textwrap
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 # For resolving relative pagination links returned by ADP against the current request URL
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 # For issuing HTTP requests to the ADP Workforce Now API
 import requests
@@ -268,14 +268,26 @@ def get_access_token(configuration: dict, cert: Tuple[str, str]) -> str:
     return token
 
 
-def _resolve_next_link(payload: Any, current_url: str) -> Optional[str]:
+def _origin(url: str) -> Tuple[str, str]:
+    """Return the (scheme, host:port) pair of a URL, lowercased, for origin comparison."""
+    parts = urlsplit(url)
+    default_port = 443 if parts.scheme == "https" else 80
+    return parts.scheme.lower(), f"{(parts.hostname or '').lower()}:{parts.port or default_port}"
+
+
+def _resolve_next_link(payload: Any, current_url: str, api_url: str) -> Optional[str]:
     """
     Extract the next page link if provided by ADP; non-dict payloads have none.
+    The resolved link is followed with the bearer token, so it must use HTTPS and stay on the
+    origin of the configured API URL.
     Args:
         payload: the parsed JSON response body.
         current_url: the URL of the current request, used to resolve relative links.
+        api_url: the configured departments URL whose origin next links must match.
     Returns:
         The absolute URL of the next page, or None if there is none.
+    Raises:
+        RuntimeError: if the next link is not HTTPS or points to a different origin.
     """
     if not isinstance(payload, dict):
         return None
@@ -296,9 +308,12 @@ def _resolve_next_link(payload: Any, current_url: str) -> Optional[str]:
         elif isinstance(links.get("nextPage"), dict):
             next_href = links["nextPage"].get("href")
 
-    if next_href:
-        return urljoin(current_url, next_href)
-    return None
+    if not next_href:
+        return None
+    next_url = urljoin(current_url, next_href)
+    if urlsplit(next_url).scheme.lower() != "https" or _origin(next_url) != _origin(api_url):
+        raise RuntimeError("Refusing to follow a next-page link outside the configured API origin")
+    return next_url
 
 
 def _is_single_department(payload: Dict[str, Any]) -> bool:
@@ -314,6 +329,8 @@ def _is_single_department(payload: Dict[str, Any]) -> bool:
             _safe_get(payload, ["departmentCode", "codeValue"]),
             payload.get("code"),
             _safe_get(payload, ["nameCode", "code"]),
+            payload.get("id"),
+            _safe_get(payload, ["itemID", "idValue"]),
         )
     )
 
@@ -536,7 +553,7 @@ def fetch_departments(
         yield records
 
         # Prefer server-provided pagination link; otherwise, fall back to OData $skip/$top.
-        next_link = _resolve_next_link(payload, next_url)
+        next_link = _resolve_next_link(payload, next_url, departments_url)
         if next_link:
             next_url = next_link
             params = None  # next link already includes query params
