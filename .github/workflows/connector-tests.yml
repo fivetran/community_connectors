@@ -65,6 +65,17 @@ jobs:
               # since that's genuinely what pytest itself will collect and run.
               return name.startswith("test_") or name.endswith("_test.py")
 
+          def find_connector_root(test_file_path):
+              # Walk up from test file to find the directory containing requirements.txt.
+              # Handles nested connectors (e.g. redshift/simple_redshift_connector/tests/test_foo.py).
+              current = pathlib.Path(test_file_path).parent
+              while current != current.parent:  # Until repo root
+                  if (current / "requirements.txt").exists():
+                      return str(current)
+                  current = current.parent
+              # Fallback: use first path segment (top-level connector)
+              return test_file_path.split("/")[0]
+
           # base/head are the PR's base and head commit SHAs. "..." (triple-dot)
           # diffs head against their common ancestor, which is how GitHub itself
           # computes a PR's file list - so this matches what the PR page shows.
@@ -87,24 +98,18 @@ jobs:
               changed_path = pathlib.PurePosixPath(path)
               parts = changed_path.parts
               # Select only connectors where the changed file itself is pytest-collectible.
-              # parts[0] is the top-level connector folder name, e.g.
-              # "federal_register" for "federal_register/tests/test_connector.py".
               # len(parts) > 1 excludes files sitting directly in the repo root
               # (those have no connector folder to select).
-              # NOTE: this matches on the path's NAME only, not on whether the
-              # file still exists - a DELETED test file still shows up here and
-              # still selects its connector (its name alone is enough to match).
-              # If the whole connector folder was deleted, it's skipped later (safe).
-              # If only the tests were deleted, pytest runs and fails on 0 tests collected.
-              # This way, deleting the whole connector is safe (no error), but deleting
-              # just the tests is caught as a real failure.
               if (
                   len(parts) > 1
                   and not parts[0].startswith(".")
                   and changed_path.suffix == ".py"
                   and is_pytest_file_name(changed_path.name)
               ):
-                  changed.add(parts[0])
+                  # Find the actual connector root by walking up to find requirements.txt.
+                  # This handles nested connectors (e.g. redshift/simple_redshift_connector/).
+                  connector_root = find_connector_root(str(path))
+                  changed.add(connector_root)
 
           connectors = sorted(changed)
           print(f"Connectors to test: {connectors or 'none'}")
