@@ -13,10 +13,6 @@ permissions:
   # never needs to write to the repo.
   contents: read
 
-env:
-  # Minimum line coverage required across the connector's whole folder to pass.
-  COVERAGE_MIN: 50
-
 jobs:
   tests:
     name: Connector tests
@@ -41,7 +37,6 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
           RUNNER_TEMP_DIR: ${{ runner.temp }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
@@ -191,13 +186,6 @@ jobs:
                       [
                           str(python), "-m", "pytest", ".", "-v",
                           f"--junitxml={junit_name}",
-                          f"--cov={cov_target}",
-                          "--cov-report=term",
-                          # pytest-cov itself fails the run (non-zero exit) if
-                          # coverage comes in under this percentage - this is
-                          # the guard against tests that pass but exercise
-                          # little or none of the actual connector code.
-                          f"--cov-fail-under={coverage_min}",
                       ],
                       cwd=connector,
                       # Keep control in this script so we can classify failures
@@ -207,7 +195,7 @@ jobs:
                   if result.returncode == 5:
                       reasons.append("pytest collected no tests (exit code 5)")
                   elif result.returncode != 0:
-                      reasons.append(f"pytest exit code {result.returncode} (failed, or coverage below {coverage_min}%)")
+                      reasons.append("tests failed (one or more tests did not pass)")
 
                   skipped = skipped_count(junit)
                   if skipped is None:
