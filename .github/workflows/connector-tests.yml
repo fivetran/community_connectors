@@ -139,6 +139,17 @@ jobs:
               root = ET.parse(junit_path).getroot()
               return sum(int(suite.get("skipped", 0)) for suite in root.iter("testsuite"))
 
+          def test_stats(junit_path):
+              # Extract test stats from JUnit XML: passed, failed, skipped counts
+              if not junit_path.is_file():
+                  return None
+              root = ET.parse(junit_path).getroot()
+              passed = sum(int(suite.get("tests", 0)) - int(suite.get("failures", 0)) - int(suite.get("errors", 0)) - int(suite.get("skipped", 0)) for suite in root.iter("testsuite"))
+              failed = sum(int(suite.get("failures", 0)) + int(suite.get("errors", 0)) for suite in root.iter("testsuite"))
+              skipped = sum(int(suite.get("skipped", 0)) for suite in root.iter("testsuite"))
+              total = sum(int(suite.get("tests", 0)) for suite in root.iter("testsuite"))
+              return {"total": total, "passed": passed, "failed": failed, "skipped": skipped}
+
           for connector in connectors:
               print(f"\n{'='*70}")
               print(f"Testing: {connector}")
@@ -208,6 +219,14 @@ jobs:
                       # dependencies/services, or marker deselection. Treat them as
                       # failures so the check is never "green but partially untested".
                       reasons.append(f"{skipped} test(s) skipped; skips are not allowed")
+
+                  # Extract and print test stats
+                  stats = test_stats(junit)
+                  if stats:
+                      status = "✅ PASSED" if not reasons else "❌ FAILED"
+                      print(f"\nConnector: {connector}")
+                      print(f"Tests: {stats['passed']} passed, {stats['failed']} failed, {stats['skipped']} skipped (total: {stats['total']})")
+                      print(f"Status: {status}\n")
 
               if reasons:
                   failed[connector] = reasons
