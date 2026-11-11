@@ -168,7 +168,7 @@ group by latest.report_date
 |---|---|---|---|---|
 | 2026-11-09 | 9.01 | 13.43 | 20 | 0 |
 
-Answer: on 2026-11-09 the Choice cutout was $9.01 per hundredweight (100 pounds of carcass) above the Select cutout, against an average spread of $13.43 over the 20 report dates in the 28 days ending that date, none of them a corrected report. The cutout is an estimated carcass value, not a cut price.
+Answer: on 2026-11-09 the Choice cutout was $9.01 per hundredweight (100 pounds of carcass) above the Select cutout, against an average spread of $13.43 over the 20 report dates in the 28 days ending that date, none of them a corrected report. The cutout is an estimated carcass value, not a cut price. When `latest_spread_usd_cwt` is null, one of the two cutouts is not available for the latest report date: say so, and do not quote an older spread as the latest.
 
 ### 4. Which Choice cuts moved most against their 28-day average on the latest report date?
 
@@ -201,7 +201,7 @@ limit 5
 | Chuck, clod tender (114F  5) | 7.14 | 7.64 | 20 | 0 | -6.65 |
 | Flank, flank steak (193  4) | 5.67 | 6.01 | 20 | 0 | -5.58 |
 
-Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates; none of the five averages includes a corrected report. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window.
+Answer: on 2026-11-09 the five Choice cuts furthest from their 28-day average were all below it, led by bottom gooseneck round at $3.29 per pound, 12.38% under its average over 11 report dates; none of the five averages includes a corrected report. The filter `n_reports_28d >= 10` leaves out cuts that traded on fewer than 10 report dates in the window. When the query returns no rows, no Choice cut has a traded price on the latest report date: say so, and do not rank an older date.
 
 ### 5. Which Select cuts traded above $20 per pound on the latest report date?
 
