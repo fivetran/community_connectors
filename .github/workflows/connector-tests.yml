@@ -163,11 +163,11 @@ jobs:
               # fivetran_connector_sdk/requests are pre-installed in the real
               # Connector SDK runtime (per _template_connector/requirements.txt),
               # so contributors' own requirements.txt files don't list them -
-              # install them explicitly here to match. pytest/pytest-cov are
-              # this workflow's own testing tools, not part of the connector.
+              # install them explicitly here to match. pytest is this workflow's
+              # testing tool, not part of the connector.
               install = [
                   str(python), "-m", "pip", "install",
-                  "fivetran_connector_sdk", "requests", "pytest", "pytest-cov",
+                  "fivetran_connector_sdk", "requests", "pytest",
               ]
               if requirements.is_file():
                   install += ["-r", str(requirements)]
@@ -177,9 +177,6 @@ jobs:
               if subprocess.run(install, check=False).returncode != 0:
                   reasons.append("dependency install failed")
               else:
-                  # Measure coverage across every .py file in the connector's
-                  # folder, not just connector.py - picks up helper modules too.
-                  cov_target = "."
                   # junit_name is a bare filename, not a path, because the
                   # subprocess below runs with cwd=connector - pytest writes it
                   # relative to that cwd, so `junit` (used to read it back after)
@@ -193,7 +190,7 @@ jobs:
                       ],
                       cwd=connector,
                       # Keep control in this script so we can classify failures
-                      # (no tests, test failures, low coverage, missing report).
+                      # (no tests, test failures, skipped tests).
                       check=False,
                   )
                   if result.returncode == 5:
