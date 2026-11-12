@@ -144,6 +144,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **MailerLite** ([mailerlite](https://github.com/fivetran/community_connectors/tree/main/mailerlite)) - Sync email marketing data from MailerLite
 - **MasterTax** ([mastertax](https://github.com/fivetran/community_connectors/tree/main/mastertax)) - Sync data from MasterTax API
 - **MeiliSearch** ([meilisearch](https://github.com/fivetran/community_connectors/tree/main/meilisearch)) - Sync index metadata and documents from MeiliSearch
+- Met Museum ([met_museum/connector](https://github.com/fivetran/community_connectors/tree/main/met_museum/connector)) - Syncs public-domain objects, artists and curator tags from The Metropolitan Museum of Art Collection API, with optional Snowflake Cortex vision enrichment, and a context pack ([met_museum/context_pack](https://github.com/fivetran/community_connectors/tree/main/met_museum/context_pack)) with a dbt v2 project, agent instructions and a Snowflake and DuckDB parity check.
 - **Microsoft Excel** ([microsoft_excel](https://github.com/fivetran/community_connectors/tree/main/microsoft_excel)) - Sync data from Microsoft Excel files
 - **Microsoft Intune** ([microsoft_intune](https://github.com/fivetran/community_connectors/tree/main/microsoft_intune)) - Retrieve managed devices from Microsoft Intune
 - **n8n** ([n8n](https://github.com/fivetran/community_connectors/tree/main/n8n)) - Sync workflow automation data from n8n
