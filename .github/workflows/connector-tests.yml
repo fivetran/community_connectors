@@ -66,11 +66,14 @@ jobs:
               return name.startswith("test_") or name.endswith("_test.py")
 
           def find_connector_root(test_file_path):
-              # Walk up from test file to find the directory containing requirements.txt.
-              # Handles nested connectors (e.g. redshift/simple_redshift_connector/tests/test_foo.py).
+              # Walk up from test file to find the directory containing connector.py.
+              # connector.py marks the true connector root and is required for all connectors.
+              # Handles nested connectors (e.g. veeva_vault/basic_auth/tests/test_foo.py
+              # correctly selects veeva_vault/basic_auth, not veeva_vault).
+              # requirements.txt is optional and found relative to connector root.
               current = pathlib.Path(test_file_path).parent
               while current != current.parent:  # Until repo root
-                  if (current / "requirements.txt").exists():
+                  if (current / "connector.py").exists():
                       return str(current)
                   current = current.parent
               # Fallback: use first path segment (top-level connector)
