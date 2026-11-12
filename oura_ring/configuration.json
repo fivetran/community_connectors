@@ -1,4 +1,7 @@
 {
-    "personal_access_token": "<YOUR_PERSONAL_ACCESS_TOKEN>",
+    "client_id": "<YOUR_OURA_CLIENT_ID>",
+    "client_secret": "<YOUR_OURA_CLIENT_SECRET>",
+    "refresh_token": "<YOUR_OURA_REFRESH_TOKEN>",
+    "fernet_key": "<YOUR_FERNET_KEY>",
     "lookback_days": "<LOOKBACK_DAYS>"
 }
