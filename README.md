@@ -137,6 +137,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Healthchecks.io** ([healthchecks](https://github.com/fivetran/community_connectors/tree/main/healthchecks)) - Sync health check monitoring from Healthchecks.io
 - **HubSpot** ([hubspot](https://github.com/fivetran/community_connectors/tree/main/hubspot)) - Sync event data from HubSpot
 - **HTTP Proxy with requests** ([http_proxy](https://github.com/fivetran/community_connectors/tree/main/http_proxy)) - Demonstrates how to route API requests through an HTTP or HTTPS proxy using the requests library
+- **Investran Report Wizard** ([investran_report_wizard](https://github.com/fivetran/community_connectors/tree/main/investran_report_wizard)) - Run Investran Report Wizard reports and load the CSV results
 - **Iterate** ([iterate](https://github.com/fivetran/community_connectors/tree/main/iterate)) - Sync NPS survey data from Iterate REST API
 - **Keycloak** ([keycloak](https://github.com/fivetran/community_connectors/tree/main/keycloak)) - Sync IAM data from Keycloak Admin API
 - **LeaveDates** ([leavedates](https://github.com/fivetran/community_connectors/tree/main/leavedates)) - Sync leave report data from LeaveDates API
