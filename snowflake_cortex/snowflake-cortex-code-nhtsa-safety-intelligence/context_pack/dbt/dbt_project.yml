@@ -1,0 +1,66 @@
+# nhtsa_recalls_context: the dbt project behind the NHTSA Recalls context pack.
+#
+# It builds the models an agent reads instead of the connector's raw recalls table, and it defines every count once in
+# the dbt Semantic Layer. A Snowflake Cortex Agent reads those metrics through the remote dbt MCP server, so "how many
+# recalls" has one definition wherever it is asked.
+#
+# Two targets read the same models (profiles.yml):
+#   snowflake  the live path. Sources are the connector's tables in Snowflake: the Managed Data Lake read in place
+#              through a catalog-linked database, or a standard Fivetran Snowflake destination.
+#   local      DuckDB over the connector's local debug warehouse, for tests. No credentials.
+# Every SQL difference between the two sits in macros/dialect.sql, so a model never branches on target.type.
+
+name: nhtsa_recalls_context
+version: "1.0.0"
+config-version: 2
+
+profile: nhtsa_recalls_context
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  require_generic_test_arguments_property: true
+  manage_state: true
+
+vars:
+  # The project tag every model and test carries. Not a schema prefix: the pack has its own database, so Production
+  # builds every model into the target schema (macros/generate_schema_name.sql).
+  schema_prefix: nhtsa_recalls_context
+  # The snowflake target only: the database and schema holding the connector's recalls and configured_vehicle tables.
+  # On the Managed Data Lake this is the catalog-linked database and the connection's destination schema.
+  lake_database: "<lake_database>"
+  lake_schema: "<lake_schema>"
+  # true when the source keeps the lake's lowercase names (a catalog-linked Managed Data Lake database), so every
+  # schema, table and column name is double-quoted. Set false for a standard Fivetran Snowflake destination, whose
+  # names are uppercase and unquoted.
+  quote_lake_identifiers: true
+
+models:
+  nhtsa_recalls_context:
+    # Views only: the models are small, and a view always reads the latest sync.
+    +materialized: view
+    +tags: ["nhtsa_recalls_context"]
+    # Descriptions land in the warehouse, where Cortex and other agents read them.
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +tags: ["staging"]
+    marts:
+      +tags: ["marts"]
+    semantic_layer:
+      +tags: ["semantic_layer"]
+    search:
+      +tags: ["search"]
+
+data_tests:
+  nhtsa_recalls_context:
+    +tags: ["nhtsa_recalls_context"]
+
+# Lets checks/ query the project's own metadata.
+info_schema:
+  version: 1

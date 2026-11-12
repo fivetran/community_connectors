@@ -1,0 +1,39 @@
+version: 2
+
+# The two rules the agent's answers depend on, proven on fixed rows without the warehouse's data.
+
+unit_tests:
+  - name: campaign_flags_keep_unknown_as_null
+    description: >
+      A campaign's flag is true when any of its vehicle rows is true, false when every row is false, and null when no
+      row carries a value: null means unknown, never false. The campaign's vehicle rows collapse to one row.
+    model: nhtsa_campaign
+    given:
+      - input: ref('nhtsa_recall')
+        rows:
+          - {nhtsa_campaign_number: "25V001000", make: "Ford", model: "Explorer", model_year: 2022, park_it: false, park_outside: true, over_the_air_update: null}
+          - {nhtsa_campaign_number: "25V001000", make: "Ford", model: "F-150", model_year: 2023, park_it: false, park_outside: false, over_the_air_update: null}
+    expect:
+      rows:
+        - {nhtsa_campaign_number: "25V001000", makes: "Ford", models: "Ford Explorer, Ford F-150", configured_models: 2, vehicle_rows: 2, model_year_min: 2022, model_year_max: 2023, park_it: false, park_outside: true, over_the_air_update: null}
+
+  - name: model_coverage_counts_a_campaign_once_across_years
+    description: >
+      A campaign that covers two model years of one configured model counts once for that model, and a configured
+      model with no campaign stays as a row with campaign_count 0 and has_campaigns false.
+    model: nhtsa_model_coverage
+    given:
+      - input: ref('stg_nhtsa__configured_vehicle')
+        rows:
+          - {make: "Ford", model: "Explorer", model_year: 2022}
+          - {make: "Ford", model: "Explorer", model_year: 2023}
+          - {make: "Mazda", model: "CX-5", model_year: 2023}
+      - input: ref('nhtsa_recall')
+        rows:
+          - {nhtsa_campaign_number: "25V001000", make: "Ford", model: "Explorer", model_year: 2022}
+          - {nhtsa_campaign_number: "25V001000", make: "Ford", model: "Explorer", model_year: 2023}
+          - {nhtsa_campaign_number: "25V002000", make: "Ford", model: "Explorer", model_year: 2023}
+    expect:
+      rows:
+        - {make_model: "Ford Explorer", configured_model_years: 2, campaign_count: 2, has_campaigns: true}
+        - {make_model: "Mazda CX-5", configured_model_years: 1, campaign_count: 0, has_campaigns: false}
