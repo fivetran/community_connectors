@@ -1,0 +1,53 @@
+# usda_boxed_beef_context: the dbt project behind the USDA boxed beef context pack.
+#
+# It builds the tables an agent reads instead of the connector's seven raw tables. They put every price in two units
+# side by side (U.S. dollars per 100 pounds, as USDA reports it, and dollars per pound), drop no-trade rows from every
+# average, mark the weekly Prime report apart from the daily report, and carry each report's correction flag and
+# published time.
+#
+# The staging models are views over the connector's tables, in the usda_staging schema. The marts the agent reads are
+# tables in the usda schema. Every test that checks the synced data runs on the staging views, in a build of its own,
+# and the marts are built only when it passes, so they keep the last build whose data passed. The tests on the marts
+# check their SQL. (Inside one `dbt build`, dbt 2.0.11 skipped nothing downstream of a failed singular test that reads
+# two models, so a single build would not hold the marts back.)
+# Rebuild after every sync. Run from this dbt/ directory:
+#   dbt build --profiles-dir . --select tag:staging && dbt build --profiles-dir . --select tag:marts
+
+name: usda_boxed_beef_context
+version: "1.0.0"
+config-version: 2
+
+profile: usda_boxed_beef_context
+
+model-paths: ["models"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  require_generic_test_arguments_property: true
+
+vars:
+  # The schema the connector's tables sit in, inside the attached warehouse. fivetran debug writes to tester.
+  source_schema: "tester"
+
+models:
+  usda_boxed_beef_context:
+    +materialized: view
+    +tags: ["usda_boxed_beef_context"]
+    # Descriptions land in the warehouse, where an agent reading the catalog sees them.
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +tags: ["staging"]
+      # usda_staging: views over the connector's tables, read by dbt only
+      +schema: staging
+    marts:
+      +tags: ["marts"]
+      # Tables, so the agent reads the last tested build and never opens the connector's warehouse
+      +materialized: table
+
+data_tests:
+  usda_boxed_beef_context:
+    +tags: ["usda_boxed_beef_context"]

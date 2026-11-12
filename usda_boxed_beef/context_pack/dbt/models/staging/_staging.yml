@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_usda__reports
+    description: One row per report and report date. cadence is daily for 2453 and weekly for 2460.
+    columns:
+      - name: slug_id
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["2453", "2460"]
+      - name: report_date
+        data_tests: [not_null]
+      - name: cadence
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["daily", "weekly"]
+  - name: stg_usda__cut_prices
+    description: Cut prices in U.S. dollars per 100 pounds with _per_lb columns. Null prices on no-trade rows.
+    columns:
+      - name: price_key
+        data_tests: [unique, not_null]
+      - name: grade
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Prime", "Choice", "Select", "Choice, Select and Ungraded"]
+  - name: stg_usda__grind_prices
+    description: Ground beef, blended ground beef and trimmings prices.
+    columns:
+      - name: price_key
+        data_tests: [unique, not_null]
+  - name: stg_usda__cutout_values
+    description: Choice and Select cutout, one row per report date.
+    columns:
+      - name: report_date
+        data_tests: [unique, not_null]
+  - name: stg_usda__primal_values
+    description: Composite primal values, one row per report date and primal.
+  - name: stg_usda__volume
+    description: Loads and pounds per report date and volume class.
