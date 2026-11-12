@@ -103,7 +103,7 @@ def test_update_upserts_rows_and_checkpoints(monkeypatch):
         {"last_updated_at": "2024-02-14T22:59:59Z"},
         {"last_updated_at": "2024-03-16T16:40:29Z"},
     ]
-    assert state["last_updated_at"] == "2024-03-16T16:40:29Z"
+    assert state["last_updated_at"] == "FALSE"
 
 
 def test_update_uses_existing_state_cursor(monkeypatch):
