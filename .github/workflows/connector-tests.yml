@@ -2,7 +2,7 @@
 # file (test_*.py / *_test.py). One job, one step: figures out which connectors
 # changed, then runs pytest for each. If detection logic raises an error, the
 # step itself fails - there's no separate job boundary to hide that behind.
-name: Run Connector Tests
+name: Test
 
 on:
   pull_request:
@@ -52,8 +52,8 @@ jobs:
 
           # --- Override: skip check if override label present ---
           labels = json.loads(os.environ.get("PR_LABELS", "[]"))
-          if "override-connector-test" in labels:
-              print("'override-connector-test' label present - skipping connector tests.")
+          if "exclude-connector-tests" in labels:
+              print("'exclude-connector-tests' label present - skipping connector tests.")
               sys.exit(0)
 
           # --- Detect which connectors changed and have pytest-collectible tests ---
