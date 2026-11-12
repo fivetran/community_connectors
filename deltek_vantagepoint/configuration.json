@@ -1,0 +1,11 @@
+{
+  "base_url": "<YOUR_BASE_URL>",
+  "username": "<YOUR_USERNAME>",
+  "password": "<YOUR_PASSWORD>",
+  "database": "<YOUR_DATABASE>",
+  "client_id": "<YOUR_CLIENT_ID>",
+  "client_secret": "<YOUR_CLIENT_SECRET>",
+  "culture": "<YOUR_CULTURE>",
+  "initial_sync_start_date": "<YOUR_INITIAL_SYNC_START_DATE>",
+  "full_resync_day_of_month": "<YOUR_FULL_RESYNC_DAY_OF_MONTH>"
+}

@@ -1,0 +1,13 @@
+# DuckDB files. The views are created in memory; nothing here should write a database.
+*.db
+*.duckdb
+*.duckdb.wal
+*.db.wal
+.duckdb/
+
+# Local agent and tool config, which can hold catalog credentials
+.env
+.env.*
+
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,472 @@
+version: 2
+
+# Access: the marts an agent reads are public with enforced contracts, so a type change fails the build instead of
+# the agent. nhtsa_coverage, nhtsa_model_coverage and nhtsa_sync_window stay protected: they carry the connector's
+# sync timestamp, whose type differs between Snowflake and DuckDB. Set the owner to whoever answers for the pack.
+groups:
+  - name: nhtsa_recalls_context
+    owner:
+      name: NHTSA Recalls context pack owner
+
+# A recall means a campaign: one NHTSA campaign number, however many vehicles it covers. The connector's table has
+# one row per campaign x make x model x model year, so every "how many recalls" metric here counts distinct
+# campaign numbers, never rows. affected_vehicle_rows is the one row count, named so it is never read as recalls.
+
+models:
+  - name: nhtsa_recall
+    description: >
+      One row per NHTSA recall campaign x configured vehicle (make, model, model year). This is the grain the recall
+      counts are taken at, because only here can a count filter on make, model or model year. Count campaigns with
+      campaign_count, never rows. Filter on model (the configured name), not nhtsa_model (NHTSA's spelling, which
+      differs on some rows). Group components on component_group. A null flag means NHTSA sent no usable value:
+      unknown, never false.
+    config:
+      group: nhtsa_recalls_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: recall_row_key
+        data_type: varchar
+        description: nhtsa_campaign_number|make|model|model_year, unique.
+        data_tests:
+          - unique
+          - not_null
+        entity:
+          type: primary
+          name: recall_row
+      - name: nhtsa_campaign_number
+        data_type: varchar
+        description: NHTSA campaign number, for example 25V741000. One campaign is one recall.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('nhtsa_campaign')
+                field: nhtsa_campaign_number
+        entity:
+          type: foreign
+          name: campaign
+      - name: make
+        data_type: varchar
+        description: Configured make, for example Ford.
+        data_tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: model
+        data_type: varchar
+        description: Configured model name, for example Explorer. Filter on this, not on nhtsa_model.
+        data_tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: model_year
+        data_type: integer
+        description: Model year of the configured vehicle.
+        data_tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: nhtsa_make
+        data_type: varchar
+        description: Make as NHTSA spells it. Use make instead.
+      - name: nhtsa_model
+        data_type: varchar
+        description: Model as NHTSA spells it, which differs from the configured name on some rows. Use model instead.
+      - name: manufacturer
+        data_type: varchar
+        description: Manufacturer that filed the campaign.
+        dimension:
+          type: categorical
+      - name: component
+        data_type: varchar
+        description: NHTSA component path, for example BACK OVER PREVENTION:SOFTWARE.
+        dimension:
+          type: categorical
+      - name: component_group
+        data_type: varchar
+        description: The system before the first colon of component, for example POWER TRAIN. Group on this.
+        dimension:
+          type: categorical
+      - name: summary
+        data_type: varchar
+        description: NHTSA defect summary.
+      - name: consequence
+        data_type: varchar
+        description: NHTSA consequence text.
+      - name: remedy
+        data_type: varchar
+        description: NHTSA remedy text.
+      - name: notes
+        data_type: varchar
+        description: NHTSA notes.
+      - name: report_received_date
+        data_type: date
+        description: Date NHTSA received the manufacturer's report. Every answer names the window these dates span.
+        data_tests:
+          - not_null
+        granularity: day
+        dimension:
+          type: time
+          name: report_received_date
+      - name: report_month
+        data_type: date
+        description: First day of the report month.
+        dimension:
+          type: categorical
+      - name: park_it
+        data_type: boolean
+        description: NHTSA advises not driving the vehicle. Null means unknown.
+        dimension:
+          type: categorical
+      - name: park_outside
+        data_type: boolean
+        description: NHTSA advises parking outside and away from structures. Null means unknown.
+        dimension:
+          type: categorical
+      - name: over_the_air_update
+        data_type: boolean
+        description: The remedy is delivered over the air. Null means unknown.
+        dimension:
+          type: categorical
+    semantic_model:
+      enabled: true
+    agg_time_dimension: report_received_date
+    metrics:
+      - name: campaign_count
+        type: simple
+        agg: count_distinct
+        expr: nhtsa_campaign_number
+        label: Recall campaigns
+        description: >
+          Distinct NHTSA recall campaigns. A recall means a campaign, never a row: one campaign covering five models
+          and three model years counts once. Filter or group by recall_row__make, recall_row__model,
+          recall_row__model_year or recall_row__component_group. This is the answer to every "how many recalls"
+          question.
+      - name: affected_vehicle_rows
+        type: simple
+        agg: count
+        expr: recall_row_key
+        label: Affected vehicle rows
+        description: >
+          Campaign x configured vehicle rows: a vehicle covered by two campaigns counts twice. Not a recall count
+          (use campaign_count) and not a vehicle count (use affected_vehicles). Only for "how many campaign x vehicle
+          rows".
+      - name: affected_vehicles
+        type: simple
+        agg: count_distinct
+        expr: make || '|' || model || '|' || cast(model_year as varchar)
+        label: Affected configured vehicles
+        description: >
+          Distinct configured vehicles (make, model, model year) that at least one campaign in the window covers. A
+          vehicle covered by several campaigns counts once. The answer to "how many configured vehicles do the
+          campaigns cover". Never add it across makes or models: query it filtered or grouped instead.
+      - name: park_it_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when park_it then nhtsa_campaign_number end
+        label: Do-not-drive campaigns
+        description: Recall campaigns where NHTSA advises not driving the vehicle. Group by campaign to list them.
+      - name: park_outside_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when park_outside then nhtsa_campaign_number end
+        label: Park-outside campaigns
+        description: >
+          Recall campaigns where NHTSA advises parking outside, usually a fire risk. Group by campaign to list them.
+      - name: over_the_air_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when over_the_air_update then nhtsa_campaign_number end
+        label: Over-the-air campaigns
+        description: >
+          Recall campaigns NHTSA flagged as over the air (over_the_air_update true). Not every over-the-air remedy:
+          many campaigns describe an over-the-air software update in the remedy text with the flag false. Answer "how
+          many are flagged over the air" with this metric; find over-the-air remedies in general with campaign_search.
+          Group by campaign to list them.
+
+  - name: nhtsa_campaign
+    description: >
+      One row per NHTSA recall campaign: the makes and models it covers among the configured vehicles, its model-year
+      range, its vehicle-row count and one copy of its text. Flags are true when any covered row is true, false when
+      every row is false, null when unknown. makes and models are comma-separated lists, for reading; filter on make
+      through nhtsa_recall.
+    config:
+      group: nhtsa_recalls_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: nhtsa_campaign_number
+        data_type: varchar
+        description: NHTSA campaign number, unique. One campaign is one recall.
+        data_tests:
+          - unique
+          - not_null
+        entity:
+          type: primary
+          name: campaign
+      - name: manufacturer
+        data_type: varchar
+        description: Manufacturer that filed the campaign.
+        dimension:
+          type: categorical
+      - name: makes
+        data_type: varchar
+        description: Configured makes the campaign covers, sorted, comma-separated.
+        dimension:
+          type: categorical
+      - name: models
+        data_type: varchar
+        description: Configured make + model pairs the campaign covers, sorted, comma-separated.
+        dimension:
+          type: categorical
+      - name: configured_models
+        data_type: integer
+        description: How many configured models the campaign covers. More than 1 means per-model counts overlap.
+        data_tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: model_year_min
+        data_type: integer
+        description: Earliest configured model year covered.
+        dimension:
+          type: categorical
+      - name: model_year_max
+        data_type: integer
+        description: Latest configured model year covered.
+        dimension:
+          type: categorical
+      - name: vehicle_rows
+        data_type: integer
+        description: Configured vehicle rows the campaign covers.
+        data_tests:
+          - not_null
+      - name: component
+        data_type: varchar
+        description: NHTSA component path.
+      - name: component_group
+        data_type: varchar
+        description: The system before the first colon of component.
+        dimension:
+          type: categorical
+      - name: report_received_date
+        data_type: date
+        description: Date NHTSA received the report.
+        data_tests:
+          - not_null
+        granularity: day
+        dimension:
+          type: time
+          name: campaign_report_date
+      - name: report_month
+        data_type: date
+        description: First day of the report month.
+      - name: park_it
+        data_type: boolean
+        description: Any covered row advises not driving. Null means unknown.
+        dimension:
+          type: categorical
+      - name: park_outside
+        data_type: boolean
+        description: Any covered row advises parking outside. Null means unknown.
+        dimension:
+          type: categorical
+      - name: over_the_air_update
+        data_type: boolean
+        description: Any covered row has an over-the-air remedy. Null means unknown.
+        dimension:
+          type: categorical
+      - name: summary
+        data_type: varchar
+        description: NHTSA defect summary.
+      - name: consequence
+        data_type: varchar
+        description: NHTSA consequence text.
+      - name: remedy
+        data_type: varchar
+        description: NHTSA remedy text.
+      - name: notes
+        data_type: varchar
+        description: NHTSA notes.
+    semantic_model:
+      enabled: true
+    agg_time_dimension: campaign_report_date
+    metrics:
+      - name: multi_model_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when configured_models > 1 then nhtsa_campaign_number end
+        label: Multi-model campaigns
+        description: >
+          Recall campaigns that cover more than one configured model. Summing per-model campaign counts double-counts
+          each of these.
+      - name: first_report_date
+        type: simple
+        agg: min
+        expr: report_received_date
+        label: First report date
+        description: >
+          Earliest NHTSA report date in the data. With last_report_date, the window every answer names. Query it on
+          its own (the report_window saved query): it has no join path to the recall_row dimensions, so grouping or
+          filtering it by recall_row__make or any other recall_row dimension fails.
+      - name: last_report_date
+        type: simple
+        agg: max
+        expr: report_received_date
+        label: Last report date
+        description: >
+          Latest NHTSA report date in the data. With first_report_date, the window every answer names. Query it on
+          its own (the report_window saved query): it has no join path to the recall_row dimensions, so grouping or
+          filtering it by recall_row__make or any other recall_row dimension fails.
+
+  - name: nhtsa_model_coverage
+    description: >
+      One row per configured make x model, across all its configured model years. The only place that proves a model
+      had no recalls in the window: has_campaigns false is a value, while a model that was never configured has no
+      row and its recall history is unknown.
+    columns:
+      - name: make_model
+        description: make + ' ' + model, unique.
+        data_tests:
+          - unique
+          - not_null
+        entity:
+          type: primary
+          name: configured_model
+      - name: make
+        description: Configured make.
+        dimension:
+          type: categorical
+      - name: model
+        description: Configured model name.
+        dimension:
+          type: categorical
+      - name: configured_model_years
+        description: Model years configured for this model.
+      - name: model_year_min
+        description: Earliest configured model year.
+      - name: model_year_max
+        description: Latest configured model year.
+      - name: campaign_count
+        description: Distinct campaigns covering any configured year of this model. 0 means none in the window.
+        data_tests:
+          - not_null
+      - name: has_campaigns
+        description: True when at least one campaign covers the model in the window.
+        data_tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: last_synced_at
+        description: When the connector last queried this model.
+      - name: last_synced_date
+        description: Date of last_synced_at.
+        granularity: day
+        dimension:
+          type: time
+          name: last_synced_date
+    semantic_model:
+      enabled: true
+    agg_time_dimension: last_synced_date
+    metrics:
+      - name: configured_models
+        type: simple
+        agg: count_distinct
+        expr: make_model
+        label: Configured models
+        description: Make + model pairs the connector is configured to query.
+      - name: models_with_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when has_campaigns then make_model end
+        label: Models with recalls
+        description: Configured models with at least one recall campaign in the window.
+      - name: models_without_campaigns
+        type: simple
+        agg: count_distinct
+        expr: case when not has_campaigns then make_model end
+        label: Models with no recalls
+        description: >
+          Configured models with no recall campaign in the window. Group by configured_model to list them. Only
+          configured models can be proven to have none.
+
+  - name: nhtsa_component
+    description: >
+      Campaigns per component group per make. A campaign that covers two makes counts once under each, so add
+      campaign_count across makes only when the question is per make; for a total, use the campaign_count metric.
+    config:
+      group: nhtsa_recalls_context
+      access: public
+      contract:
+        enforced: true
+    columns:
+      - name: component_group
+        data_type: varchar
+        description: The system before the first colon of component.
+      - name: make
+        data_type: varchar
+        description: Configured make.
+      - name: campaign_count
+        data_type: integer
+        description: Distinct campaigns for this component group and make.
+      - name: vehicle_rows
+        data_type: integer
+        description: Configured vehicle rows for this component group and make.
+
+  - name: nhtsa_coverage
+    description: >
+      One row per configured make x model x model year. campaign_count is 0 when the connector holds no campaign for
+      that vehicle. campaigns_returned is the connector's count of the campaign rows it kept, kept for
+      reconciliation.
+    columns:
+      - name: make
+        description: Configured make.
+        data_tests:
+          - not_null
+      - name: model
+        description: Configured model name.
+        data_tests:
+          - not_null
+      - name: model_year
+        description: Configured model year.
+        data_tests:
+          - not_null
+      - name: nhtsa_model
+        description: The model name sent to NHTSA.
+      - name: campaign_count
+        description: Distinct campaigns the connector holds for this vehicle. 0 means none.
+        data_tests:
+          - not_null
+      - name: has_campaigns
+        description: campaign_count > 0.
+      - name: campaigns_returned
+        description: >
+          The connector's count of the campaign rows it kept for this vehicle on its last sync: the campaigns inside
+          the report-date window, after its own filtering, plus any tracked campaign kept because its result was
+          skipped or because NHTSA listed no recalls for its model year to a query that covers the one it was
+          tracked under (the same nhtsa_model in any ASCII letter case, over a window that contains the earlier one). Not
+          the number the API returned, which can be larger or smaller.
+      - name: last_synced_at
+        description: When the connector last queried this vehicle.
+
+  - name: nhtsa_sync_window
+    description: >
+      One row: the report dates the answers come from and the sync that produced them. Every answer names this window.
+    columns:
+      - name: first_report_date
+        description: >
+          Earliest report date observed. A tracked campaign the connector kept because its record could not be read
+          can carry a date outside a report window that has since changed.
+      - name: last_report_date
+        description: Latest report date observed, with the same exception as first_report_date.
+      - name: campaigns
+        description: Campaigns in the window.
+      - name: configured_vehicles
+        description: Configured make x model x model year rows.
+      - name: configured_models
+        description: Configured make + model pairs.
+      - name: last_synced_at
+        description: When the connector last queried NHTSA.
