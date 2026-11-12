@@ -177,6 +177,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Similarweb** ([similarweb](https://github.com/fivetran/community_connectors/tree/main/similarweb)) - Sync website performance metrics from SimilarWeb
 - **Smartsheet** ([smartsheets](https://github.com/fivetran/community_connectors/tree/main/smartsheets)) - Sync sheets and reports from Smartsheets
 - **Snipe-IT** ([snipeitapp](https://github.com/fivetran/community_connectors/tree/main/snipeitapp)) - Sync IT asset management data from Snipe-IT
+- **Sopheon Accolade** ([sopheon_accolade](https://github.com/fivetran/community_connectors/tree/main/sopheon_accolade)) - Run Sopheon Accolade reports and load the results with paging
 - **SpecStream** ([specstream](https://github.com/fivetran/community_connectors/tree/main/specstream)) - Sync live web data from SpecStream (companies, local businesses, job posts, filings, tenders and grants), each value with the page it was read from
 - **StatusCake** ([status_cake](https://github.com/fivetran/community_connectors/tree/main/status_cake)) - Sync uptime monitoring from StatusCake
 - **SuiteDash** ([suitedash](https://github.com/fivetran/community_connectors/tree/main/suitedash)) - Sync CRM data from SuiteDash API
