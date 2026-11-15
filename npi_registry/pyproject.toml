@@ -1,0 +1,5 @@
+[project]
+name = "npi-registry"
+version = "0.1.0"
+description = "This connector fetches healthcare provider data from the National Plan and Provider Enumeration System (NPPES) NPI Registry API."
+requires-python = ">=3.10"

@@ -1,0 +1,5 @@
+[project]
+name = "wms-oracle"
+version = "0.1.0"
+description = "This connector syncs warehouse management data from the Oracle WMS Cloud REST API to a Fivetran destination."
+requires-python = ">=3.10"

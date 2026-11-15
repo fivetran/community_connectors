@@ -1,0 +1,8 @@
+[project]
+name = "sql-server"
+version = "0.1.0"
+description = "This connector demonstrates how to connect to a Microsoft SQL Server database using pyodbc and the Fivetran Connector SDK."
+requires-python = ">=3.10"
+dependencies = [
+    "pyodbc",
+]

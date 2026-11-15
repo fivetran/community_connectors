@@ -1,0 +1,5 @@
+[project]
+name = "toast"
+version = "0.1.0"
+description = "This is a custom Fivetran connector implementation to extract and sync data from the Toast POS API into a destination warehouse."
+requires-python = ">=3.10"

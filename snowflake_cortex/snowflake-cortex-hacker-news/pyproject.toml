@@ -1,0 +1,5 @@
+[project]
+name = "snowflake-cortex-snowflake-cortex-hacker-news"
+version = "0.1.0"
+description = "This connector syncs top stories from the Hacker News API and enriches them with AI-powered analysis using the Snowflake Cortex REST API during ingestion."
+requires-python = ">=3.10"

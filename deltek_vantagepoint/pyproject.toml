@@ -1,0 +1,5 @@
+[project]
+name = "deltek-vantagepoint"
+version = "0.1.0"
+description = "This connector syncs data from the Deltek Vantagepoint REST API to a Fivetran destination."
+requires-python = ">=3.10"

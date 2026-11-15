@@ -1,0 +1,8 @@
+[project]
+name = "ibm-db2-ibm-db2-log-based-replication"
+version = "0.1.0"
+description = "This connector demonstrates log-based Change Data Capture (CDC) for IBM Db2 using the Fivetran Connector SDK and IBM's SQL Replication ASN (Apply-Snapshot-Notify) framework."
+requires-python = ">=3.10"
+dependencies = [
+    "ibm_db==3.2.6",
+]

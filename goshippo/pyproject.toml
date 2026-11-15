@@ -1,0 +1,5 @@
+[project]
+name = "goshippo"
+version = "0.1.0"
+description = "This connector syncs shipment data from the Goshippo API to your destination using the Fivetran Connector SDK."
+requires-python = ">=3.10"

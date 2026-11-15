@@ -1,0 +1,9 @@
+[project]
+name = "influx-db"
+version = "0.1.0"
+description = "This connector enables data synchronization from InfluxDB using Fivetran Connector SDK."
+requires-python = ">=3.10"
+dependencies = [
+    "influxdb3_python",
+    "pandas",
+]

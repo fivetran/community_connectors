@@ -1,0 +1,5 @@
+[project]
+name = "oura-ring"
+version = "0.1.0"
+description = "This connector syncs health and wellness data from the Oura Ring API v2 into your Fivetran destination."
+requires-python = ">=3.10"

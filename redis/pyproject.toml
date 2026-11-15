@@ -1,0 +1,8 @@
+[project]
+name = "redis"
+version = "0.1.0"
+description = "This connector syncs data from Redis to Fivetran for historical analytics."
+requires-python = ">=3.10"
+dependencies = [
+    "redis",
+]

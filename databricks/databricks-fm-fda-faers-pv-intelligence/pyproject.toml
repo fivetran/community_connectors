@@ -1,0 +1,5 @@
+[project]
+name = "databricks-databricks-fm-fda-faers-pv-intelligence"
+version = "0.1.0"
+description = "This connector syncs adverse event reports from the FDA Adverse Event Reporting System (FAERS) via the OpenFDA Drug Event API and enriches each serious event with AI-powered multi-agent debate analysis using the Databricks ai_query() SQL function."
+requires-python = ">=3.10"

@@ -1,0 +1,5 @@
+[project]
+name = "semantic-scholar"
+version = "0.1.0"
+description = "This connector syncs academic paper records from the Semantic Scholar Academic Graph API and optionally enriches each paper with Snowflake Cortex AI analysis during ingestion."
+requires-python = ">=3.10"

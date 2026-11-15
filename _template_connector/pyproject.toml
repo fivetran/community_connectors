@@ -1,0 +1,5 @@
+[project]
+name = "template-connector"
+version = "0.1.0"
+description = "Template connector for building Fivetran community connectors."
+requires-python = ">=3.10"

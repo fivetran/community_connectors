@@ -1,0 +1,8 @@
+[project]
+name = "specstream"
+version = "0.1.0"
+description = "This connector syncs your SpecStream data into your Fivetran destination."
+requires-python = ">=3.10"
+dependencies = [
+    "ijson==3.6.0",
+]

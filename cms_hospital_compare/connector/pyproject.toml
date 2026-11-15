@@ -1,0 +1,5 @@
+[project]
+name = "cms-hospital-compare-connector"
+version = "0.1.0"
+description = "This connector syncs five hospital datasets from the public CMS Provider Data Catalog (Care Compare) datastore API (https://data.cms.gov/provider-data/api/1): Hospital General Information, Timely and Effective Care, Unplanned Hospital Visits for hospitals and for the nation, and the Hospital Readmis"
+requires-python = ">=3.10"
