@@ -2,7 +2,7 @@
 name = "documentdb"
 version = "0.1.0"
 description = "This connector integrates AWS DocumentDB with Fivetran, syncing data from DocumentDB collections to your destination."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "pymongo",
     "python-dateutil",

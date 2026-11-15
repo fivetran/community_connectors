@@ -2,4 +2,4 @@
 name = "sap-ariba"
 version = "0.1.0"
 description = "This example demonstrates how to use the Fivetran Connector SDK to extract purchase order and line-item data from the SAP Ariba API."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"

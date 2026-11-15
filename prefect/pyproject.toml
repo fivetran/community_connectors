@@ -2,4 +2,4 @@
 name = "prefect"
 version = "0.1.0"
 description = "This connector syncs workflow orchestration data from Prefect Cloud to your data warehouse using the Prefect Cloud REST API."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"

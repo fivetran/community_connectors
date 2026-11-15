@@ -2,7 +2,7 @@
 name = "neo4j"
 version = "0.1.0"
 description = "This connector shows how to extract data from Neo4j graph databases and upsert it using Fivetran Connector SDK."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "neo4j==6.1.0",
     "neo4j-driver==5.28.3",

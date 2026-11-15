@@ -2,7 +2,7 @@
 name = "raven-db"
 version = "0.1.0"
 description = "This connector integrates RavenDB with Fivetran, syncing data from RavenDB collections to your destination."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "ravendb==5.2.5",
 ]

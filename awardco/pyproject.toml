@@ -2,4 +2,4 @@
 name = "awardco"
 version = "0.1.0"
 description = "Awardco is an employee recognition platform."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"

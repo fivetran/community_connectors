@@ -2,4 +2,4 @@
 name = "bright-data-scrape"
 version = "0.1.0"
 description = "This connector syncs web scraping data from Bright Data's Web Scraper API to your Fivetran destination."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"

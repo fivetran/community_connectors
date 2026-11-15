@@ -2,7 +2,7 @@
 name = "aws-athena-using-boto3"
 version = "0.1.0"
 description = "This example demonstrates how to sync data from Amazon Athena into a Fivetran destination table using the Fivetran Connector SDK and the boto3 AWS SDK for Python."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "boto3",
 ]

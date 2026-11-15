@@ -2,4 +2,4 @@
 name = "databricks-databricks-fm-tvmaze-programming-intelligence"
 version = "0.1.0"
 description = "This connector syncs TV show metadata from the TVMaze API and enriches each show with AI-powered multi-agent debate using the Databricks ai_query() SQL function."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"

@@ -2,7 +2,7 @@
 name = "sap-hana-sql"
 version = "0.1.0"
 description = "This connector extracts data from a SAP HANA database using the hdbcli."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "hdbcli==2.25.29",
 ]

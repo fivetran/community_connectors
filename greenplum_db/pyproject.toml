@@ -2,7 +2,7 @@
 name = "greenplum-db"
 version = "0.1.0"
 description = "This connector example demonstrates how to fetch data from a Greenplum database and upsert it into destination table using Fivetran Connector SDK."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.14"
 dependencies = [
     "psycopg2_binary==2.9.10",
 ]
