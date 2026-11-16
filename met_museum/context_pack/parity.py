@@ -33,11 +33,11 @@ import argparse
 # For fingerprinting normalized result sets
 import hashlib
 
-# For reading the compiled manifests and the lake config
-import json
-
 # For walking two engines' results row by row
 import itertools
+
+# For reading the compiled manifests and the lake config
+import json
 
 # For the local model backend's HTTP calls
 import os
@@ -87,7 +87,8 @@ SOURCE_TABLES = (
 SKIP_MODELS = {"metricflow_time_spine"}
 
 # Rows fetched from each engine at a time. The *_all_rows checks return whole tables, so the compute lane compares
-# the two engines batch by batch and never holds either result in memory.
+# the two engines batch by batch. Python holds one batch per engine at a time; DuckDB still builds its whole result
+# before the first fetch.
 BATCH_ROWS = 10_000
 
 # The compare keeps this many rows to print: a short result in full, and the first differing rows of a long one.
@@ -602,7 +603,7 @@ def compare(
     """
     Run one checked query on both engines, compare the results row by row while fetching them in batches, print both
     results' row counts and fingerprints, and return whether they match exactly. Both results are read to the end, so
-    the counts and fingerprints cover every row, and neither result is held in memory.
+    the counts and fingerprints cover every row, and Python keeps only one batch per engine at a time.
     Args:
         name: the check's name.
         sql: the checked query.
