@@ -143,7 +143,7 @@ cross join choice
 |---|---|---|---|---|---|---|
 | 2026-11-09 | 2026-11-02 | True | 14.42 | 8.68 | 5 | 5.74 |
 
-Answer: the weekly Prime report of 2026-11-09 priced boneless strip loin (IMPS 180, 0x1) at a wholesale $14.42 per pound. Choice averaged $8.68 per pound over the 5 daily report dates of that week, 2026-11-02 (the previous Prime report date) through 2026-11-06, so Prime was $5.74 per pound higher. The lag runs over every Prime report of the cut, so when Prime did not trade that week `prime_traded` is false and there is no premium to quote.
+Answer: the weekly Prime report of 2026-11-09 priced boneless strip loin (IMPS 180, 0x1) at a wholesale $14.42 per pound. Choice averaged $8.68 per pound over the 5 daily report dates of that week, 2026-11-02 (the previous Prime report date) through 2026-11-06, so Prime was $5.74 per pound higher. `prime_premium_per_lb` is computed from the unrounded prices, so it can differ by a cent from the difference of the two rounded prices shown. Quote it as computed, and when it differs from that difference, say the prices are rounded to the cent. The lag runs over every Prime report of the cut, so when Prime did not trade that week `prime_traded` is false and there is no premium to quote.
 
 ### 3. What is the Choice-Select cutout spread on the latest report date, against its 28-day average?
 
