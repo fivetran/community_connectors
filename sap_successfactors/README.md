@@ -1,3 +1,9 @@
+---
+name: SAP SuccessFactors
+description: Sync all SAP SuccessFactors HR entities via OData v2 with incremental sync, effective-dated entity support, and form hierarchy replication
+category: SaaS & APIs
+---
+
 # SAP SuccessFactors Connector Example
 
 ## Connector overview
