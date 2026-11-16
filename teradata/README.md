@@ -56,13 +56,13 @@ The connector uses a configuration file to specify connection details and table 
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. This connector uses the following library:
+The `pyproject.toml` file specifies the Python libraries required by the connector. This connector uses the following library:
 
 ```
 teradatasql
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

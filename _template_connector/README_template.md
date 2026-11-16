@@ -29,7 +29,7 @@ category: "<One of: Databases, Cloud Data Warehouses, Message Queues & Streaming
 *Do not duplicate the content in several sections. For example, do not add a Schema Definition section since the Tables Created section should include schema-related information.*
 *Do create additional sections decribing example-specific areas if the sections present in this template do not cover them.*
 *Use hyphen (-) in bulleted lists instead of asterisk (*).*
-*Enclose file names in backticks, for example, `configuration.json`, `requirements.txt`, `connector.py`, `mock\_api`.*
+*Enclose file names in backticks, for example, `configuration.json`, `requirements.txt` or `pyproject.toml`, `connector.py`, `mock\_api`.*
 *Do not use emojis.*
 
 
@@ -90,15 +90,15 @@ fivetran init --template <connector-name>
 
 
 ## Requirements file
-*Explain the role of the `requirements.txt` file in specifying the Python libraries required by the connector.*
+*Explain the role of the `pyproject.toml` file in specifying the Python libraries required by the connector.*
 
-*Example content of `requirements.txt`:*
+*Example content of `pyproject.toml`:*
 
 ```
 pandas
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`. 
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`. 
 
 ## Authentication
 *Explain the authentication mechanism used to access the source (e.g., API Key, OAuth2) and provide steps to obtain necessary credentials.*

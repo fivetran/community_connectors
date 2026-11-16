@@ -91,7 +91,7 @@ The connector requires `pyodbc` to connect to Sybase ASE via the bundled FreeTDS
 pyodbc==5.3.0
 ```
 
-> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 
 ## Authentication

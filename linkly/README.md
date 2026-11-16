@@ -65,9 +65,9 @@ All values are validated in `validate_configuration()` before any request is mad
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
-The connector uses only the Python standard library and the `requests` package, which is pre-installed in the Fivetran environment, so no `requirements.txt` file is needed.
+The connector uses only the Python standard library and the `requests` package, which is pre-installed in the Fivetran environment, so no `pyproject.toml` file is needed.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 Linkly uses API keys. The connector sends the key as a bearer token on every request (`Authorization: Bearer <api_key>`), which is the method Linkly recommends for production; it never places the key in a query string. Refer to `build_session()` in `connector.py`.

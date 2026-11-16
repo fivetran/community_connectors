@@ -55,7 +55,7 @@ The connector reads credentials from `configuration.json`:
 
 ## Requirements File
 
-`requirements.txt` lists Python packages installed into the connector runtime at deploy time:
+`pyproject.toml` lists Python packages installed into the connector runtime at deploy time:
 
 ```
 delta-sharing   # Official Delta Sharing Python client — handles DeletionVectors, incremental reads, and all advanced Delta table features
@@ -65,7 +65,7 @@ pyarrow         # Columnar data processing for Parquet file reads
 > **Why `delta-sharing` instead of raw HTTP?**  
 > Tables that use Delta features such as `enableDeletionVectors` cannot be read via the standard parquet query API (the server returns HTTP 400). The `delta_sharing` library handles these transparently using the `responseformat=delta` protocol capability.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`. 
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`. 
 
 
 ## Authentication

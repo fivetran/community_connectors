@@ -75,7 +75,7 @@ Full Configuration (with all optional parameters):
 ## Requirements file
 This connector uses only the pre-installed packages in the Fivetran environment and does not require any additional dependencies.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 This connector accesses the NOAA Weather API, which is a public API that does not require authentication. However, the API requires a User-Agent header to identify your application. This is a best practice implemented by the National Weather Service to track API usage and contact users if necessary. The User-Agent should include your application name and contact information (refer to the `make_api_request` function).
