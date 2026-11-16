@@ -41,18 +41,21 @@ def build_form(defaults: dict, tests: list) -> ConfigurationForm:
             required=True,
             field_type=form_field.TextField.password,
             description=(
-                "Refresh token from the authorization-code consent. It seeds the first sync; "
-                "the connector keeps each rotated token encrypted in state."
+                "Refresh token from the authorization-code consent. Each sync replaces it "
+                "with the rotated token through the Fivetran REST API."
             ),
         )
     )
     form.add_field(
         form_field.TextField(
-            "fernet_key",
-            label="Fernet key for the refresh token in state",
+            "fivetran_api_key",
+            label="Fivetran API key (base64 encoded)",
             required=True,
             field_type=form_field.TextField.password,
-            description="32 url-safe base64-encoded bytes, generated once for this connection.",
+            description=(
+                "Base64 encoding of <api_key>:<api_secret> for a user who can edit this "
+                "connection. The connector uses it to save each rotated refresh token."
+            ),
         )
     )
     form.add_field(

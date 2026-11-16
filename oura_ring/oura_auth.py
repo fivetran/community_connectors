@@ -2,26 +2,36 @@
 OAuth2 token refresh for the Oura Ring connector.
 
 Oura's server-side flow issues a single-use refresh token: every refresh returns a new access
-token and a new refresh token, and the old refresh token stops working. The connector therefore
-keeps the newest refresh token in state, encrypted with the Fernet key from the configuration, and
-checkpoints it before syncing any data. The configuration's refresh_token only seeds the first
-sync, or a new consent.
+token and a new refresh token, and the old refresh token stops working. A deployed connection
+writes the new refresh token back into its own configuration with the Fivetran REST API, so the
+next sync reads it from there and no secret is ever stored in state. A local `fivetran debug` run
+has no connection to update, so it keeps the rotated token in a file under the local files/
+folder, which is gitignored and never deployed.
 """
 
-# For fingerprinting the configuration's refresh token, so a new consent replaces the state copy
+# For checking the Fivetran API key's encoding
+import base64
+
+# For fingerprinting the configuration's refresh token, so a new consent replaces the local copy
 import hashlib
 
-# For checking the short error code Oura returns from the token endpoint
+# For reading and writing the local debug token file
+import json
+
+# For the deployment model and connection ID the SDK sets, and the local debug token file
+import os
+
+# For checking the short error code Oura returns from the token endpoint, and the connection ID
 import re
+
+# For writing the local debug token file atomically
+import tempfile
 
 # For waiting between token request retries
 import time
 
-# For making HTTP requests to the Oura token endpoint
+# For making HTTP requests to the Oura token endpoint and the Fivetran REST API
 import requests
-
-# For encrypting the rotated refresh token before it is written to state
-from cryptography.fernet import Fernet, InvalidToken
 
 # For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
@@ -40,8 +50,23 @@ __OAUTH_ERROR_CODE_PATTERN = re.compile(r"^[a-z_]{1,40}$")
 __RETRY_AFTER_SECONDS_PATTERN = re.compile(r"[0-9]+")
 __RETRY_AFTER_MAX_DIGITS = 18
 
-STATE_TOKEN_KEY = "encrypted_refresh_token"
-STATE_SOURCE_KEY = "refresh_token_source_sha256"
+__FIVETRAN_CONNECTIONS_URL = "https://api.fivetran.com/v1/connections"
+__FIVETRAN_API_TIMEOUT_SECONDS = 30
+__FIVETRAN_API_MAX_RETRIES = 3
+__FIVETRAN_API_BASE_DELAY_SECONDS = 2
+__FIVETRAN_API_MAX_RETRY_AFTER_SECONDS = 300
+# The GET and the PATCH send the same request again on a retry, so any of these is safe to retry
+__FIVETRAN_API_RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
+# Fivetran connection IDs are short words joined by underscores; anything else never reaches a URL
+__CONNECTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+
+# The SDK sets FIVETRAN_DEPLOYMENT_MODEL to local_debug during `fivetran debug`
+__LOCAL_DEBUG_MODEL = "local_debug"
+# The SDK keeps its local warehouse and state in files/, which the connector's .gitignore excludes
+# from git and from `fivetran deploy`
+__LOCAL_TOKEN_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "files", "oura_refresh_token.json"
+)
 
 
 class OuraAuthError(RuntimeError):
@@ -54,7 +79,8 @@ class OuraAuthError(RuntimeError):
 
 def fingerprint(token: str) -> str:
     """
-    Return the SHA-256 hex digest of a token, so state can recognise it without holding it.
+    Return the SHA-256 hex digest of a token, so the local debug file can recognise the
+    configured token without holding it.
 
     Args:
         token: the refresh token from the configuration
@@ -65,52 +91,87 @@ def fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def check_fernet_key(key) -> None:
+def is_local_debug() -> bool:
     """
-    Confirm the configuration's fernet_key is a valid Fernet key.
-
-    Args:
-        key: the fernet_key configuration value
-
-    Raises:
-        ValueError: if the key is not 32 url-safe base64-encoded bytes
-    """
-    try:
-        Fernet(key)
-    except (TypeError, ValueError) as e:
-        raise ValueError(
-            "fernet_key must be a Fernet key (32 url-safe base64-encoded bytes)"
-        ) from e
-
-
-def select_refresh_token(configuration: dict, state: dict) -> tuple:
-    """
-    Choose the refresh token to spend: the rotated one in state, unless the configuration holds a
-    newer consent or the state copy cannot be decrypted.
-
-    Args:
-        configuration: connector configuration with refresh_token and fernet_key
-        state: connector state from the previous sync
+    Report whether the connector runs under `fivetran debug`, where there is no connection to
+    update.
 
     Returns:
-        (refresh token to exchange, True when it is the configured token rather than the state one)
+        True for a local debug run, False for a deployed connection
     """
-    configured_token = configuration["refresh_token"]
-    encrypted_token = state.get(STATE_TOKEN_KEY)
-    if not encrypted_token:
-        return configured_token, True
-    if state.get(STATE_SOURCE_KEY) != fingerprint(configured_token):
-        log.info("The configuration holds a new refresh token, so it replaces the one in state")
-        return configured_token, True
+    return os.environ.get("FIVETRAN_DEPLOYMENT_MODEL") == __LOCAL_DEBUG_MODEL
+
+
+def check_fivetran_api_key(value) -> None:
+    """
+    Confirm the fivetran_api_key is the base64 encoding of <api_key>:<api_secret>, the value the
+    Fivetran REST API takes in a Basic Authorization header.
+
+    Args:
+        value: the fivetran_api_key configuration value
+
+    Raises:
+        ValueError: if the value is not base64 or does not decode to a key and secret
+    """
+    message = "fivetran_api_key must be the base64 encoding of <api_key>:<api_secret>"
+    if not isinstance(value, str):
+        raise ValueError(message)
     try:
-        decrypted = Fernet(configuration["fernet_key"]).decrypt(encrypted_token.encode())
-        return decrypted.decode(), False
-    except InvalidToken:
-        log.warning(
-            "The refresh token in state cannot be decrypted with this fernet_key, "
-            "so the configured refresh token is used"
-        )
-        return configured_token, True
+        decoded = base64.b64decode(value, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ValueError(message) from e
+    api_key, separator, api_secret = decoded.partition(":")
+    if not (api_key and separator and api_secret):
+        raise ValueError(message)
+
+
+def read_local_refresh_token(configured_token: str):
+    """
+    Read the token a previous local debug run rotated, when it came from the configured token.
+
+    Args:
+        configured_token: the refresh_token from the configuration
+
+    Returns:
+        the rotated refresh token, or None when there is none or the configuration holds a new
+        consent
+    """
+    if not os.path.exists(__LOCAL_TOKEN_PATH):
+        return None
+    try:
+        with open(__LOCAL_TOKEN_PATH, "r") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        log.warning("The local debug token file cannot be read, so the configured token is used")
+        return None
+    if not isinstance(saved, dict) or saved.get("source_sha256") != fingerprint(configured_token):
+        log.info("The configuration holds a new refresh token, so it replaces the local one")
+        return None
+    token = saved.get("refresh_token")
+    return token if isinstance(token, str) and token else None
+
+
+def write_local_refresh_token(configured_token: str, new_token: str) -> None:
+    """
+    Keep the rotated token for the next local debug run, in a file only the user can read.
+
+    Args:
+        configured_token: the refresh_token from the configuration, recorded as a fingerprint
+        new_token: the refresh token Oura returned
+    """
+    directory = os.path.dirname(__LOCAL_TOKEN_PATH)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    saved = {"source_sha256": fingerprint(configured_token), "refresh_token": new_token}
+    fd, temp_path = tempfile.mkstemp(dir=directory, prefix=".oura-", suffix=".tmp")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(saved, f)
+        os.replace(temp_path, __LOCAL_TOKEN_PATH)
+    finally:
+        # After a successful replace the temporary file is gone; otherwise it is removed here
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 def oauth_error_code(response):
@@ -288,34 +349,170 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
     raise RuntimeError("Oura token refresh did not complete")
 
 
-def refresh_access_token(configuration: dict, state: dict, user_agent: str) -> str:
+def connection_url() -> str:
     """
-    Spend the current refresh token, store its replacement encrypted in state, and return the new
-    access token. The caller must checkpoint state before any other API call.
+    Build the Fivetran REST API URL of this connection from the ID the SDK sets.
+
+    Returns:
+        https://api.fivetran.com/v1/connections/<connection_id>
+
+    Raises:
+        RuntimeError: if FIVETRAN_CONNECTION_ID is missing or is not a plain connection ID
+    """
+    connection_id = os.environ.get("FIVETRAN_CONNECTION_ID") or ""
+    if not __CONNECTION_ID_PATTERN.match(connection_id):
+        raise RuntimeError(
+            "FIVETRAN_CONNECTION_ID is missing or malformed, so the connector cannot update its "
+            "configuration"
+        )
+    return f"{__FIVETRAN_CONNECTIONS_URL}/{connection_id}"
+
+
+def fivetran_api_request(method: str, configuration: dict, payload=None):
+    """
+    Call the Fivetran REST API for this connection, retrying network failures and the statuses
+    that mean Fivetran did not process the request. Both calls this connector makes are safe to
+    send twice: a GET, and a PATCH that sets the same values.
 
     Args:
-        configuration: connector configuration with client_id, client_secret, refresh_token
-            and fernet_key
-        state: connector state, updated in place with the encrypted replacement token
+        method: GET or PATCH
+        configuration: connector configuration with fivetran_api_key
+        payload: the JSON body of a PATCH
+
+    Returns:
+        the final response, which may be an error status
+
+    Raises:
+        RuntimeError: if the Fivetran REST API stays unreachable
+    """
+    url = connection_url()
+    headers = {
+        "Accept": "application/json;version=2",
+        "Authorization": f"Basic {configuration['fivetran_api_key']}",
+        "Content-Type": "application/json",
+    }
+    for attempt in range(__FIVETRAN_API_MAX_RETRIES + 1):
+        try:
+            response = requests.request(
+                method,
+                url,
+                headers=headers,
+                json=payload,
+                timeout=__FIVETRAN_API_TIMEOUT_SECONDS,
+                allow_redirects=False,
+            )
+        except requests.exceptions.RequestException as e:
+            if attempt == __FIVETRAN_API_MAX_RETRIES:
+                raise RuntimeError(f"Fivetran REST API unreachable ({type(e).__name__})") from e
+            time.sleep(__FIVETRAN_API_BASE_DELAY_SECONDS * (2**attempt))
+            continue
+        is_retryable = response.status_code in __FIVETRAN_API_RETRYABLE_STATUS_CODES
+        if is_retryable and attempt < __FIVETRAN_API_MAX_RETRIES:
+            delay_seconds = retry_delay(
+                response,
+                attempt,
+                __FIVETRAN_API_BASE_DELAY_SECONDS,
+                __FIVETRAN_API_MAX_RETRY_AFTER_SECONDS,
+            )
+            log.info(
+                f"Fivetran REST API returned HTTP {response.status_code}, "
+                f"retrying in {delay_seconds}s"
+            )
+            time.sleep(delay_seconds)
+            continue
+        return response
+    raise RuntimeError("Fivetran REST API request did not complete")
+
+
+def check_connection_access(configuration: dict) -> None:
+    """
+    Confirm the Fivetran API key can read this connection before the single-use Oura token is
+    spent, so a wrong key fails the sync without costing a new consent.
+
+    Args:
+        configuration: connector configuration with fivetran_api_key
+
+    Raises:
+        RuntimeError: if the Fivetran REST API refuses the key or cannot find the connection
+    """
+    response = fivetran_api_request("GET", configuration)
+    if response.status_code == 200:
+        return
+    raise RuntimeError(
+        f"Fivetran REST API returned HTTP {response.status_code} for this connection. Check that "
+        "fivetran_api_key is the base64 encoding of an API key and secret whose user can edit "
+        "this connection. The Oura refresh token was not spent"
+    )
+
+
+def save_refresh_token_to_configuration(configuration: dict, new_token: str) -> None:
+    """
+    Write the rotated refresh token into this connection's configuration with the Fivetran REST
+    API, so the next sync reads it from there. The PATCH replaces every configuration value, so
+    the payload carries all of them.
+
+    Args:
+        configuration: connector configuration, sent back with the new refresh_token
+        new_token: the refresh token Oura returned
+
+    Raises:
+        RuntimeError: if the configuration could not be updated; Oura has already invalidated
+            the configured token by then
+    """
+    updated = dict(configuration, refresh_token=new_token)
+    payload = {
+        "config": {
+            "secrets_list": [
+                {"key": str(key), "value": str(value)}
+                for key, value in updated.items()
+                if value is not None
+            ]
+        }
+    }
+    lost_token = (
+        "Oura has already invalidated the configured refresh_token, so complete the OAuth "
+        "consent again and set the new refresh_token"
+    )
+    try:
+        response = fivetran_api_request("PATCH", configuration, payload)
+    except RuntimeError as e:
+        raise RuntimeError(f"{e} while saving the rotated refresh token. {lost_token}") from e
+    if not 200 <= response.status_code < 300:
+        raise RuntimeError(
+            f"Fivetran REST API returned HTTP {response.status_code} while saving the rotated "
+            f"refresh token. {lost_token}"
+        )
+
+
+def refresh_access_token(configuration: dict, user_agent: str) -> str:
+    """
+    Spend the current refresh token, save its replacement where the next sync reads it, and
+    return the new access token. A deployed connection saves it to its own configuration through
+    the Fivetran REST API; a local debug run saves it to the local token file.
+
+    Args:
+        configuration: connector configuration with client_id, client_secret, refresh_token,
+            and fivetran_api_key for a deployed connection
         user_agent: the connector's User-Agent header
 
     Returns:
         an access token for the Oura API
     """
-    refresh_token, from_configuration = select_refresh_token(configuration, state)
-    try:
-        body = post_refresh(configuration, refresh_token, user_agent)
-    except OuraAuthError as e:
-        if not (from_configuration and e.code == "invalid_grant"):
-            raise
-        raise OuraAuthError(
-            f"{e}. The configured refresh_token was used because state held no usable token (a "
-            "first sync, a full re-sync, a state reset, a new consent or a changed fernet_key), "
-            "and it is spent once any earlier sync or local debug run has used it",
-            e.code,
-        ) from e
-    fernet = Fernet(configuration["fernet_key"])
-    state[STATE_TOKEN_KEY] = fernet.encrypt(body["refresh_token"].encode()).decode()
-    state[STATE_SOURCE_KEY] = fingerprint(configuration["refresh_token"])
+    configured_token = configuration["refresh_token"]
+    local_debug = is_local_debug()
+    if local_debug:
+        refresh_token = read_local_refresh_token(configured_token) or configured_token
+    else:
+        check_connection_access(configuration)
+        refresh_token = configured_token
+
+    body = post_refresh(configuration, refresh_token, user_agent)
+
+    if local_debug:
+        write_local_refresh_token(configured_token, body["refresh_token"])
+        log.info("Saved the rotated refresh token to the local debug token file")
+    else:
+        save_refresh_token_to_configuration(configuration, body["refresh_token"])
+        log.info("Saved the rotated refresh token to the connection configuration")
     log.info("Refreshed the Oura access token")
     return body["access_token"]

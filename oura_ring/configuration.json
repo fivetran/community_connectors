@@ -2,6 +2,6 @@
     "client_id": "<YOUR_OURA_CLIENT_ID>",
     "client_secret": "<YOUR_OURA_CLIENT_SECRET>",
     "refresh_token": "<YOUR_OURA_REFRESH_TOKEN>",
-    "fernet_key": "<YOUR_FERNET_KEY>",
+    "fivetran_api_key": "<YOUR_BASE64_ENCODED_FIVETRAN_API_KEY>",
     "lookback_days": "<LOOKBACK_DAYS>"
 }

@@ -3,7 +3,8 @@ Oura Ring connector - Syncs daily activity, sleep, readiness, stress, heart rate
 sleep period data from the Oura API v2 to your Fivetran destination.
 
 The connector authenticates with Oura's OAuth2 server-side flow: each sync spends the single-use
-refresh token, keeps its replacement encrypted in state, and checkpoints it before reading any data.
+refresh token and writes its replacement back into the connection's configuration with the Fivetran
+REST API before reading any data, so no secret is stored in state.
 It tracks a per-table date cursor, re-reads a 7-day overlap on every sync because days can reach
 Oura late, after the ring syncs, and follows next_token pagination. Nested objects are flattened
 and arrays are serialized to JSON strings for warehouse compatibility.
@@ -42,8 +43,8 @@ from setup_form import build_form
 # The endpoint and column definition of every table
 from tables import TABLE_CONFIG
 
-# OAuth2 refresh with the rotated refresh token kept encrypted in state
-from oura_auth import check_fernet_key, refresh_access_token, retry_delay
+# OAuth2 refresh with the rotated refresh token written back to the connection's configuration
+from oura_auth import check_fivetran_api_key, is_local_debug, refresh_access_token, retry_delay
 
 # API Configuration Constants
 __BASE_URL = "https://api.ouraring.com"
@@ -172,13 +173,18 @@ def validate_configuration(configuration: dict):
     Raises:
         ValueError: if any required configuration parameter is missing or invalid.
     """
-    for key in ("client_id", "client_secret", "refresh_token", "fernet_key"):
+    required_keys = ["client_id", "client_secret", "refresh_token"]
+    # A local debug run keeps the rotated token in a local file, so it needs no Fivetran API key
+    if not (is_local_debug() and _is_placeholder(configuration.get("fivetran_api_key"))):
+        required_keys.append("fivetran_api_key")
+    for key in required_keys:
         if _is_placeholder(configuration.get(key)):
             raise ValueError(f"Missing required configuration value: {key}")
         value = configuration[key]
         if isinstance(value, str) and value != value.strip():
             raise ValueError(f"{key} has leading or trailing whitespace; remove it")
-    check_fernet_key(configuration["fernet_key"])
+    if "fivetran_api_key" in required_keys:
+        check_fivetran_api_key(configuration["fivetran_api_key"])
 
     lookback_days = configuration.get("lookback_days")
     if not _is_placeholder(lookback_days):
@@ -577,15 +583,7 @@ def update(configuration: dict, state: dict):
     lookback_days = _optional_int(configuration, "lookback_days", __DEFAULT_LOOKBACK_DAYS)
     today = get_current_date()
     migrate_legacy_state(state, today, lookback_days)
-    access_token = refresh_access_token(configuration, state, __USER_AGENT)
-
-    # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-    # from the correct position in case of next sync or interruptions.
-    # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
-    # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
-    # Learn more about how and where to checkpoint by reading our best practices documentation
-    # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
-    op.checkpoint(state=state)
+    access_token = refresh_access_token(configuration, __USER_AGENT)
 
     session = create_session(access_token)
     restricted_tables = []
@@ -628,10 +626,11 @@ def update(configuration: dict, state: dict):
 
 def verify_configuration(configuration: dict):
     """
-    Setup test: validate the configuration without calling Oura.
+    Setup test: validate the configuration without calling Oura or the Fivetran REST API.
 
-    Oura's refresh tokens are single-use and a setup test cannot save the replacement, so this
-    test never spends one. The first sync reports a rejected token or wrong client credentials.
+    Oura's refresh tokens are single-use, so this test never spends one. The first sync checks
+    that the Fivetran API key can reach the connection before it spends the token, and reports a
+    rejected token or wrong client credentials.
 
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.

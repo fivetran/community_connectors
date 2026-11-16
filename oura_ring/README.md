@@ -10,7 +10,7 @@ category: SaaS & APIs
 
 This connector syncs health and wellness data from the Oura API v2 into your Fivetran destination. It covers the daily activity, sleep, readiness, and stress summaries, continuous heart rate, and the detailed `sleep` table, which holds one row per sleep period with durations, HRV, and heart rate that the daily sleep score does not include.
 
-It authenticates with Oura's OAuth2 authorization-code flow, because Oura retired personal access tokens in December 2025. Oura's refresh tokens are single-use, so each sync spends one, keeps the replacement encrypted in state, and checkpoints it before reading any data. Each table keeps its own date cursor, and every sync re-reads the last 7 days because days can reach Oura late, after the ring syncs to the app.
+It authenticates with Oura's OAuth2 authorization-code flow, because Oura retired personal access tokens in December 2025. Oura's refresh tokens are single-use, so each sync spends one and writes the replacement back into the connection's configuration with the Fivetran REST API before reading any data. No secret is stored in state. Each table keeps its own date cursor, and every sync re-reads the last 7 days because days can reach Oura late, after the ring syncs to the app.
 
 ## Accreditation
 
@@ -58,26 +58,22 @@ The `configuration.json` file contains the parameters needed to connect to the O
     "client_id": "<YOUR_OURA_CLIENT_ID>",
     "client_secret": "<YOUR_OURA_CLIENT_SECRET>",
     "refresh_token": "<YOUR_OURA_REFRESH_TOKEN>",
-    "fernet_key": "<YOUR_FERNET_KEY>",
+    "fivetran_api_key": "<YOUR_BASE64_ENCODED_FIVETRAN_API_KEY>",
     "lookback_days": "<LOOKBACK_DAYS>"
 }
 ```
 
 - `client_id` (required): Client ID of your Oura API application
 - `client_secret` (required): Client secret of the same application
-- `refresh_token` (required): Refresh token from the authorization-code consent, with the `daily` and `heartrate` scopes. It seeds the first sync. After that the connector uses the rotated token it keeps in state.
-- `fernet_key` (required): A Fernet key (32 url-safe base64-encoded bytes) that encrypts the rotated refresh token in state. Generate one with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+- `refresh_token` (required): Refresh token from the authorization-code consent, with the `daily` and `heartrate` scopes. Each sync replaces it with the rotated token through the Fivetran REST API.
+- `fivetran_api_key` (required for a deployed connection): The base64 encoding of `<api_key>:<api_secret>` for a Fivetran user who can edit this connection. The connector uses it only to read this connection and to save each rotated refresh token into its configuration. A local `fivetran debug` run does not use it, so you can leave the placeholder in place for local testing. Refer to the [Fivetran REST API authentication documentation](https://fivetran.com/docs/rest-api/getting-started#authentication) to create a key, and use a user whose role can edit only the connections it needs.
 - `lookback_days` (optional): Number of days to read on a table's first sync, from 1 to 3650, defaults to 90
 
 > Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
-The `requirements.txt` file declares `cryptography`, which the connector uses to encrypt the rotated refresh token in state with the `fernet_key`. The version matches the one `fivetran_connector_sdk` pins, so the two do not conflict:
-
-```
-cryptography==49.0.0
-```
+This connector does not need a `requirements.txt` file. It uses only `requests` and the Python standard library, and `requests` is pre-installed in the Connector SDK runtime environment.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
@@ -88,18 +84,21 @@ The connector uses Oura's OAuth2 authorization-code (server-side) flow. To set i
 1. Register an API application at https://developer.ouraring.com/applications with a redirect URI, for example `http://localhost:8080/callback`, and the `daily` and `heartrate` scopes.
 2. Send the user to `https://cloud.ouraring.com/oauth/authorize` with `response_type=code`, your `client_id`, the redirect URI, the scopes, and a random `state` value.
 3. After consent, Oura redirects to the redirect URI with a `code`. Exchange it within a few minutes at `https://api.ouraring.com/oauth/token` with `grant_type=authorization_code`, the code, the redirect URI, and your client credentials.
-4. Add the `client_id`, `client_secret`, the returned `refresh_token`, and a new `fernet_key` to your `configuration.json` file.
+4. Add the `client_id`, `client_secret`, the returned `refresh_token`, and your base64-encoded `fivetran_api_key` to your `configuration.json` file.
+5. Use a separate consent, and so a separate `refresh_token`, for local testing and for the deployed connection. Oura refresh tokens are single-use: a `fivetran debug` run spends the token it is given, so if the deployed connection holds the same token, its next sync fails with `invalid_grant`, and the reverse is also true. Run steps 2 and 3 once for your local `configuration.json` and again for the token you enter in the deployed connection.
 
-At the start of every sync, the `def refresh_access_token(configuration, state, user_agent)` function in `oura_auth.py` exchanges the refresh token for a new access token. Oura invalidates a refresh token once it is used and returns a new one, so the connector encrypts the new refresh token with the `fernet_key`, stores it in state, and checkpoints that state before it requests any data. After the first sync the connector uses the token in state, and the configured `refresh_token` is spent. State records a SHA-256 fingerprint of the configured token, so a new consent with a different `refresh_token` replaces the token in state.
+At the start of every sync, the `def refresh_access_token(configuration, user_agent)` function in `oura_auth.py` exchanges the refresh token for a new access token. Oura invalidates a refresh token once it is used and returns a new one, so the connector must save the new refresh token before the next sync. It does that with the [update configuration during sync](https://github.com/fivetran/connector_sdk/tree/main/examples/common_patterns/update_configuration_during_sync) pattern, so the token never enters state:
 
-Because the configured `refresh_token` works only once, two situations need a new consent:
+1. The connector reads this connection with the Fivetran REST API (`GET /v1/connections/{connection_id}`, with the ID from the `FIVETRAN_CONNECTION_ID` environment variable). If the `fivetran_api_key` is wrong or cannot reach the connection, the sync stops here and the Oura refresh token is not spent.
+2. It exchanges the configured `refresh_token` at Oura's token endpoint.
+3. It writes the new refresh token into the connection's configuration with `PATCH /v1/connections/{connection_id}`. That call replaces every configuration value, so the connector sends all of them back with only `refresh_token` changed. The next sync reads the new token from the configuration.
+4. Only then does it request any Oura data.
 
-- A full re-sync, or any reset of the connector's state, removes the token in state. The next sync falls back to the configured `refresh_token`, which is already spent, and stops with an error that says so. Complete the consent again and set the new `refresh_token` before the next sync.
-- A local `fivetran debug` run spends the configured `refresh_token` into the local state. Complete the consent again after testing locally and before you deploy, so the deployed connection starts with an unspent token.
+Both Fivetran REST API calls are retried on network errors and on HTTP 429 and 5xx responses. If the `PATCH` still fails, Oura has already invalidated the configured `refresh_token`, so the sync stops with an error that asks you to complete the consent again and set the new `refresh_token`. A full re-sync or a reset of the connector's state does not affect the token, because it is kept in the configuration.
 
-To rotate the `fernet_key`, run the consent again and set the new `refresh_token` and the new `fernet_key` together. The first sync after that encrypts the next token with the new key. If only the key changes, the connector cannot decrypt the token in state and falls back to the configured `refresh_token`, which fails if it was already spent.
+A local `fivetran debug` run has no connection to update, so it keeps the rotated token in `files/oura_refresh_token.json`, readable only by your user, next to the local warehouse and state. The `files/` folder is excluded from git and from `fivetran deploy` by the connector's `.gitignore`. The file records a SHA-256 fingerprint of the configured `refresh_token`, so a new consent replaces it. Because a local run spends the configured `refresh_token`, give the deployed connection a token from its own consent (step 5 above).
 
-The setup test (refer to `def verify_configuration(configuration)`) checks that every value is present and that the `fernet_key` is valid. It does not call Oura, because a setup test cannot save a rotated token and would spend the only valid one.
+The setup test (refer to `def verify_configuration(configuration)`) checks that every value is present and that the `fivetran_api_key` decodes to a key and secret. It calls neither Oura nor the Fivetran REST API, because a setup test cannot save a rotated token and would spend the only valid one.
 
 ## Pagination
 
@@ -278,8 +277,8 @@ The `SLEEP` table consists of the following columns:
 ## Additional files
 
 - **`tables.py`** – The endpoint, date parameters, and column types of every table.
-- **`oura_auth.py`** – The OAuth2 token refresh, and the Fernet encryption of the rotated refresh token kept in state.
-- **`setup_form.py`** – The setup form Fivetran renders in the dashboard: one field per configuration key, with the client secret, refresh token, and Fernet key masked. The connector supplies the default and the setup test.
+- **`oura_auth.py`** – The OAuth2 token refresh, the Fivetran REST API calls that save each rotated refresh token into the connection's configuration, and the local debug token file.
+- **`setup_form.py`** – The setup form Fivetran renders in the dashboard: one field per configuration key, with the client secret, refresh token, and Fivetran API key masked. The connector supplies the default and the setup test.
 
 ## Additional considerations
 
