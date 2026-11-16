@@ -136,9 +136,13 @@ class ReportLayoutError(ValueError):
 
 
 class RowIssues:
-    """Counts of values a sync could not use, reported once at the end of the sync."""
+    """Counts of values a sync could not use since the last checkpoint, reported with each checkpoint."""
 
     def __init__(self):
+        self.clear()
+
+    def clear(self):
+        """Reset every count to zero, once the counts have been reported."""
         self.unparseable_numbers = 0
         self.unparseable_published_dates = 0
         self.rows_without_key = 0

@@ -513,6 +513,9 @@ def sync_report(
             progress["backfill_complete"] = window_end >= today
             reports_state[slug_id] = report_progress(**progress)
             windows_left -= 1
+            # Report the values this window could not use with the checkpoint that commits its rows, so a later
+            # failure cannot lose the warnings
+            report_issues(issues)
 
             # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
             # from the correct position in case of next sync or interruptions.
@@ -550,6 +553,9 @@ def sync_report(
         windows_left -= 1
         window_start = window_end + timedelta(days=1)
         window_end = min(window_start + timedelta(days=window_days - 1), today)
+        # Report the values this window could not use with the checkpoint that commits its rows, so a later failure
+        # cannot lose the warnings
+        report_issues(issues)
 
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.
@@ -579,7 +585,8 @@ def report_empty_dates(slug_id: str, first: date, last: date):
 
 def report_issues(issues: RowIssues):
     """
-    Report values the sync could not use, in the connector log and on the Fivetran dashboard.
+    Report values the sync could not use since the last checkpoint, in the connector log and on the Fivetran
+    dashboard, then reset the counts.
 
     Args:
         issues: counts of values the sync could not use
@@ -608,6 +615,7 @@ def report_issues(issues: RowIssues):
         )
         log.warning(message)
         op.warning(message)
+    issues.clear()
 
 
 def update(configuration: dict, state: dict):
@@ -631,8 +639,6 @@ def update(configuration: dict, state: dict):
     try:
         for slug_id in settings["report_ids"]:
             sync_report(client, slug_id, settings, today, state, issues, counts)
-
-        report_issues(issues)
 
         # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
         # from the correct position in case of next sync or interruptions.

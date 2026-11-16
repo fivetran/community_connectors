@@ -116,7 +116,7 @@ latest as (
 
 choice as (
   select
-    round(avg(c.price_per_lb), 2) as choice_avg_per_lb,
+    avg(c.price_per_lb) as choice_avg_per_lb,
     count(c.price_per_lb) as choice_report_dates
   from cut_prices_daily as c
   cross join latest as l
@@ -132,7 +132,7 @@ select
   l.prior_prime_date,
   l.has_trades as prime_traded,
   round(l.price_per_lb, 2) as prime_per_lb,
-  choice.choice_avg_per_lb,
+  round(choice.choice_avg_per_lb, 2) as choice_avg_per_lb,
   choice.choice_report_dates,
   round(l.price_per_lb - choice.choice_avg_per_lb, 2) as prime_premium_per_lb
 from latest as l
@@ -222,16 +222,17 @@ select
   (select report_date from latest) as report_date,
   count(*) as cuts_listed,
   count(*) filter (where has_trades) as cuts_traded,
+  count(*) filter (where has_trades and price_per_lb is null) as cuts_traded_without_price,
   count(*) filter (where price_per_lb > 20) as cuts_above_20_per_lb,
   string_agg(item_description, '; ' order by item_description) filter (where price_per_lb > 20) as cuts
 from day
 ```
 
-| report_date | cuts_listed | cuts_traded | cuts_above_20_per_lb | cuts |
-|---|---|---|---|---|
-| 2026-11-09 | 42 | 20 | 0 | NULL |
+| report_date | cuts_listed | cuts_traded | cuts_traded_without_price | cuts_above_20_per_lb | cuts |
+|---|---|---|---|---|---|
+| 2026-11-09 | 42 | 20 | 0 | 0 | NULL |
 
-Answer: none. On 2026-11-09 USDA listed 42 Select cuts, 20 traded, and none was above $20 per pound. The counts are computed before the price filter, so a question that matches nothing still returns its one summary row.
+Answer: none. On 2026-11-09 USDA listed 42 Select cuts, 20 traded, all 20 with a price, and none was above $20 per pound. A cut can trade with no price (rule 3): when `cuts_traded_without_price` is above zero, say that none of the available prices was above $20 and how many traded cuts had no price. The counts are computed before the price filter, so a question that matches nothing still returns its one summary row.
 
 ## Every answer
 
