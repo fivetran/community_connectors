@@ -55,15 +55,15 @@ __FIVETRAN_API_TIMEOUT_SECONDS = 30
 __FIVETRAN_API_MAX_RETRIES = 3
 __FIVETRAN_API_BASE_DELAY_SECONDS = 2
 __FIVETRAN_API_MAX_RETRY_AFTER_SECONDS = 300
-# The GET and the PATCH send the same request again on a retry, so any of these is safe to retry
+# Every call is a PATCH that sets fixed values, so a retry after any of these is safe
 __FIVETRAN_API_RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
 # Fivetran connection IDs are short words joined by underscores; anything else never reaches a URL
 __CONNECTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
 # The SDK sets FIVETRAN_DEPLOYMENT_MODEL to local_debug during `fivetran debug`
 __LOCAL_DEBUG_MODEL = "local_debug"
-# The SDK keeps its local warehouse and state in files/, which the connector's .gitignore excludes
-# from git and from `fivetran deploy`
+# The SDK keeps its local warehouse and state in files/, and `fivetran deploy` never packages that
+# folder. It is not excluded from git unless the project's .gitignore lists it
 __LOCAL_TOKEN_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "files", "oura_refresh_token.json"
 )
@@ -335,6 +335,13 @@ def post_refresh(configuration: dict, refresh_token: str, user_agent: str) -> di
         if response.status_code not in (400, 401):
             raise RuntimeError(message)
         code = oauth_error_code(response)
+        if code is None:
+            # Not an OAuth error body, so a proxy may have answered and Oura may not have seen it
+            raise RuntimeError(
+                f"{message}. The response is not an OAuth error, so it may not have come from "
+                "Oura and the refresh token may be unspent. Retry the sync before completing "
+                "the consent again"
+            )
         if code == "invalid_grant":
             raise OuraAuthError(
                 f"{message}. Oura reports the refresh token as already used or revoked. "
@@ -371,11 +378,11 @@ def connection_url() -> str:
 def fivetran_api_request(method: str, configuration: dict, payload=None):
     """
     Call the Fivetran REST API for this connection, retrying network failures and the statuses
-    that mean Fivetran did not process the request. Both calls this connector makes are safe to
-    send twice: a GET, and a PATCH that sets the same values.
+    that mean Fivetran did not process the request. Every call this connector makes is a PATCH
+    that sets fixed values, so sending it twice is safe.
 
     Args:
-        method: GET or PATCH
+        method: the HTTP method, PATCH
         configuration: connector configuration with fivetran_api_key
         payload: the JSON body of a PATCH
 
@@ -424,32 +431,81 @@ def fivetran_api_request(method: str, configuration: dict, payload=None):
     raise RuntimeError("Fivetran REST API request did not complete")
 
 
-def check_connection_access(configuration: dict) -> None:
+def fivetran_api_succeeded(response) -> bool:
     """
-    Confirm the Fivetran API key can read this connection before the single-use Oura token is
-    spent, so a wrong key fails the sync without costing a new consent.
+    Report whether a Fivetran REST API response is a success Fivetran itself sent: a 2xx with
+    the JSON body code "Success". A 2xx page from anything in between does not count.
+
+    Args:
+        response: the Fivetran REST API response
+
+    Returns:
+        True when the call succeeded
+    """
+    if not 200 <= response.status_code < 300:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("code") == "Success"
+
+
+def configuration_payload(configuration: dict) -> dict:
+    """
+    Build the PATCH body that sets this connection's configuration. The PATCH replaces every
+    configuration value, so the payload carries all of them.
+
+    Args:
+        configuration: the configuration values to set
+
+    Returns:
+        the JSON body for PATCH /v1/connections/<connection_id>
+    """
+    return {
+        "config": {
+            "secrets_list": [
+                {"key": str(key), "value": str(value)}
+                for key, value in configuration.items()
+                if value is not None
+            ]
+        }
+    }
+
+
+def check_configuration_access(configuration: dict) -> None:
+    """
+    Confirm the Fivetran API key can edit this connection before the single-use Oura token is
+    spent, by writing the current configuration back unchanged. A key that cannot edit the
+    connection then fails the sync without costing a new consent.
 
     Args:
         configuration: connector configuration with fivetran_api_key
 
     Raises:
-        RuntimeError: if the Fivetran REST API refuses the key or cannot find the connection
+        RuntimeError: if the Fivetran REST API refuses the update or cannot be reached
     """
-    response = fivetran_api_request("GET", configuration)
-    if response.status_code == 200:
-        return
-    raise RuntimeError(
-        f"Fivetran REST API returned HTTP {response.status_code} for this connection. Check that "
-        "fivetran_api_key is the base64 encoding of an API key and secret whose user can edit "
-        "this connection. The Oura refresh token was not spent"
+    not_spent = (
+        "Check that fivetran_api_key is the base64 encoding of an API key and secret whose user "
+        "can edit this connection. The Oura refresh token was not spent"
     )
+    try:
+        response = fivetran_api_request(
+            "PATCH", configuration, configuration_payload(configuration)
+        )
+    except RuntimeError as e:
+        raise RuntimeError(f"{e}. {not_spent}") from e
+    if not fivetran_api_succeeded(response):
+        raise RuntimeError(
+            f"Fivetran REST API returned HTTP {response.status_code} without a success response "
+            f"when the connector checked it can update this connection. {not_spent}"
+        )
 
 
 def save_refresh_token_to_configuration(configuration: dict, new_token: str) -> None:
     """
     Write the rotated refresh token into this connection's configuration with the Fivetran REST
-    API, so the next sync reads it from there. The PATCH replaces every configuration value, so
-    the payload carries all of them.
+    API, so the next sync reads it from there.
 
     Args:
         configuration: connector configuration, sent back with the new refresh_token
@@ -459,16 +515,7 @@ def save_refresh_token_to_configuration(configuration: dict, new_token: str) -> 
         RuntimeError: if the configuration could not be updated; Oura has already invalidated
             the configured token by then
     """
-    updated = dict(configuration, refresh_token=new_token)
-    payload = {
-        "config": {
-            "secrets_list": [
-                {"key": str(key), "value": str(value)}
-                for key, value in updated.items()
-                if value is not None
-            ]
-        }
-    }
+    payload = configuration_payload(dict(configuration, refresh_token=new_token))
     lost_token = (
         "Oura has already invalidated the configured refresh_token, so complete the OAuth "
         "consent again and set the new refresh_token"
@@ -477,10 +524,10 @@ def save_refresh_token_to_configuration(configuration: dict, new_token: str) -> 
         response = fivetran_api_request("PATCH", configuration, payload)
     except RuntimeError as e:
         raise RuntimeError(f"{e} while saving the rotated refresh token. {lost_token}") from e
-    if not 200 <= response.status_code < 300:
+    if not fivetran_api_succeeded(response):
         raise RuntimeError(
-            f"Fivetran REST API returned HTTP {response.status_code} while saving the rotated "
-            f"refresh token. {lost_token}"
+            f"Fivetran REST API returned HTTP {response.status_code} without a success response "
+            f"while saving the rotated refresh token. {lost_token}"
         )
 
 
@@ -503,7 +550,7 @@ def refresh_access_token(configuration: dict, user_agent: str) -> str:
     if local_debug:
         refresh_token = read_local_refresh_token(configured_token) or configured_token
     else:
-        check_connection_access(configuration)
+        check_configuration_access(configuration)
         refresh_token = configured_token
 
     body = post_refresh(configuration, refresh_token, user_agent)

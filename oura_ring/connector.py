@@ -16,6 +16,9 @@ and the Best Practices documentation (https://fivetran.com/docs/connectors/conne
 # For reading configuration from a JSON file
 import json
 
+# For marking a direct run of this file as local debug mode
+import os
+
 # For time-based operations and rate limiting
 import time
 
@@ -679,6 +682,10 @@ if __name__ == "__main__":
     # Open the configuration.json file and load its contents
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
+
+    # `fivetran debug` sets this; running the file directly does not, and the connector keeps the
+    # rotated refresh token in a local file only in local debug mode
+    os.environ.setdefault("FIVETRAN_DEPLOYMENT_MODEL", "local_debug")
 
     # Test the connector locally
     connector.debug(configuration=configuration)
