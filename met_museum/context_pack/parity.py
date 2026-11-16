@@ -36,6 +36,9 @@ import hashlib
 # For reading the compiled manifests and the lake config
 import json
 
+# For walking two engines' results row by row
+import itertools
+
 # For the local model backend's HTTP calls
 import os
 
@@ -58,7 +61,7 @@ from decimal import Decimal
 from pathlib import Path
 
 # For type hints
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 HERE = Path(__file__).resolve().parent
 DBT_DIR = HERE / "dbt"
@@ -83,8 +86,13 @@ SOURCE_TABLES = (
 # Models the checked queries read. The time spine is left out: it reads nothing from the lake.
 SKIP_MODELS = {"metricflow_time_spine"}
 
-# Every check returns an aggregate, so a result this long means a broken query, not a big answer.
-MAX_RESULT_ROWS = 100_000
+# Rows fetched from each engine at a time. The *_all_rows checks return whole tables, so the compute lane compares
+# the two engines batch by batch and never holds either result in memory.
+BATCH_ROWS = 10_000
+
+# The compare keeps this many rows to print: a short result in full, and the first differing rows of a long one.
+SHOW_ROWS = 25
+MAX_DIFF_ROWS = 5
 
 # The local Ollama endpoint for the --backend ollama judge, unless OLLAMA_HOST overrides it.
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
@@ -319,20 +327,43 @@ class Engine:
         name: str,
         ctes: str,
         source_schema: str,
-        run: Callable[[str], tuple[list[str], list[tuple]]],
+        run: Callable[[str, int], tuple[list[str], Iterator[list[tuple]]]],
     ):
+        """
+        Args:
+            name: the engine's name in the report.
+            ctes: the model CTEs compiled for this engine.
+            source_schema: what {src} expands to in a checked query.
+            run: runs SQL and returns the lowercase column names and an iterator over row batches of at most the
+                given size.
+        """
         self.name = name
         self.ctes = ctes
         self.source_schema = source_schema
         self.run = run
 
+    def stream(
+        self, sql: str, batch_rows: int = BATCH_ROWS
+    ) -> tuple[list[str], Iterator[list[tuple]]]:
+        """
+        Run a checked query after the model CTEs, and return the lowercase column names and the row batches.
+        Args:
+            sql: the checked query; {src} expands to the connector's source schema.
+            batch_rows: the most rows in one batch.
+        """
+        return self.run(
+            with_models(self.ctes, sql.replace("{src}", self.source_schema)), batch_rows
+        )
+
     def query(self, sql: str) -> tuple[list[str], list[tuple]]:
         """
-        Run a checked query after the model CTEs, and return the lowercase column names and the rows.
+        Run a checked query after the model CTEs, and return the lowercase column names and every row. For the
+        AI lane's queries, which return one row per sampled object.
         Args:
             sql: the checked query; {src} expands to the connector's source schema.
         """
-        return self.run(with_models(self.ctes, sql.replace("{src}", self.source_schema)))
+        columns, batches = self.stream(sql)
+        return columns, [row for batch in batches for row in batch]
 
 
 def connect_snowflake(connection_name: str, role: str | None):
@@ -350,21 +381,18 @@ def connect_snowflake(connection_name: str, role: str | None):
     return connection
 
 
-def fetch_bounded(cursor, sql: str) -> list[tuple]:
+def fetch_batches(cursor, batch_rows: int) -> Iterator[list[tuple]]:
     """
-    Fetch a query's rows, up to MAX_RESULT_ROWS.
+    Yield a query's rows in batches, until the cursor has no more.
     Args:
         cursor: a Snowflake cursor or a DuckDB relation that has run the query.
-        sql: the query, named in the error.
-    Returns:
-        The rows.
-    Raises:
-        RuntimeError: when the query returns more than MAX_RESULT_ROWS rows.
+        batch_rows: the most rows in one batch.
     """
-    rows = cursor.fetchmany(MAX_RESULT_ROWS + 1)
-    if len(rows) > MAX_RESULT_ROWS:
-        raise RuntimeError(f"A check returned more than {MAX_RESULT_ROWS} rows: {sql[:200]}")
-    return rows
+    while True:
+        rows = cursor.fetchmany(batch_rows)
+        if not rows:
+            return
+        yield rows
 
 
 def snowflake_engine(args: argparse.Namespace) -> Engine:
@@ -396,10 +424,12 @@ def snowflake_engine(args: argparse.Namespace) -> Engine:
     )
     connection = connect_snowflake(args.snowflake_connection, args.snowflake_role)
 
-    def run(sql: str) -> tuple[list[str], list[tuple]]:
+    def run(sql: str, batch_rows: int) -> tuple[list[str], Iterator[list[tuple]]]:
         cursor = connection.cursor()
         cursor.execute(sql)
-        return [column[0].lower() for column in cursor.description], fetch_bounded(cursor, sql)
+        return [column[0].lower() for column in cursor.description], fetch_batches(
+            cursor, batch_rows
+        )
 
     return Engine(
         "snowflake",
@@ -481,9 +511,11 @@ def duckdb_engine(args: argparse.Namespace) -> tuple[Engine, Any]:
     prefix = re.compile(r'"met_pack"\."met"\.')
     connection = connect_duckdb_lake(lake, client_secret)
 
-    def run(sql: str) -> tuple[list[str], list[tuple]]:
+    def run(sql: str, batch_rows: int) -> tuple[list[str], Iterator[list[tuple]]]:
         relation = connection.execute(sql)
-        return [column[0].lower() for column in relation.description], fetch_bounded(relation, sql)
+        return [column[0].lower() for column in relation.description], fetch_batches(
+            relation, batch_rows
+        )
 
     return (
         Engine("duckdb", model_ctes(target_path, prefix), f'lake."{args.lake_schema}"', run),
@@ -526,6 +558,17 @@ def normalize(value: Any) -> str:
     return str(value)
 
 
+def add_to_fingerprint(digest: Any, row: Sequence[str]) -> None:
+    """
+    Add one normalized row to a running sha256.
+    Args:
+        digest: a hashlib.sha256 object.
+        row: one row of normalized values.
+    """
+    digest.update("\x1f".join(row).encode("utf-8"))
+    digest.update(b"\x1e")
+
+
 def fingerprint(rows: Sequence[Sequence[str]]) -> str:
     """
     Return a short sha256 of normalized rows.
@@ -534,53 +577,80 @@ def fingerprint(rows: Sequence[Sequence[str]]) -> str:
     """
     digest = hashlib.sha256()
     for row in rows:
-        digest.update("\x1f".join(row).encode("utf-8"))
-        digest.update(b"\x1e")
+        add_to_fingerprint(digest, row)
     return digest.hexdigest()[:16]
 
 
-def compare(name: str, sql: str, engines: Sequence[Engine], out: Callable[[str], None]) -> bool:
+def normalized_rows(batches: Iterator[list[tuple]]) -> Iterator[tuple[str, ...]]:
     """
-    Run one checked query on every engine, print both results' fingerprints, and return whether they match exactly.
+    Yield every row of a batched result, normalized.
+    Args:
+        batches: the row batches an Engine returned.
+    """
+    for batch in batches:
+        for row in batch:
+            yield tuple(normalize(value) for value in row)
+
+
+def compare(
+    name: str,
+    sql: str,
+    engines: Sequence[Engine],
+    out: Callable[[str], None],
+    batch_rows: int = BATCH_ROWS,
+) -> bool:
+    """
+    Run one checked query on both engines, compare the results row by row while fetching them in batches, print both
+    results' row counts and fingerprints, and return whether they match exactly. Both results are read to the end, so
+    the counts and fingerprints cover every row, and neither result is held in memory.
     Args:
         name: the check's name.
         sql: the checked query.
-        engines: the engines to compare.
+        engines: the two engines to compare.
         out: the report writer.
+        batch_rows: the most rows fetched from an engine at a time.
     """
-    results = {}
-    for engine in engines:
-        columns, rows = engine.query(sql)
-        results[engine.name] = (
-            columns,
-            [tuple(normalize(value) for value in row) for row in rows],
-        )
-    (left_name, (left_columns, left_rows)), (right_name, (right_columns, right_rows)) = (
-        results.items()
-    )
-    passed = left_columns == right_columns and left_rows == right_rows
+    left, right = engines
+    left_columns, left_batches = left.stream(sql, batch_rows)
+    right_columns, right_batches = right.stream(sql, batch_rows)
+    digests = {left.name: hashlib.sha256(), right.name: hashlib.sha256()}
+    counts = {left.name: 0, right.name: 0}
+    shown: list[tuple[str, ...]] = []
+    differing: list[tuple[int, tuple[str, ...] | None, tuple[str, ...] | None]] = []
+    rows_differ = False
+    pairs = itertools.zip_longest(normalized_rows(left_batches), normalized_rows(right_batches))
+    for index, (left_row, right_row) in enumerate(pairs):
+        for engine, row in ((left, left_row), (right, right_row)):
+            if row is not None:
+                add_to_fingerprint(digests[engine.name], row)
+                counts[engine.name] += 1
+        if left_row is not None and len(shown) < SHOW_ROWS:
+            shown.append(left_row)
+        if left_row != right_row:
+            rows_differ = True
+            # Rows past the end of the shorter result are reported by the row count line, not one by one.
+            if left_row is not None and right_row is not None and len(differing) < MAX_DIFF_ROWS:
+                differing.append((index, left_row, right_row))
+    passed = left_columns == right_columns and not rows_differ
     out(f"\n[{'PASS' if passed else 'FAIL'}] {name}")
-    for engine_name, (columns, rows) in results.items():
-        out(f"  {engine_name:<9} rows={len(rows):<6} sha256={fingerprint(rows)}")
-    show_rows = len(left_rows) <= 25
-    if show_rows:
+    for engine in (left, right):
+        out(
+            f"  {engine.name:<9} rows={counts[engine.name]:<6} "
+            f"sha256={digests[engine.name].hexdigest()[:16]}"
+        )
+    if counts[left.name] <= SHOW_ROWS:
         out("  " + " | ".join(left_columns))
-        for row in left_rows:
+        for row in shown:
             out("  " + " | ".join(row))
     if not passed:
         if left_columns != right_columns:
-            out(f"  columns differ: {left_name}={left_columns} {right_name}={right_columns}")
-        differing = [
-            (index, left, right)
-            for index, (left, right) in enumerate(zip(left_rows, right_rows))
-            if left != right
-        ]
-        for index, left, right in differing[:5]:
-            out(f"  row {index}: {left_name}={left}")
-            out(f"  row {index}: {right_name}={right}")
-        if len(left_rows) != len(right_rows):
+            out(f"  columns differ: {left.name}={left_columns} {right.name}={right_columns}")
+        for index, left_row, right_row in differing:
+            out(f"  row {index}: {left.name}={left_row}")
+            out(f"  row {index}: {right.name}={right_row}")
+        if counts[left.name] != counts[right.name]:
             out(
-                f"  row counts differ: {left_name}={len(left_rows)} {right_name}={len(right_rows)}"
+                f"  row counts differ: {left.name}={counts[left.name]} {right.name}={counts[right.name]}"
             )
     return passed
 
@@ -804,7 +874,8 @@ def run_ai_lane(
     # enriched rows are copied into a temp table first and the sample is limited there.
     duck = engines["duckdb"]
     duck.run(
-        f"create or replace temp table ai_sample as {with_models(duck.ctes, ai_sample_sql(None))}"
+        f"create or replace temp table ai_sample as {with_models(duck.ctes, ai_sample_sql(None))}",
+        BATCH_ROWS,
     )
     _, sampled = duck.query("select count(*) from ai_sample")
     if not sampled[0][0]:
@@ -871,6 +942,23 @@ def _short(value: Any) -> str:
 # --------------------------------------------------------------------------------------------------------------------
 
 
+def positive_int(text: str) -> int:
+    """
+    Parse a whole number of at least 1. With --sample 0 the ai lane would compare nothing and still report.
+    Args:
+        text: the command-line value.
+    Raises:
+        argparse.ArgumentTypeError: when the value is not a whole number or is below 1.
+    """
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a whole number, got {text!r}") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {value}")
+    return value
+
+
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     """Parse the command line."""
     parser = argparse.ArgumentParser(
@@ -901,7 +989,12 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--anthropic-key-file", default=str(HERE / "secrets" / "anthropic_api_key")
     )
-    parser.add_argument("--sample", type=int, default=25)
+    parser.add_argument(
+        "--sample",
+        type=positive_int,
+        default=25,
+        help="objects the ai lane compares, at least 1",
+    )
     parser.add_argument("--output", default=None, help="also write the report here")
     return parser.parse_args(argv)
 
