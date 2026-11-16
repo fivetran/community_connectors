@@ -6,7 +6,7 @@ token and a new refresh token, and the old refresh token stops working. A deploy
 writes the new refresh token back into its own configuration with the Fivetran REST API, so the
 next sync reads it from there and no secret is ever stored in state. A local `fivetran debug` run
 has no connection to update, so it keeps the rotated token in a file under the local files/
-folder, which is gitignored and never deployed.
+folder, which `fivetran deploy` never packages.
 """
 
 # For checking the Fivetran API key's encoding
