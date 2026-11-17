@@ -65,9 +65,9 @@ Configuration parameters:
 
 ## Requirements file
 
-This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

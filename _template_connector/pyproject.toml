@@ -1,0 +1,28 @@
+# This pyproject.toml defines connector metadata and optional dependencies.
+# The Connector SDK prioritizes pyproject.toml over requirements.txt when both are present.
+#
+# Add your connector's dependencies under the `dependencies` array with explicit versions.
+# Keep dependencies in alphabetical order for easier maintenance.
+#
+# Example:
+# dependencies = [
+#     "pandas==2.0.3",
+# ]
+#
+# Note: The following packages are pre-installed in the base environment and should not be added:
+# - fivetran_connector_sdk:latest
+# - requests:2.33.0
+# - grpcio:1.78.0
+# - grpcio-tools:1.78.0
+#
+# Best practices:
+# - Use explicit versions (==) for reproducibility.
+# - Only include packages actually used by your connector.
+# - Add comments for non-obvious dependencies.
+# - Omit `dependencies` entirely when your connector has no external dependencies.
+
+[project]
+name = "template-connector"
+version = "0.1.0"
+description = "Template connector for building Fivetran community connectors."
+requires-python = ">=3.10,<=3.14"

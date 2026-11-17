@@ -58,9 +58,9 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-This connector uses only the standard libraries provided by the Fivetran Connector SDK runtime. No additional packages are required.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

@@ -28,4 +28,4 @@ fivetran init --template empty-project
 
 - `connector.py` – Entry point with empty `schema()` and `update()` stubs and required imports.
 - `configuration.json` – Empty configuration file. Add your source credentials here.
-- `requirements.txt` – Empty requirements file. Add any third-party libraries your connector needs.
+- `pyproject.toml` – Empty requirements file. Add any third-party libraries your connector needs.
