@@ -1,0 +1,13 @@
+{
+    "host": "<YOUR_HOST>",
+    "port": "<YOUR_PORT>",
+    "service_name": "<YOUR_SERVICE_NAME>",
+    "username": "<YOUR_USERNAME>",
+    "password": "<YOUR_PASSWORD>",
+    "schema": "<YOUR_SCHEMA>",
+    "tables": "<YOUR_TABLES>",
+    "batch_size": "<YOUR_BATCH_SIZE>",
+    "oracle_thick_mode": "<YOUR_ORACLE_THICK_MODE>",
+    "oracle_client_lib_dir": "<YOUR_ORACLE_CLIENT_LIB_DIR>"
+  }
+  
