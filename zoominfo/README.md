@@ -1,3 +1,9 @@
+---
+name: ZoomInfo
+description: Sync contacts, companies, scoops, intent signals, news, and optional enrichments from the ZoomInfo Search and Enrich APIs
+category: SaaS & APIs
+---
+
 # ZoomInfo Connector Example
 
 ## Connector overview

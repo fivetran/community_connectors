@@ -31,8 +31,8 @@ Patterns demonstrated:
   (see client.post_with_retry, constants.CHECKPOINT_EVERY_N_ROWS).
 
 See the Connector SDK Technical Reference
-(https://fivetran.com/docs/connectors/connector-sdk/technical-reference) and
-Best Practices (https://fivetran.com/docs/connectors/connector-sdk/best-practices).
+(https://fivetran.com/docs/connector-sdk/technical-reference) and
+Best Practices (https://fivetran.com/docs/connector-sdk#connectordevelopmentbestpractices).
 """
 
 # Import required classes from fivetran_connector_sdk
@@ -81,7 +81,7 @@ def schema(configuration: dict):
     """
     Define the schema function which lets you configure the schema your connector delivers.
     See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-code/connector-sdk-methods#schema
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#schema
     Args:
         configuration: a dictionary that holds the configuration settings for the connector.
     """
@@ -361,7 +361,7 @@ def update(configuration: dict, state: dict):
     """
     Define the update function, which is a required function, and is called by Fivetran during each sync.
     See the technical reference documentation for more details on the update function
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update
+    https://fivetran.com/docs/connector-sdk/technical-reference/connector-sdk-methods#update
     Args:
         configuration: A dictionary containing connection details
         state: A dictionary containing state information from previous runs
