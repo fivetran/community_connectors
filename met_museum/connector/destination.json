@@ -1,0 +1,13 @@
+{
+  "uri": "<ICEBERG_REST_CATALOG_URI>",
+  "warehouse": "<CATALOG_WAREHOUSE>",
+  "namespace": "<NAMESPACE>",
+  "client_id": "<CATALOG_CLIENT_ID>",
+  "client_secret": "<CATALOG_CLIENT_SECRET>",
+  "scope": "<CATALOG_OAUTH_SCOPE>",
+  "s3.region": "<S3_REGION>",
+  "s3.endpoint": "<S3_ENDPOINT>",
+  "s3.force-virtual-addressing": "<S3_FORCE_VIRTUAL_ADDRESSING>",
+  "s3.access-key-id": "<S3_ACCESS_KEY_ID>",
+  "s3.secret-access-key": "<S3_SECRET_ACCESS_KEY>"
+}
