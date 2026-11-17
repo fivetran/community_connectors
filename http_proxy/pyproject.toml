@@ -1,0 +1,5 @@
+[project]
+name = "http-proxy"
+version = "0.1.0"
+description = "This connector demonstrates how to configure the Python requests library to route outbound HTTP and HTTPS traffic through a proxy server in a Fivetran Connector SDK connector."
+requires-python = ">=3.10,<=3.14"

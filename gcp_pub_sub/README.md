@@ -63,16 +63,18 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-This connector requires the following Python libraries:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-google-cloud-pubsub
-google-auth
-google-api-core
-protobuf==6.30.1
+```toml
+dependencies = [
+  "google-cloud-pubsub",
+  "google-auth",
+  "google-api-core",
+  "protobuf==6.30.1",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

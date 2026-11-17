@@ -1,0 +1,5 @@
+[project]
+name = "partech"
+version = "0.1.0"
+description = "This connector demonstrates how to sync location configuration and program metadata from the Partech (previously Punchh) Point of Sale (POS) API."
+requires-python = ">=3.10,<=3.14"

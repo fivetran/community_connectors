@@ -65,18 +65,20 @@ The connector requires AWS S3 credentials and file information:
 
 ## Requirements file
 
-The connector requires the following Python packages:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-boto3==1.38.14
-pandas==2.2.3
-openpyxl==3.1.5
-python-calamine==0.6.2
+```toml
+dependencies = [
+  "boto3==1.38.14",
+  "pandas==2.2.3",
+  "openpyxl==3.1.5",
+  "python-calamine==0.6.2",
+]
 ```
 
 In order to use the `calamine` engine with `pandas` library, you need to include the `python-calamine` package and ensure that the `pandas` version is `equal to or above 2.2`.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

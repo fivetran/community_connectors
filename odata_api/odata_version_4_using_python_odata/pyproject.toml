@@ -1,0 +1,8 @@
+[project]
+name = "odata-api-odata-version-4-using-python-odata"
+version = "0.1.0"
+description = "This connector demonstrates how to fetch data from an OData v4 API and sync it to the destination using the python_odata library."
+requires-python = ">=3.10,<=3.14"
+dependencies = [
+    "python-odata==0.6.3",
+]

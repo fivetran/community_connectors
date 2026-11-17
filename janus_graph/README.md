@@ -81,10 +81,12 @@ For production (with authentication):
 
 ## Requirements file
 
-The connector requires the `gremlinpython` package to communicate with the Gremlin Server API:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```txt
-gremlinpython
+```toml
+dependencies = [
+  "gremlinpython",
+]
 ```
 
 The `gremlinpython` library provides:
@@ -92,7 +94,7 @@ The `gremlinpython` library provides:
 - GraphSON serialization for query requests and responses
 - Support for graph traversal queries and management operations
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

@@ -63,7 +63,7 @@ The connector requires no authentication. Every configuration value is optional:
 - `taxon_key` – Optional GBIF taxon key to restrict occurrences to one taxon, for example `212` for birds (Aves). Leave empty for no taxon filter. Narrowing the query is how you sync a set larger than the deep-paging cap.
 - `country` – Optional ISO 3166-1 alpha-2 country code to restrict occurrences to one country, for example `US`. Leave empty for no country filter.
 
-> Note: Do not add a `requirements.txt` file. This connector depends only on `requests`, which the Fivetran runtime provides.
+> Note: Do not add a `pyproject.toml` file. This connector depends only on `requests`, which the Fivetran runtime provides.
 
 ## Authentication
 

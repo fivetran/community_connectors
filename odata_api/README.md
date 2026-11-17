@@ -16,7 +16,7 @@ This connector demonstrates how to fetch data from OData APIs and sync it to a d
 
 - `odata_version_4_using_python_odata` – Uses the `python-odata` library to connect to OData version 4 services. Demonstrates querying all records, filtering, and ordering data from an OData entity.
 
-Each sub-implementation includes its own `connector.py`, `ODataClient.py` (where applicable), and `requirements.txt`.
+Each sub-implementation includes its own `connector.py`, `ODataClient.py` (where applicable), and `pyproject.toml`.
 
 ## Requirements
 
@@ -50,27 +50,33 @@ fivetran init --template odata_api
 
 ## Requirements file
 
-Each sub-implementation specifies its own dependencies:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-- `odata_version_4/requirements.txt`:
+- `odata_version_4/pyproject.toml`:
 
-```
-requests_toolbelt==1.0.0
-```
-
-- `odata_version_2_using_pyodata/requirements.txt`:
-
-```
-pyodata==1.11.1
+```toml
+dependencies = [
+  "requests_toolbelt==1.0.0",
+]
 ```
 
-- `odata_version_4_using_python_odata/requirements.txt`:
+- `odata_version_2_using_pyodata/pyproject.toml`:
 
-```
-python-odata==0.6.3
+```toml
+dependencies = [
+  "pyodata==1.11.1",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+- `odata_version_4_using_python_odata/pyproject.toml`:
+
+```toml
+dependencies = [
+  "python-odata==0.6.3",
+]
+```
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

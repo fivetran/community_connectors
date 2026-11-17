@@ -1,0 +1,11 @@
+[project]
+name = "gcp-pub-sub"
+version = "0.1.0"
+description = "This connector demonstrates how to sync data from Google Cloud Pub/Sub to a destination using the Fivetran Connector SDK."
+requires-python = ">=3.10,<=3.14"
+dependencies = [
+    "google-cloud-pubsub",
+    "google-auth",
+    "google-api-core",
+    "protobuf==6.30.1",
+]

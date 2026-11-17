@@ -62,9 +62,9 @@ Configuration parameters:
 
 ## Requirements file
 
-The `requirements.txt` file specifies additional Python libraries required by the connector. Following Fivetran best practices, this connector doesn't require additional dependencies.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
