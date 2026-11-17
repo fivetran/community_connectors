@@ -1,0 +1,5 @@
+[project]
+name = "databricks-databricks-fm-fda-drug-label-intelligence"
+version = "0.1.0"
+description = "This connector syncs drug labeling data (package inserts) from the OpenFDA Drug Labeling API and enriches each label with AI-powered analysis using the Databricks ai_query() SQL function during ingestion."
+requires-python = ">=3.10,<=3.14"

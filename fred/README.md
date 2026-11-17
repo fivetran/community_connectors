@@ -63,9 +63,9 @@ fivetran init --template fred
 
 ## Requirements file
 
-This connector does not require a `requirements.txt` file as it only uses standard library modules and the `requests` library, which is pre-installed in the Fivetran environment.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

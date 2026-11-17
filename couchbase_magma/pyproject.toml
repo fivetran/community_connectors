@@ -1,0 +1,8 @@
+[project]
+name = "couchbase-magma"
+version = "0.1.0"
+description = "This connector example demonstrates how to sync data from a self-managed Couchbase Server (local, on-premises, or self-hosted in the cloud) using the Magma storage engine with the Connector SDK."
+requires-python = ">=3.10,<=3.14"
+dependencies = [
+    "couchbase==4.3.6",
+]

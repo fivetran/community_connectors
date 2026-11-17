@@ -73,13 +73,15 @@ Configuration parameters:
 
 ## Requirements file
 
-This connector requires the `cryptography` library for Fernet token encryption:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-cryptography==44.0.2
+```toml
+dependencies = [
+  "cryptography==44.0.2",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

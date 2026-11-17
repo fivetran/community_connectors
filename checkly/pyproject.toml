@@ -1,0 +1,5 @@
+[project]
+name = "checkly"
+version = "0.1.0"
+description = "The Checkly custom connector for Fivetran fetches monitoring check data and performance analytics from the Checkly API and syncs it to your destination."
+requires-python = ">=3.10,<=3.14"

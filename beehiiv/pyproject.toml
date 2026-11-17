@@ -1,0 +1,5 @@
+[project]
+name = "beehiiv"
+version = "0.1.0"
+description = "This connector integrates with the beehiiv API to synchronize newsletter data into your destination."
+requires-python = ">=3.10,<=3.14"

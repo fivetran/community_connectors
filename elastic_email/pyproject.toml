@@ -1,0 +1,5 @@
+[project]
+name = "elastic-email"
+version = "0.1.0"
+description = "This connector syncs email marketing data from Elastic Email to your destination using the Elastic Email REST API v4."
+requires-python = ">=3.10,<=3.14"

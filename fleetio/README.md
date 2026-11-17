@@ -55,14 +55,16 @@ You can generate your Account Token and API Key [here](https://secure.fleetio.co
 
 ## Requirements file
 
-The requirements file imports any libraries necessary for our connector to work.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 We currently only need a package for flattening the JSON information that's returned by the Fleetio API.
 
-```
-flatten_json==0.1.14
+```toml
+dependencies = [
+  "flatten_json==0.1.14",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Pagination
 
