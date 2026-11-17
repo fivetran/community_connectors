@@ -62,13 +62,15 @@ fivetran init --template sharepoint_multi_site_connector
 
 ## Requirements file
 
-The connector uses the `openpyxl` package to parse Excel files (`.xlsx`, `.xlsm`).
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-openpyxl==3.1.5
+```toml
+dependencies = [
+  "openpyxl==3.1.5",
+]
 ```
 
-> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 This connector authenticates with the Microsoft Graph API using the OAuth 2.0 client credentials flow. The tenant ID, client ID, and client secret from `configuration.json` are exchanged for a bearer access token from the Microsoft identity platform. The token is passed in the Authorization header of all Graph API requests.

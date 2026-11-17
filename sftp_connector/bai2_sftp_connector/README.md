@@ -107,13 +107,15 @@ Example `configuration.json`:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by this connector:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-paramiko==3.5.1
+```toml
+dependencies = [
+  "paramiko==3.5.1",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 
 ## Authentication

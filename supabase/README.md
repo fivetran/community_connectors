@@ -70,13 +70,15 @@ The configuration requires your Supabase project URL and API key to establish a 
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. The main dependency is the Supabase Python client library.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-supabase
+```toml
+dependencies = [
+  "supabase",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

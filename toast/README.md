@@ -62,13 +62,15 @@ Example `configuration.json`:
 
 ## Requirements file
 
-The connector requires the `cryptography` library for Fernet-based token encryption. Add it to your `requirements.txt`:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-cryptography
+```toml
+dependencies = [
+  "cryptography",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Data handling
 

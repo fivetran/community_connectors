@@ -56,13 +56,15 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-The connector requires the `redshift_connector` package to connect to Redshift databases.
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-redshift_connector
+```toml
+dependencies = [
+  "redshift_connector",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

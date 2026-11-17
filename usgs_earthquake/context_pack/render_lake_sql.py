@@ -15,7 +15,7 @@ carries its own preamble, so it survives a recycled session without a separate s
 
 The string never attaches or detaches the lake catalog. The session that runs it owns that attachment.
 
-Usage, from this directory, in a venv with this directory's requirements.txt installed:
+Usage, from this directory, in a venv with this directory's pyproject.toml dependencies installed:
     python render_lake_sql.py --target lake --week last-complete --var lake_catalog=<lake_catalog_alias>
     python render_lake_sql.py --target local --week 2026-09-21 --var updated_at_cutoff=2026-10-05T00:00:00Z
 """

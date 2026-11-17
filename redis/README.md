@@ -105,15 +105,17 @@ The configuration keys required for your connector are as follows:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector:
+Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-redis
+```toml
+dependencies = [
+  "redis",
+]
 ```
 
 The connector uses the `redis` library for connecting to and querying Redis databases.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
