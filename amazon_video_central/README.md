@@ -1,3 +1,9 @@
+---
+name: Amazon Video Central
+description: Sync report data from Amazon Video Central API
+category: SaaS & APIs
+---
+
 # Amazon Video Central Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: FRED
+description: Sync economic data from Federal Reserve Economic Data (FRED)
+category: SaaS & APIs
+---
+
 # FRED API Connector Example
 
 ## Connector overview

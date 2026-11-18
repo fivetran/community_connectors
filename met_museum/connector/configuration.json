@@ -1,0 +1,9 @@
+{
+  "department_ids": "<DEPARTMENT_IDS>",
+  "max_objects_per_sync": "<MAX_OBJECTS_PER_SYNC>",
+  "enable_cortex": "<ENABLE_CORTEX>",
+  "snowflake_account": "<SNOWFLAKE_ACCOUNT>",
+  "snowflake_pat_token": "<SNOWFLAKE_PAT_TOKEN>",
+  "cortex_model": "<CORTEX_MODEL>",
+  "max_enrichments_per_sync": "<MAX_ENRICHMENTS_PER_SYNC>"
+}

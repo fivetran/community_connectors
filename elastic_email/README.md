@@ -1,3 +1,9 @@
+---
+name: Elastic Email
+description: Sync email marketing data from Elastic Email
+category: SaaS & APIs
+---
+
 # Elastic Email Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: IBM Db2 for i
+description: Sync data from IBM Db2 for i (IBM i / AS400) using `pyodbc` with the IBM i Access ODBC Driver.
+category: Databases
+---
+
 # IBM Db2 for i Connector Example
 
 ## Connector overview

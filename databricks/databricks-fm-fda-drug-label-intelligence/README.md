@@ -1,3 +1,9 @@
+---
+name: Databricks FDA Drug Label Intelligence
+description: Sync OpenFDA drug label data and enrich package inserts with Databricks `ai_query()` analysis and optional Genie Space creation.
+category: AI and Connector SDK
+---
+
 # Databricks FDA Drug Label Intelligence Connector Example
 
 ## Connector overview

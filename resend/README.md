@@ -1,3 +1,9 @@
+---
+name: Resend
+description: Sync email data from Resend API
+category: SaaS & APIs
+---
+
 # Resend Connector Example
 
 ## Connector overview

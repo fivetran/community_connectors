@@ -1,0 +1,7 @@
+{
+  "report_ids": "<REPORT_IDS>",
+  "start_date": "<START_DATE_YYYY_MM_DD>",
+  "max_window_days": "<MAX_WINDOW_DAYS>",
+  "max_windows_per_sync": "<MAX_WINDOWS_PER_SYNC>",
+  "request_delay_seconds": "<REQUEST_DELAY_SECONDS>"
+}

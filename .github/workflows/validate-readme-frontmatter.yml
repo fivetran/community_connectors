@@ -1,0 +1,30 @@
+name: README frontmatter
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-readme-frontmatter:
+    name: Validate Connector README Frontmatter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml==6.0.3
+
+      - name: Validate frontmatter
+        run: python .github/scripts/validate_readme_frontmatter.py

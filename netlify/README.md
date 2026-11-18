@@ -1,3 +1,9 @@
+---
+name: Netlify
+description: Sync sites, deploys, and forms from Netlify API
+category: SaaS & APIs
+---
+
 # Netlify Connector Example
 
 ## Connector overview

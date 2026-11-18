@@ -1,3 +1,9 @@
+---
+name: Clerk
+description: Sync user data from Clerk authentication
+category: SaaS & APIs
+---
+
 # Clerk API Connector
 
 ## Connector overview

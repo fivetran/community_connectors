@@ -1,3 +1,9 @@
+---
+name: HubSpot
+description: Sync event data from HubSpot
+category: SaaS & APIs
+---
+
 # HubSpot Events API Connector Example
 
 ## Connector overview

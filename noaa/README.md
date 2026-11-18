@@ -1,3 +1,9 @@
+---
+name: NOAA
+description: Sync weather observations from National Weather Service
+category: SaaS & APIs
+---
+
 # NOAA Weather API Connector Example
 
 ## Connector overview

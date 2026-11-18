@@ -1,0 +1,7 @@
+{
+  "host": "<YOUR_PLANETSCALE_HOST>",
+  "database": "<YOUR_PLANETSCALE_DATABASE>",
+  "username": "<YOUR_PLANETSCALE_USERNAME>",
+  "password": "<YOUR_PLANETSCALE_PASSWORD>",
+  "tables": "<OPTIONAL_COMMA_SEPARATED_TABLE_NAMES>"
+}

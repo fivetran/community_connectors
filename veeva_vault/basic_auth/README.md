@@ -1,3 +1,9 @@
+---
+name: Veeva Vault (Basic Authentication)
+description: Authenticate to Veeva Vault with basic auth
+category: SaaS & APIs
+---
+
 # Veeva Vault Connector - Using Basic Authentication Example
 
 ## Connector overview

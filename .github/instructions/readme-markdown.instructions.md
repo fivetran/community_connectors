@@ -93,7 +93,7 @@ If a section is irrelevant (e.g., no error handling), the empty stub should be n
 * **Getting started** → Must include link to Connector SDK Setup Guide and the `fivetran init` command. It is a fixed content, verbatim (no edits or omissions), as provided below:
   ```markdown
   ## Getting started
-  Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+  Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
   To initialize a new Connector SDK project using this connector as a starting point, run:
 
@@ -101,7 +101,7 @@ If a section is irrelevant (e.g., no error handling), the empty stub should be n
   fivetran init --template <connector-name>
   ```
 
-  `fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+  `fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
   ```
 * **Features** → Must list concrete features (not left blank or italicized template text).
 * **Configuration file** → Must include a JSON code block showing keys. Must mention that `configuration.json` should not be versioned, for example, as provided below:
@@ -210,5 +210,4 @@ If a section is irrelevant (e.g., no error handling), the empty stub should be n
 * Keeps italicized template text.
 * Uses incorrect heading case.
 * Omits required references to config, requirements, or connector functions.
-
 

@@ -1,3 +1,9 @@
+---
+name: Redshift (Large Data Volume)
+description: Sync large data volumes from Redshift
+category: Cloud Data Warehouses
+---
+
 # Redshift Large Data Volume Example Connector
 
 ## Connector overview

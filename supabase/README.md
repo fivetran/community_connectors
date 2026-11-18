@@ -1,3 +1,9 @@
+---
+name: Supabase
+description: Sync employee data from Supabase database
+category: SaaS & APIs
+---
+
 # Supabase Connector Example
 
 ## Connector overview

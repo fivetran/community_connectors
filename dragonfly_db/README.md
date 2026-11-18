@@ -1,3 +1,9 @@
+---
+name: DragonflyDB
+description: Sync high-performance in-memory data from DragonflyDB
+category: Databases
+---
+
 # DragonflyDB Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Solace
+description: Sync messages from Solace queue
+category: Message Queues & Streaming
+---
+
 # Solace Connector Example
 
 ## Connector overview

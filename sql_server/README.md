@@ -1,3 +1,9 @@
+---
+name: SQL Server
+description: Connect to SQL Server using pyodbc
+category: Databases
+---
+
 # SQL Server Connector Example
 
 ## Connector overview

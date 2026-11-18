@@ -1,3 +1,9 @@
+---
+name: Similarweb
+description: Sync website performance metrics from SimilarWeb
+category: SaaS & APIs
+---
+
 # Similarweb Connector Example
 
 ## Connector overview

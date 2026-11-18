@@ -1,3 +1,9 @@
+---
+name: Google Trends
+description: Sync search interest data from Google Trends
+category: SaaS & APIs
+---
+
 # Google Trends Connector Example
 
 ## Connector overview

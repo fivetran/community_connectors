@@ -1,3 +1,9 @@
+---
+name: Greenplum
+description: Sync data from Greenplum database
+category: Databases
+---
+
 # Greenplum DB Connector Example
 
 ## Connector overview

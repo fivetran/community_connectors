@@ -1,3 +1,9 @@
+---
+name: Databricks SEC EDGAR Risk Intelligence
+description: Sync SEC EDGAR filings and XBRL financial facts, then enrich them with Databricks `ai_query()` credit risk intelligence.
+category: AI and Connector SDK
+---
+
 # Databricks SEC EDGAR Risk Intelligence Connector Example
 
 ## Connector overview

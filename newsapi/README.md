@@ -1,3 +1,9 @@
+---
+name: News API
+description: Sync news articles from NewsAPI
+category: SaaS & APIs
+---
+
 # News API Connector Example
 
 ## Connector overview

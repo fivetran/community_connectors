@@ -1,3 +1,9 @@
+---
+name: MeiliSearch
+description: Sync index metadata and documents from MeiliSearch
+category: SaaS & APIs
+---
+
 # MeiliSearch Connector Example
 
 ## Connector overview

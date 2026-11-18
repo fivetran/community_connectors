@@ -1,6 +1,14 @@
+---
+name: "<Source name, for example GitHub>"
+description: "<One-sentence description of what the connector syncs>"
+category: "<One of: Databases, Cloud Data Warehouses, Message Queues & Streaming, AI and Connector SDK, SaaS & APIs>"
+---
+
 # Connector SDK Individual Example README.md Structure Template
 
 *Instructions: Every example added to the repository should have a comprehensive README.md to make it easy for users landing directly on the README to understand what the example does, how to configure it for their own use, and how to find more information about working with Connector SDK.*
+
+*The README.md must start with the frontmatter block above. The Fivetran docs community connectors catalog is generated from it, and the README frontmatter check validates it. Use the same name, description, and category as the connector's entry in the root `README.md`.*
 
 *For source examples, the top-level (H1) heading must be in the following format: "# <source-name> Connector Example" (e.g. "# GitHub Connector Example").*
 
@@ -48,7 +56,7 @@ This example was contributed by [Contributor Name/Organization](link-to-profile-
   - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
 
 ## Getting started
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
@@ -56,7 +64,7 @@ To initialize a new Connector SDK project using this connector as a starting poi
 fivetran init --template <connector-name>
 ```
 
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
 
 *Include the following note only if the connector requires a `configuration.json` file to run.*
 

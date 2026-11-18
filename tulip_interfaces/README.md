@@ -1,3 +1,9 @@
+---
+name: Tulip Interfaces
+description: Sync data from Tulip Tables
+category: SaaS & APIs
+---
+
 # Tulip Interfaces Connector Example
 
 ## Connector overview

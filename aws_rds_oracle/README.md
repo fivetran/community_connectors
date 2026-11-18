@@ -1,3 +1,9 @@
+---
+name: AWS RDS Oracle
+description: Connect and sync data from AWS Oracle
+category: Cloud Data Warehouses
+---
+
 # AWS RDS Oracle Connector Example
 
 ## Connector overview

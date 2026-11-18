@@ -1,3 +1,9 @@
+---
+name: CallMiner
+description: Sync CallMiner Bulk Export data using OAuth2 authentication, export job polling, archive extraction, and per-data-type incremental state tracking
+category: SaaS & APIs
+---
+
 # CallMiner Connector Example
 
 ## Connector overview
