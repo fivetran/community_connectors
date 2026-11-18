@@ -9,10 +9,13 @@ incremental "since" predicate. Pure logic — no network calls.
 # For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
+# Endpoint paths, tunables, default field lists, and state keys shared across modules.
 from constants import (
     DEFAULT_COUNTRY,
     DEFAULT_CONTACT_ENRICH_FIELDS,
 )
+
+# Pure value-coercion helpers (int/float/datetime and cursor comparison).
 from transforms import _iso_to_yyyymmdd
 
 
@@ -29,13 +32,13 @@ def _bool_config(configuration: dict, key: str) -> bool:
 
 def _list_config(configuration: dict, key: str) -> list:
     """Parses a comma-separated config value into a list of stripped strings."""
-    raw = configuration.get(key, "").strip()
+    raw = (configuration.get(key) or "").strip()
     return [v.strip() for v in raw.split(",") if v.strip()] if raw else []
 
 
 def _fields_config(configuration: dict, key: str, defaults: list) -> list:
     """Parses output fields config, falling back to defaults if blank."""
-    raw = configuration.get(key, "").strip()
+    raw = (configuration.get(key) or "").strip()
     return [f.strip() for f in raw.split(",") if f.strip()] if raw else defaults
 
 
@@ -54,8 +57,9 @@ def validate_configuration(configuration: dict):
         ValueError: if any required configuration parameter is missing or any
             optional parameter holds an invalid value.
     """
-    # Required credentials for the OAuth Client Credentials Flow.
-    required_configs = ["client_id", "client_secret"]
+    # Required credentials for the OAuth 2.0 Authorization Code (PKCE) flow:
+    # the app credentials plus the refresh token obtained once with pkce_login.py.
+    required_configs = ["client_id", "client_secret", "refresh_token"]
     for key in required_configs:
         if not configuration.get(key):
             raise ValueError(f"Missing required configuration value: {key}")
@@ -64,7 +68,7 @@ def validate_configuration(configuration: dict):
     # supported eligibility filters — an invalid value would silently spend
     # credits on the wrong contacts.
     if _bool_config(configuration, "enrich_contacts"):
-        enrich_filter = configuration.get("enrich_filter", "has_email_or_phone").strip()
+        enrich_filter = (configuration.get("enrich_filter", "has_email_or_phone") or "").strip()
         valid_filters = {"has_email", "has_phone", "has_email_or_phone", "all"}
         if enrich_filter and enrich_filter not in valid_filters:
             raise ValueError(
@@ -92,7 +96,7 @@ def build_search_filter(configuration: dict) -> dict:
     DEFAULT_COUNTRY when blank. Currently supports a single country only —
     if multiple are provided, the first is used and a warning is logged.
     """
-    raw = configuration.get("countries", "").strip()
+    raw = (configuration.get("countries", "") or "").strip()
     countries = [c.strip() for c in raw.split(",") if c.strip()] if raw else [DEFAULT_COUNTRY]
 
     if len(countries) > 1:
@@ -163,7 +167,7 @@ def get_enrich_config(configuration: dict) -> dict:
     if not enrich_enabled:
         return None
 
-    enrich_filter = configuration.get("enrich_filter", "has_email_or_phone").strip()
+    enrich_filter = (configuration.get("enrich_filter", "has_email_or_phone") or "").strip()
     valid_filters = {"has_email", "has_phone", "has_email_or_phone", "all"}
     if enrich_filter not in valid_filters:
         log.warning(

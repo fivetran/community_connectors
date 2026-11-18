@@ -12,14 +12,17 @@ only touches the free Search endpoints.
 Module layout (the connector is split across files for readability):
 - connector.py   — schema() + update() entrypoints and the Connector object.
 - constants.py   — endpoint paths, tunables, default field lists, state keys.
-- client.py      — OAuth token cache, retry transport, Search/Enrich pagination.
+- client.py      — OAuth PKCE refresh-token handling, retry transport, Search/Enrich pagination.
 - config.py      — configuration parsing/validation and Search-filter building.
 - transforms.py  — pure value coercion (int/float/datetime, cursor compare).
 - sync.py        — one sync_* function per table plus enrichment orchestration.
+- setup_form.py  — dashboard setup form fields (attached in connector.py).
+- pkce_login.py  — one-time PKCE browser login helper; run locally, not during a sync.
 
 Patterns demonstrated:
-- OAuth 2.0 Client Credentials auth with in-process token caching and mid-sync
-  401 refresh (see client.get_access_token).
+- OAuth 2.0 Authorization Code (PKCE) auth: a one-time browser login (pkce_login.py)
+  yields a refresh token; each sync exchanges it for an access token and saves the
+  rotated refresh token in state (see client.get_access_token).
 - JSON:API page[size]/page[number] pagination with end-of-pages detection
   (see client.paginate).
 - Incremental sync via per-endpoint server-side date filters, with a full-replace
@@ -36,7 +39,7 @@ Best Practices (https://fivetran.com/docs/connector-sdk#connectordevelopmentbest
 """
 
 # Import required classes from fivetran_connector_sdk
-from fivetran_connector_sdk import Connector
+from fivetran_connector_sdk import Connector, ConfigurationForm, Test
 
 # For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
@@ -47,6 +50,7 @@ from fivetran_connector_sdk import Operations as op
 # For reading the local configuration.json in the __main__ debug block.
 import json
 
+# Endpoint paths, tunables, default field lists, and state keys shared across modules.
 from constants import (
     STATE_CONTACTS_LAST_UPDATED,
     STATE_COMPANIES_LAST_UPDATED,
@@ -54,12 +58,22 @@ from constants import (
     STATE_INTENT_LAST_UPDATED,
     STATE_NEWS_LAST_UPDATED,
 )
+
+# Configuration parsing, validation, and Search-filter helpers.
 from config import (
     _bool_config,
     validate_configuration,
     build_search_filter,
     get_enrich_config,
 )
+
+# HTTP client helpers: token handling, retry transport, and pagination generators.
+from client import bind_auth_state, get_access_token
+
+# Dashboard setup form definition (labels, field types, and descriptions).
+from setup_form import build_form
+
+# One sync function per destination table plus enrichment orchestration.
 from sync import (
     sync_usage,
     sync_contacts,
@@ -160,7 +174,7 @@ def schema(configuration: dict):
     ]
 
     # Intent — only if topics are configured
-    if configuration.get("intent_topics", "").strip():
+    if (configuration.get("intent_topics", "") or "").strip():
         tables.append(
             {
                 "table": "intent",
@@ -377,6 +391,14 @@ def update(configuration: dict, state: dict):
     # from the prior state means a resume picks up where the last run left off.
     cumulative_state = dict(state)
 
+    # ZoomInfo refresh tokens are single-use: every access-token request returns a
+    # new refresh token and invalidates the old one. Bind the state dict so the
+    # rotated token is stored in it, then request the first access token now. That
+    # exchange checkpoints the new refresh token immediately, before any data work
+    # that could fail.
+    bind_auth_state(cumulative_state)
+    get_access_token(configuration)
+
     # ── Usage (always — free, no opt-in) ──
     sync_usage(configuration)
     # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
@@ -495,10 +517,43 @@ def update(configuration: dict, state: dict):
 
 
 # ─────────────────────────────────────────────
+# SETUP FORM
+# ─────────────────────────────────────────────
+def verify_configuration(configuration: dict):
+    """
+    Setup test: validate the configuration without calling ZoomInfo.
+
+    ZoomInfo documents refresh tokens as single-use, so this test never exchanges one. A
+    wrong client ID, client secret, or refresh token is reported by the first sync, which
+    fails with a message telling you to run pkce_login.py again.
+    Args:
+        configuration: a dictionary that holds the configuration settings for the connector.
+    Returns:
+        Test().success() or Test().failure(reason)
+    """
+    test = Test()
+    try:
+        validate_configuration(configuration)
+    except ValueError as e:
+        return test.failure(str(e))
+    return test.success()
+
+
+def configuration_form() -> ConfigurationForm:
+    """
+    Define the setup form shown in the Fivetran dashboard for this connection.
+    The field layout lives in setup_form.py; this function supplies the setup test.
+    Returns:
+        ConfigurationForm with one field per configuration key and the setup test.
+    """
+    return build_form(tests=[("Configuration is complete and valid", verify_configuration)])
+
+
+# ─────────────────────────────────────────────
 # CONNECTOR INIT
 # ─────────────────────────────────────────────
-# Create the connector object using the schema and update functions
-connector = Connector(update=update, schema=schema)
+# Create the connector object using the schema, update, and setup form functions
+connector = Connector(update=update, schema=schema, configuration_form=configuration_form)
 
 # Check if the script is being run as the main module.
 # This is Python's standard entry method allowing your script to be run

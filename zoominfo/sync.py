@@ -29,6 +29,7 @@ from fivetran_connector_sdk import Logging as log
 # For supporting Data operations like upsert(), update(), delete() and checkpoint()
 from fivetran_connector_sdk import Operations as op
 
+# Endpoint paths, tunables, default field lists, and state keys shared across modules.
 from constants import (
     ENDPOINT_CONTACTS,
     ENDPOINT_COMPANIES,
@@ -51,6 +52,8 @@ from constants import (
     STATE_INTENT_LAST_UPDATED,
     STATE_NEWS_LAST_UPDATED,
 )
+
+# HTTP client helpers: token handling, retry transport, and pagination generators.
 from client import (
     get_access_token,
     get_headers,
@@ -63,6 +66,8 @@ from client import (
     paginate_enrich_technologies,
     _invalidate_token_cache,
 )
+
+# Configuration parsing, validation, and Search-filter helpers.
 from config import (
     _bool_config,
     _fields_config,
@@ -70,6 +75,8 @@ from config import (
     should_enrich,
     matches_mgmt_level,
 )
+
+# Pure value-coercion helpers (int/float/datetime and cursor comparison).
 from transforms import (
     _safe_int,
     _safe_float,
@@ -453,7 +460,7 @@ def sync_intent(configuration: dict, state: dict, cumulative_state: dict = None)
     Gracefully skips on 403 — customer may not have Intent product licensed
     or the app scope may not include api:data:intent.
     """
-    topics_raw = configuration.get("intent_topics", "").strip()
+    topics_raw = (configuration.get("intent_topics", "") or "").strip()
     topics = [t.strip() for t in topics_raw.split(",") if t.strip()]
 
     if not topics:

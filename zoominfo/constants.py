@@ -189,3 +189,13 @@ STATE_COMPANIES_LAST_UPDATED = "companies_last_updated"
 STATE_SCOOPS_LAST_UPDATED = "scoops_last_updated"
 STATE_INTENT_LAST_UPDATED = "intent_last_updated"
 STATE_NEWS_LAST_UPDATED = "news_last_updated"
+
+# OAuth 2.0 Authorization Code (PKCE) refresh tokens are single-use: every
+# refresh returns a new refresh token and invalidates the previous one. The
+# newest token is persisted in state under STATE_REFRESH_TOKEN, together with a
+# fingerprint of the refresh_token from configuration.json it was derived from
+# (STATE_REFRESH_TOKEN_SEED). If the configured token changes (the user ran
+# pkce_login.py again), the fingerprint no longer matches and the configured
+# token wins over the stale one in state.
+STATE_REFRESH_TOKEN = "refresh_token"
+STATE_REFRESH_TOKEN_SEED = "refresh_token_seed"

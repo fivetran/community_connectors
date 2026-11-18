@@ -1,9 +1,10 @@
 """HTTP client for the ZoomInfo connector: auth, retry transport, pagination.
 
-Holds the OAuth 2.0 Client Credentials token cache and the low-level request
-helpers (post/get with exponential-backoff retry) plus the Search and
-per-company Enrich pagination generators. Everything that talks to the
-ZoomInfo API over the wire lives here; higher-level sync orchestration in
+Holds the OAuth 2.0 Authorization Code (PKCE) token handling (refresh-token
+exchange, access-token cache, rotated refresh-token persistence) and the
+low-level request helpers (post/get with exponential-backoff retry) plus the
+Search and per-company Enrich pagination generators. Everything that talks to
+the ZoomInfo API over the wire lives here; higher-level sync orchestration in
 sync.py calls into these helpers.
 """
 
@@ -12,6 +13,9 @@ import requests
 
 # For Base64-encoding the client_id:client_secret pair in the OAuth token request.
 import base64
+
+# For fingerprinting the configured refresh token without storing it twice.
+import hashlib
 
 # For exponential-backoff sleeps between retries.
 import time
@@ -22,6 +26,10 @@ import threading
 # For enabling Logs in your connector code
 from fivetran_connector_sdk import Logging as log
 
+# For supporting Data operations like checkpoint()
+from fivetran_connector_sdk import Operations as op
+
+# Endpoint paths, tunables, default field lists, and state keys shared across modules.
 from constants import (
     TOKEN_URL,
     SEARCH_BASE,
@@ -36,23 +44,123 @@ from constants import (
     REQUEST_TIMEOUT,
     ENDPOINT_SCOOPS_ENRICH,
     ENDPOINT_TECHNOLOGIES_ENRICH,
+    STATE_REFRESH_TOKEN,
+    STATE_REFRESH_TOKEN_SEED,
 )
+
+# Pure value-coercion helpers (int/float/datetime and cursor comparison).
 from transforms import _safe_int
 
 # In-memory token cache. Guarded by _token_cache_lock — enrich worker threads
-# can race on token refresh otherwise, wasting credits on duplicate /oauth/v1/token
-# calls and potentially tripping per-IP rate limits.
+# can race on token refresh otherwise. With single-use refresh tokens a race
+# would be worse than wasteful: two threads exchanging the same refresh token
+# would invalidate each other's session.
 _token_cache = {"access_token": None, "expires_at": 0}
 _token_cache_lock = threading.Lock()
+
+# The cumulative state dict that update() checkpoints, plus the id of the thread
+# running update(). Rotated refresh tokens are written into this dict so every
+# later op.checkpoint(state=...) persists them. op.checkpoint may only run on
+# the update() thread, so worker threads just write into the dict and the
+# update() thread persists it at its next checkpoint.
+_auth_state = {"state": None, "owner_thread": None}
 
 
 # ─────────────────────────────────────────────
 # AUTH
 # ─────────────────────────────────────────────
+def bind_auth_state(cumulative_state: dict):
+    """
+    Register the state dict that update() checkpoints so rotated refresh tokens
+    are persisted with it. Must be called from the thread that runs update(),
+    before the first get_access_token() call.
+    Args:
+        cumulative_state: the same dict object passed to every op.checkpoint().
+    """
+    with _token_cache_lock:
+        _auth_state["state"] = cumulative_state
+        _auth_state["owner_thread"] = threading.get_ident()
+
+
+def _fingerprint(token: str) -> str:
+    """Return a short, non-reversible fingerprint of a token for change detection."""
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+
+def _current_refresh_token(configuration: dict) -> str:
+    """
+    Pick the refresh token to exchange. ZoomInfo refresh tokens are single-use, so
+    the newest one lives in state. It is only trusted when it was derived from the
+    refresh_token currently in configuration.json; if the user generated a new one
+    with pkce_login.py, the configured token wins over the stale one in state.
+    """
+    configured = configuration["refresh_token"].strip()
+    state = _auth_state["state"] or {}
+    stored = state.get(STATE_REFRESH_TOKEN)
+    if stored and state.get(STATE_REFRESH_TOKEN_SEED) == _fingerprint(configured):
+        return stored
+    return configured
+
+
+def _persist_rotated_refresh_token(configuration: dict, new_refresh_token: str):
+    """
+    Store the rotated refresh token in the bound state dict and, when running on
+    the update() thread, checkpoint immediately. The previous token is already
+    invalidated by ZoomInfo, so the new one must reach Fivetran state before any
+    long-running work can fail.
+    """
+    state = _auth_state["state"]
+    if state is None:
+        return
+    state[STATE_REFRESH_TOKEN] = new_refresh_token
+    state[STATE_REFRESH_TOKEN_SEED] = _fingerprint(configuration["refresh_token"].strip())
+    if threading.get_ident() == _auth_state["owner_thread"]:
+        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
+        # from the correct position in case of next sync or interruptions.
+        # You should checkpoint even if you are not using incremental sync, as it tells Fivetran it is safe to write to destination.
+        # For large datasets, checkpoint regularly (e.g., every N records) not only at the end.
+        # Learn more about how and where to checkpoint by reading our best practices documentation
+        # (https://fivetran.com/docs/connector-sdk/best-practices#optimizingperformancewhenhandlinglargedatasets).
+        op.checkpoint(state=state)
+
+
+def _handle_refresh_token_in_response(
+    configuration: dict, used_refresh_token: str, new_refresh_token
+):
+    """
+    Decide what to keep in state after a successful token exchange.
+
+    ZoomInfo's documentation says every exchange returns a new refresh token and
+    invalidates the old one, but it has been observed returning the same token. State
+    and the SDK's debug logs print the full state dict, so the token is only put in
+    state when it actually changed:
+    - new token differs from the one just used: persist it (and checkpoint at once).
+    - same token as the one in configuration.json: drop any copy from state.
+    - same token as one already in state: nothing to do.
+    - no token in the response: keep using the current one.
+    """
+    state = _auth_state["state"]
+    if state is None:
+        return
+    if not new_refresh_token:
+        log.warning("Token response had no refresh_token; keeping the current one")
+        return
+    if new_refresh_token != used_refresh_token:
+        _persist_rotated_refresh_token(configuration, new_refresh_token)
+    elif used_refresh_token == configuration["refresh_token"].strip():
+        state.pop(STATE_REFRESH_TOKEN, None)
+        state.pop(STATE_REFRESH_TOKEN_SEED, None)
+
+
 def get_access_token(configuration: dict) -> str:
     """
-    Returns a valid ZoomInfo Bearer token using Client Credentials Flow.
-    Caches the token and only re-authenticates when within 60s of expiry.
+    Returns a valid ZoomInfo Bearer token using the OAuth 2.0 Authorization Code
+    (PKCE) flow's refresh-token grant. The browser login happens once, outside
+    the connector (see pkce_login.py); each sync exchanges the stored refresh
+    token for a short-lived access token. If ZoomInfo returns a different refresh
+    token (it documents single-use rotation), the new token is saved to state
+    straight away; see _handle_refresh_token_in_response.
+    Caches the access token and only re-authenticates when within 60s of expiry.
 
     Thread-safe: holds _token_cache_lock across the cache-check / refresh /
     cache-write window so concurrent enrich workers don't double-fetch.
@@ -69,6 +177,7 @@ def get_access_token(configuration: dict) -> str:
         client_id = configuration["client_id"]
         client_secret = configuration["client_secret"]
         encoded = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        refresh_token = _current_refresh_token(configuration)
 
         response = None
         wait = RETRY_BASE_WAIT
@@ -79,8 +188,9 @@ def get_access_token(configuration: dict) -> str:
                     headers={
                         "Authorization": f"Basic {encoded}",
                         "Content-Type": "application/x-www-form-urlencoded",
+                        "Accept": "application/json",
                     },
-                    data={"grant_type": "client_credentials"},
+                    data={"grant_type": "refresh_token", "refresh_token": refresh_token},
                     timeout=REQUEST_TIMEOUT,
                 )
             except requests.exceptions.RequestException as e:
@@ -110,15 +220,24 @@ def get_access_token(configuration: dict) -> str:
             break
 
         if response.status_code != 200:
+            hint = (
+                " The refresh token was rejected (expired, already used, or revoked). "
+                "Run pkce_login.py to get a new one, set it as refresh_token in the "
+                "connection configuration, and sync again."
+                if "invalid_grant" in response.text
+                else " Please check your client_id, client_secret, and refresh_token."
+            )
             raise RuntimeError(
-                f"ZoomInfo authentication failed ({response.status_code}). "
-                f"Please check your client_id and client_secret. "
+                f"ZoomInfo authentication failed ({response.status_code}).{hint} "
                 f"Details: {response.text[:200]}"
             )
 
         token_data = response.json()
         _token_cache["access_token"] = token_data["access_token"]
         _token_cache["expires_at"] = now + token_data["expires_in"]
+
+        new_refresh_token = token_data.get("refresh_token")
+        _handle_refresh_token_in_response(configuration, refresh_token, new_refresh_token)
 
         log.info("Successfully obtained ZoomInfo access token")
         return _token_cache["access_token"]

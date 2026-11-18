@@ -24,7 +24,7 @@ This example was contributed by ZoomInfo Technologies LLC.
 
 ## Getting started
 
-Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connector-sdk/getting-started) to get started.
 
 To initialize a new Connector SDK project using this connector as a starting point, run:
 
@@ -32,9 +32,9 @@ To initialize a new Connector SDK project using this connector as a starting poi
 fivetran init --template zoominfo
 ```
 
-`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/getting-started/connector-sdk-commands#fivetraninit).
 
-> Note: Ensure you have updated the `configuration.json` file with your ZoomInfo `client_id` and `client_secret` before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+> Note: Ensure you have updated the `configuration.json` file with your ZoomInfo `client_id`, `client_secret`, and `refresh_token` before running `fivetran debug`. Get the `refresh_token` by running `pkce_login.py` once; see the [Authentication](#authentication) section. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
 
 ## Features
 
@@ -42,7 +42,7 @@ fivetran init --template zoominfo
 - Free Search endpoints consume only your ZoomInfo records/requests quota; Enrich endpoints debit one ZoomInfo credit per record (or per company, depending on the endpoint) and are opt-in via configuration flags
 - Incremental sync on `contacts`, `scoops`, `intent`, and `news` via per-endpoint server-side date filters confirmed against `/lookup/search`
 - Full-replace sync on `companies` via buffer-then-`op.truncate` + `op.upsert` (the ZoomInfo Search API does not expose a `lastUpdated`-style filter for the company entity). Pagination buffers the full universe before any destructive op — if the Search call fails partway through, the destination table is preserved.
-- OAuth Client Credentials token caching with mid-sync 401 refresh
+- OAuth 2.0 Authorization Code flow with PKCE: a one-time browser login (`pkce_login.py`) yields a refresh token, and each sync exchanges it for an access token. Access tokens are cached with mid-sync 401 refresh, and if ZoomInfo rotates the refresh token, the new one is saved to state and checkpointed immediately
 - Per-company enrichments (`scoops_enriched`, `technologies`) parallelized across a 3-worker thread pool, with rows streamed back through a bounded queue (max 2,000 in flight) to keep memory bounded under Fivetran's 1 GB runtime ceiling. `op.upsert` calls stay on the main thread for SDK safety.
 - Mid-sync checkpoints fire after every completed table and every 1,000 rows inside `contacts`, `scoops`, `intent`, `news`, and the streaming per-company enrich helpers (`scoops_enriched`, `technologies`), so the destination commits incrementally instead of buffering an entire large table in flight.
 - 403 responses on enrich endpoints (missing license) are logged as warnings and skipped — the rest of the sync continues
@@ -50,16 +50,17 @@ fivetran init --template zoominfo
 
 ## Configuration file
 
-Configuration values are passed to Fivetran via `configuration.json` at deploy time. All values are stored as strings; the connector parses booleans (`"true"` / `"false"`), comma-separated lists, and dropdown values internally. The Connector SDK does not support a custom UI form schema — the setup form in the Fivetran dashboard is auto-generated from the keys in `configuration.json`, with every value masked for security.
+Configuration values are passed to Fivetran via `configuration.json` at deploy time. All values are stored as strings; the connector parses booleans (`"true"` / `"false"`), comma-separated lists, and dropdown values internally. The connector also defines a dashboard setup form (refer to `def configuration_form()` and `setup_form.py`) with a labeled field for every key below: password fields for `client_secret` and `refresh_token`, toggles for the on/off options, and a dropdown for `enrich_filter`. The form has a setup test that checks the configuration is complete without calling ZoomInfo, because the refresh token may be single-use. The form does not sign you in to ZoomInfo. You still get the `refresh_token` once by running `pkce_login.py`.
 
-For local development, fill in the two required secrets in `configuration.json`, and optionally add any non-default toggles you want to exercise.
+For local development, fill in the three required secrets in `configuration.json`, and optionally add any non-default toggles you want to exercise.
 
-The configuration is a flat JSON object of string values. A minimal `configuration.json` contains only the two required secrets:
+The configuration is a flat JSON object of string values. A minimal `configuration.json` contains only the three required secrets:
 
 ```json
 {
   "client_id": "<YOUR_ZOOMINFO_CLIENT_ID>",
-  "client_secret": "<YOUR_ZOOMINFO_CLIENT_SECRET>"
+  "client_secret": "<YOUR_ZOOMINFO_CLIENT_SECRET>",
+  "refresh_token": "<YOUR_ZOOMINFO_REFRESH_TOKEN>"
 }
 ```
 
@@ -69,6 +70,7 @@ To exercise optional behavior, add any of the toggles documented below (all valu
 {
   "client_id": "<YOUR_ZOOMINFO_CLIENT_ID>",
   "client_secret": "<YOUR_ZOOMINFO_CLIENT_SECRET>",
+  "refresh_token": "<YOUR_ZOOMINFO_REFRESH_TOKEN>",
   "countries": "United States",
   "full_refresh": "false",
   "intent_topics": "",
@@ -89,6 +91,7 @@ To exercise optional behavior, add any of the toggles documented below (all valu
 |-------|-------------|
 | `client_id` | ZoomInfo API Client ID from your Developer Portal application. |
 | `client_secret` | ZoomInfo API Client Secret. Stored encrypted by Fivetran; never displayed after save. |
+| `refresh_token` | ZoomInfo OAuth refresh token from a one-time PKCE login (`pkce_login.py`). If ZoomInfo rotates refresh tokens, the connector keeps the newest one in state and uses this value only for the first sync or after you set a new one to re-authorize. |
 
 ### Optional — filters and sync mode
 
@@ -123,7 +126,7 @@ Each enriched company costs one ZoomInfo credit per enrichment type. `enrich_sco
 | `enrich_corporate_hierarchy` | `"false"` | When `"true"`, enriches each company with its full corporate hierarchy (parent, subsidiaries, acquisitions, former names, locations). |
 | `enrich_corp_hier_output_fields` | (curated default set) | Comma-separated override for Corporate Hierarchy Enrich output fields. See `DEFAULT_CORP_HIER_FIELDS` in `constants.py` and ZoomInfo's `/lookup/enrich?filter[entity]=corporate-hierarchy`. |
 
-> Note: When submitting connector code as a [Community Connector](https://github.com/fivetran/fivetran_csdk_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+> Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
 
@@ -131,27 +134,26 @@ This connector requires only `requests` at runtime, which is pre-installed in th
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
-## Project structure
-
-The connector is split across several modules for readability. `connector.py` remains the entry point Fivetran loads; the rest are sibling modules imported by it.
-
-- `connector.py` — Entry point: defines `schema()` and `update()` and instantiates the `Connector` object.
-- `constants.py` — Endpoint paths, tunables (page size, worker count, retry policy, checkpoint cadence), default output-field lists, and state keys.
-- `client.py` — OAuth 2.0 token cache, retry-aware HTTP transport, and the Search / per-company Enrich pagination generators.
-- `config.py` — Configuration parsing and validation, Search-filter construction, the incremental-cursor predicate, and enrichment eligibility checks.
-- `transforms.py` — Pure value coercion helpers (safe int/float/datetime, incremental-cursor comparison). No network or SDK dependency.
-- `sync.py` — One `sync_*` function per destination table plus the bounded-memory streaming helper for per-company enrichments.
-
 ## Authentication
 
-ZoomInfo uses the OAuth 2.0 Client Credentials Flow.
+ZoomInfo uses the OAuth 2.0 Authorization Code flow with PKCE. The browser login happens once, outside the connector, and the connector then runs unattended by exchanging a refresh token for short-lived access tokens.
+
+To set up authentication:
 
 1. Sign in to the [ZoomInfo Developer Portal](https://api.zoominfo.com/).
 2. Go to **Apps** and select **Create app**.
 3. Add the scopes you need: `api:data:contacts`, `api:data:companies`, `api:data:scoops`, `api:data:intent`, `api:data:news`, plus the relevant enrich scopes.
-4. Copy the resulting Client ID and Client Secret into your local `configuration.json` (or paste them into the Client ID / Client Secret fields in the Fivetran UI when configuring a production connector).
+4. Add `http://localhost:8765/callback` to the app's **Sign-in Redirect URIs**. Use a different loopback address if you pass `--redirect-uri` below.
+5. Copy the Client ID and Client Secret.
+6. Run the helper script on your own machine: `python pkce_login.py --client-id <YOUR_CLIENT_ID>`. It prompts for the client secret, opens ZoomInfo in your browser, and prints a refresh token after you sign in and approve access.
+7. Put the Client ID, Client Secret, and refresh token into your local `configuration.json` (or paste them into the matching fields in the Fivetran UI when configuring a production connector).
 
-The connector exchanges these credentials for a Bearer token at `https://api.zoominfo.com/gtm/oauth/v1/token` and caches the token in process until 60 seconds before expiry. If a mid-sync 401 occurs, the cache is invalidated and a fresh token is fetched once before the request is retried. Refer to `def get_access_token(configuration)`.
+How the connector uses these credentials (refer to `def get_access_token(configuration)`):
+
+- Each sync sends `grant_type=refresh_token` to `https://api.zoominfo.com/gtm/oauth/v1/token`, with the client ID and secret as an HTTP Basic header, and caches the access token in process until 60 seconds before expiry. If a mid-sync 401 occurs, the cache is invalidated and a fresh token is fetched once before the request is retried.
+- ZoomInfo's documentation says refresh tokens are single-use: every exchange returns a new refresh token and immediately invalidates the previous one. If ZoomInfo returns a different token, the connector stores it in state and checkpoints it right after the exchange, before any more data is fetched. If ZoomInfo returns the same token, as it did in testing, nothing is stored in state and the `refresh_token` from the configuration keeps being used. This matters because the Connector SDK prints the full state in its debug logs, so a refresh token in state would show up there.
+- The `refresh_token` in the configuration is used only when state has no token derived from it. If you generate a new one with `pkce_login.py` and update the configuration, the new value takes priority over the one in state.
+- If ZoomInfo rejects the refresh token (`invalid_grant`), the sync fails with a message telling you to run `pkce_login.py` again.
 
 ## Pagination
 
@@ -177,7 +179,7 @@ A 403 from an enrich endpoint indicates the account does not hold a license for 
 
 A 403 from `intent/search` or `news/search` is treated the same way (intent and news require additional licensing on the ZoomInfo side).
 
-All other non-200 responses bubble up as `RuntimeError` so real outages and credential failures are surfaced to the Fivetran dashboard rather than silently swallowed.
+All other non-200 responses bubble up as `RuntimeError` so real outages and credential failures are surfaced to the Fivetran dashboard rather than silently swallowed. A refresh token that ZoomInfo rejects with `invalid_grant` raises a `RuntimeError` that tells you to run `pkce_login.py` again; the connector cannot recover from this on its own because the browser login needs a person.
 
 ## Tables created
 
@@ -197,6 +199,18 @@ All other non-200 responses bubble up as `RuntimeError` so real outages and cred
 
 The full schema (column names and types) is declared in `connector.py` under `def schema(configuration)`.
 
+## Additional files
+
+The connector is split across several modules for readability. `connector.py` remains the entry point Fivetran loads; the rest are sibling modules imported by it.
+
+- `constants.py` – Endpoint paths, tunables (page size, worker count, retry policy, checkpoint cadence), default output-field lists, and state keys.
+- `client.py` – OAuth 2.0 PKCE refresh-token exchange with rotated-token persistence, access-token cache, retry-aware HTTP transport, and the Search and per-company Enrich pagination generators.
+- `config.py` – Configuration parsing and validation, Search-filter construction, the incremental-cursor predicate, and enrichment eligibility checks.
+- `transforms.py` – Pure value coercion helpers (safe int/float/datetime, incremental-cursor comparison). No network or SDK dependency.
+- `sync.py` – One `sync_*` function per destination table plus the bounded-memory streaming helper for per-company enrichments.
+- `setup_form.py` – Declares the dashboard setup form fields: labels, descriptions, password fields for secrets, toggles, and the `enrich_filter` dropdown. `connector.py` attaches it with the setup test.
+- `pkce_login.py` – Standalone helper you run once on your own machine, not during a sync. It performs the PKCE browser login and prints the refresh token for `configuration.json`. It uses only the Python standard library.
+
 ## Additional considerations
 
 This connector is published as-is and is not actively maintained. Customers needing new tables, additional fields, or fixes for breaking ZoomInfo API changes should fork the example. Every table includes a `raw_attributes` JSON column containing the full API response — new ZoomInfo fields added after publication are automatically captured there and can be extracted via warehouse SQL without a code change.
@@ -212,4 +226,7 @@ For ZoomInfo API issues, contact your ZoomInfo account team.
 - Client-side page cap. `MAX_PAGES` is a client-side backstop set to 10,000 pages per endpoint. In practice the 10,000-record server-side ceiling above is reached first, so this backstop is rarely the binding limit.
 - High volume on the `technologies` table. The Technologies Enrich endpoint returns the full technology stack per company in a single response — observed at ~2,600 rows for large companies. For a sync covering 10,000 companies this produces ~26M `technologies` rows. The connector handles this safely (streaming queue + intra-table checkpoints every 1,000 rows), but sync time and destination storage scale linearly with company count. If you do not need per-technology granularity, leave `enrich_technologies` disabled — the firmographic technology fields are already available on `companies_enriched`.
 - Intra-table crash recovery is row-granular (checkpoints every 1,000 rows) for `contacts`, `scoops`, `intent`, `news`, `scoops_enriched`, and `technologies`. It is table-granular for `companies`, `companies_enriched`, `contacts_enriched`, `corporate_hierarchy`, and `usage` — a crash partway through those re-pulls the table from its previous state cursor on the next run.
+- Re-authorization can be required. ZoomInfo documents refresh tokens as single-use but does not state their lifetime, and a refresh token can stop working if it expires or is revoked. If ZoomInfo does rotate tokens, a crash between a rotation and the next checkpoint, or an exchange whose response is lost in transit, can leave state holding an already-used token, and a `fivetran reset` clears state and discards the rotated token. In each case the next sync fails with the `invalid_grant` message, and you fix it by running `pkce_login.py` and updating `refresh_token`.
+- Refresh token in logs. When ZoomInfo rotates the token, it must be stored in state, and the Connector SDK prints state in its debug output (for example the `checkpoint recorded` lines of `fivetran debug`). Do not share debug logs or screenshots from a rotating setup without redacting `refresh_token`.
+- One connector instance per refresh token. Using the same refresh token in two connections, or in a local `fivetran debug` run while a deployed connection syncs, makes them invalidate each other.
 - Schema drift is silent. New fields added by ZoomInfo to a Search or Enrich response are not auto-emitted; they require a schema update in `connector.py`. The `raw_attributes` JSON column on every table preserves the full API response so new fields can be extracted via warehouse SQL without a code change.
