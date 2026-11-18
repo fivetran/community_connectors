@@ -2,4 +2,4 @@
 name = "gleif"
 version = "0.1.0"
 description = "This connector syncs Legal Entity Identifier (LEI) reference data from the GLEIF API into a Fivetran destination."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

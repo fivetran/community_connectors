@@ -2,7 +2,7 @@
 name = "ibm-informix-ibm-informix-using-ibm-db"
 version = "0.1.0"
 description = "This connector uses the native ibm_db Python package provided by IBM to connect to IBM Informix databases."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "ibm-db==3.2.6",
 ]

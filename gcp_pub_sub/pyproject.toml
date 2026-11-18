@@ -2,7 +2,7 @@
 name = "gcp-pub-sub"
 version = "0.1.0"
 description = "This connector demonstrates how to sync data from Google Cloud Pub/Sub to a destination using the Fivetran Connector SDK."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "google-cloud-pubsub",
     "google-auth",

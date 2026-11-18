@@ -2,4 +2,4 @@
 name = "mailerlite"
 version = "0.1.0"
 description = "This connector demonstrates how to fetch email marketing data from MailerLite and upsert it into your destination using the Fivetran Connector SDK."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

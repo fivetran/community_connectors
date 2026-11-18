@@ -2,4 +2,4 @@
 name = "prometheus"
 version = "0.1.0"
 description = "This connector syncs metrics metadata and time series data from Prometheus, an open-source monitoring and alerting system."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

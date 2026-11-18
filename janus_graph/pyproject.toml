@@ -2,7 +2,7 @@
 name = "janus-graph"
 version = "0.1.0"
 description = "This connector integrates JanusGraph graph database with Fivetran's data pipeline using the Gremlin Server API."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "gremlinpython==3.8.0",
 ]

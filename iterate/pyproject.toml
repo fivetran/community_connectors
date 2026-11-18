@@ -2,4 +2,4 @@
 name = "iterate"
 version = "0.1.0"
 description = "This custom Fivetran connector extracts NPS survey data from the Iterate REST API and loads it into your destination."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
