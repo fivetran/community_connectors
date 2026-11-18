@@ -35,7 +35,7 @@ fivetran init --template emplifi
 - Syncs profiles, daily profile metrics, posts, and cross-platform aggregated post metrics across nine social networks.
 - Chunks metrics requests into 30-day windows to stay within Emplifi's 12-month date-range limit per call, and batches aggregated-metrics requests up to 100 profiles per call.
 - Retries transient network errors and retryable HTTP status codes (429, 5xx) with backoff, honoring a `Retry-After` header on 429 responses (the sync fails for a later retry if the requested wait exceeds 5 minutes).
-- Handles Emplifi's application-level error codes (validation errors, before-history-limit, insights-not-enabled) by skipping the affected request instead of failing the whole sync.
+- Handles Emplifi's application-level error codes: before-history-limit requests are narrowed to the available history and insights-not-enabled requests are skipped, while validation and rate-limit errors fail the sync.
 - Checkpoints after each profile (profile metrics), after each page of posts, and after each metric batch (aggregated metrics), recording resumable progress in state. `last_synced_date` only advances once the whole window has succeeded, and request failures abort the sync rather than being skipped.
 
 ## Configuration file
@@ -87,7 +87,7 @@ A full sync for 169 profiles over a 1-day window issues roughly 365 API calls (9
 Resuming an interrupted sync: the sync window and finished work are saved in `state["progress"]` (`window`, `done`, and per-profile post `cursors`). If a run is interrupted, the next run resumes that exact window, even on a later calendar day, skips finished profiles and batches, and continues posts from the saved `after` cursor. `last_synced_date` advances to the window end only when the whole window completes; the following run then computes a new window. Aggregated metrics batches are identified by a hash of their member profiles rather than their position, so a changed profile list never reuses another batch's completion.
 
 ## Error handling
-Refer to `def _request_with_backoff` and `def _parse_body` in `connector.py`. Connection errors, timeouts, and HTTP 429/5xx responses are retried with backoff, honoring a `Retry-After` header in delay-seconds form on 429 responses. Other non-2xx responses raise an exception and fail the sync, except HTTP 400/403/404 on a network's profiles endpoint (network not available to the account) and 404/405 on the aggregated-metrics endpoint.
+Refer to `def _request_with_backoff` and `def _parse_body` in `connector.py`. Connection errors, timeouts, and HTTP 429/5xx responses are retried with backoff, honoring a `Retry-After` header in delay-seconds form on 429 responses. Other non-2xx responses raise an exception and fail the sync, except HTTP 400/403/404 on a network's profiles endpoint (network not available to the account). Aggregated-metrics request failures, including 404 and 405, fail the sync so `last_synced_date` does not advance past data that was never loaded.
 
 Emplifi returns some errors as a 200 response with an `errors` array rather than a non-2xx status. `_parse_body` handles these application-level codes:
 - Codes 10 and 11 (rate limit) raise an exception, failing the sync.

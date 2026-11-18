@@ -710,15 +710,9 @@ def _sync_aggregated_post_metrics(configuration, state, profiles_by_network, dat
                     "metric": metric,
                     "dimensions": [{"type": "date.day"}, {"type": "profile"}],
                 }
-                try:
-                    body = _post_within_history(url, payload, configuration)
-                except requests.HTTPError as e:
-                    status = e.response.status_code if e.response is not None else None
-                    if status in (404, 405):
-                        log.warning(f"Aggregated endpoint returned {status} - skipping")
-                        return
-                    raise
-
+                # Request failures (including 404/405) are not skipped: returning here would let
+                # last_synced_date advance and the aggregated history would never be backfilled.
+                body = _post_within_history(url, payload, configuration)
                 _upsert_aggregated_metrics_response(body, metric, batch)
             _mark_done(state, progress_key)
 
