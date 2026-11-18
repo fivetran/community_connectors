@@ -68,7 +68,7 @@ The configuration parameters are:
 
 ## Requirements file
 
-The `pyproject.toml` file specifies the Python libraries required by the connector. The content of `pyproject.toml` required is:
+Declare the following dependencies under the existing `[project]` table in `pyproject.toml`, keeping the other project metadata:
 
 ```toml
 dependencies = [
