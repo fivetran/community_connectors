@@ -57,9 +57,11 @@ The connector reads credentials from `configuration.json`:
 
 Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-delta-sharing   # Official Delta Sharing Python client — handles DeletionVectors, incremental reads, and all advanced Delta table features
-pyarrow         # Columnar data processing for Parquet file reads
+```toml
+dependencies = [
+  "delta-sharing", # Official Delta Sharing Python client; handles DeletionVectors, incremental reads, and advanced Delta table features
+  "pyarrow", # Columnar data processing for Parquet file reads
+]
 ```
 
 > **Why `delta-sharing` instead of raw HTTP?**  
