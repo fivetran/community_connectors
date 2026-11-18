@@ -2,4 +2,4 @@
 name = "apache-druid-using-sql"
 version = "0.1.0"
 description = "This connector syncs data from Apache Druid datasources into Fivetran, allowing you to replicate event and analytics data into your destination."
-requires-python = ">=3.10,<=3.14"
+requires-python = ">=3.10,<3.15"

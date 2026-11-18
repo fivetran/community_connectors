@@ -2,7 +2,7 @@
 name = "fleetio"
 version = "0.1.0"
 description = "The Fleetio Connector allows Fleetio customers to easily pull their data into their destination databases with Fivetran."
-requires-python = ">=3.10,<=3.14"
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "flatten_json==0.1.14",
 ]
