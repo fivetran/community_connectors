@@ -2,4 +2,4 @@
 name = "healthchecks"
 version = "0.1.0"
 description = "This connector syncs health check monitoring data from Healthchecks.io to your data warehouse using the Fivetran Connector SDK."
-requires-python = ">=3.10,<=3.14"
+requires-python = ">=3.10,<3.15"

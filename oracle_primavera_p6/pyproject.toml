@@ -2,4 +2,4 @@
 name = "oracle-primavera-p6"
 version = "0.1.0"
 description = "This connector syncs data from the Oracle Primavera P6 EPPM Data Service REST API."
-requires-python = ">=3.10,<=3.14"
+requires-python = ">=3.10,<3.15"

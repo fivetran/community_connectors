@@ -75,12 +75,11 @@ You can also define the search array as a constant in `config.py`. The connector
 
 Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-# Google Trends API client library
-pytrends==4.9.2
-
-# Pandas for data processing (required by PyTrends)
-pandas==3.0.0
+```toml
+dependencies = [
+  "pytrends==4.9.2", # Google Trends API client library
+  "pandas==3.0.0", # Pandas for data processing (required by PyTrends)
+]
 ```
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
