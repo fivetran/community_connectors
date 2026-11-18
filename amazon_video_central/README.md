@@ -73,7 +73,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector requires the `cryptography` library for Fernet token encryption:
 
 ```toml
 dependencies = [
