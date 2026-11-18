@@ -80,6 +80,8 @@ Configuration parameters:
 
 ## Requirements file
 
+The `pyproject.toml` file specifies the Python libraries required by the connector. For the SenSource connector, no additional dependencies are needed as it only uses the pre-installed `fivetran_connector_sdk` and `requests` packages.
+
 > Note: This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.

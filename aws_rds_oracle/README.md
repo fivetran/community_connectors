@@ -57,7 +57,7 @@ The connector requires the following configuration parameters in `configuration.
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `oracledb` package to connect to Oracle databases.
 
 ```toml
 dependencies = [

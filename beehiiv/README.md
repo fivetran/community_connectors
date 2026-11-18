@@ -60,7 +60,8 @@ Configuration parameters:
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+
+This connector uses only the `requests` library, which is pre-installed in the Fivetran environment, so no `pyproject.toml` file is needed.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

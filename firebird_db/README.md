@@ -63,7 +63,7 @@ The connector requires configuration with your Firebird database credentials:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `firebirdsql` package for database connectivity:
 
 ```toml
 dependencies = [

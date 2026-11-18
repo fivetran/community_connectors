@@ -90,7 +90,7 @@ Key pattern examples:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector uses the `redis` library for connecting to DragonflyDB (Redis-compatible protocol):
 
 ```toml
 dependencies = [
