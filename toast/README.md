@@ -66,7 +66,7 @@ Declare the dependencies under `[project].dependencies` in your `pyproject.toml`
 
 ```toml
 dependencies = [
-  "cryptography",
+  "cryptography==50.0.2",
 ]
 ```
 

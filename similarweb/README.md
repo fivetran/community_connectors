@@ -60,8 +60,7 @@ Example content of `pyproject.toml`:
 
 ```toml
 dependencies = [
-  "pytz",
-  "dateutil",
+  "python_dateutil==2.9.0.post0",
 ]
 ```
 

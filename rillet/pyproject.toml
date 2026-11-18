@@ -2,4 +2,4 @@
 name = "rillet"
 version = "0.1.0"
 description = "This connector fetches core accounting data from the Rillet API and syncs it into Fivetran destination tables."
-requires-python = ">=3.10,<=3.14"
+requires-python = ">=3.10,<3.15"
