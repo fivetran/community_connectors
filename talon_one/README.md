@@ -59,7 +59,7 @@ The connector requires configuration with your Talon.one credentials and sync se
 
 ## Requirements file
 
-The connector uses minimal external dependencies. The `pyproject.toml` file should be empty because all required packages are pre-installed in the Fivetran environment.
+The connector uses minimal external dependencies as all required packages are pre-installed in the Fivetran environment.
 
 This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
