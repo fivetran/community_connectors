@@ -2,7 +2,7 @@
 name = "cassandra"
 version = "0.1.0"
 description = "This connector integrates Cassandra databases with Fivetran, syncing data from Cassandra clusters to your destination."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "cassandra-driver",
     "python-dateutil",

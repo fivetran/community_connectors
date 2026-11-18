@@ -2,7 +2,7 @@
 name = "apache-hbase"
 version = "0.1.0"
 description = "This connector shows how to sync data from Apache HBase databases using Fivetran Connector SDK."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "happybase==1.2.0",
 ]

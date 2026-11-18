@@ -2,7 +2,7 @@
 name = "aws-athena-using-sqlalchemy"
 version = "0.1.0"
 description = "This connector demonstrates how to use SQLAlchemy with PyAthena to connect to Amazon Athena, execute a query, and stream the results to Fivetran using the Connector SDK."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "PyAthena",
     "sqlalchemy",

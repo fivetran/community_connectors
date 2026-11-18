@@ -2,4 +2,4 @@
 name = "courier"
 version = "0.1.0"
 description = "This connector fetches data from the Courier API, a multi-channel notification platform that enables businesses to send notifications across email, SMS, push, and other channels."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<=3.15"

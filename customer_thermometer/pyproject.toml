@@ -2,4 +2,4 @@
 name = "customer-thermometer"
 version = "0.1.0"
 description = "The Customer Thermometer custom Fivetran connector fetches customer feedback data from the Customer Thermometer API and syncs it to your destination."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<=3.15"
