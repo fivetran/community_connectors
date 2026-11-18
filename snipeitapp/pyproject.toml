@@ -2,4 +2,4 @@
 name = "snipeitapp"
 version = "0.1.0"
 description = "This connector demonstrates how to integrate Snipe-IT Asset Management data with Fivetran using the Connector SDK."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"

@@ -2,7 +2,7 @@
 name = "weights-and-biases"
 version = "0.1.0"
 description = "This connector syncs data from Weights & Biases (W&B), a machine learning experiment tracking platform, into your data warehouse via Fivetran."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"
 dependencies = [
     "wandb==0.25.0",
 ]

@@ -2,4 +2,4 @@
 name = "usgs-earthquake-connector"
 version = "0.1.0"
 description = "This connector syncs earthquake and other seismic events from the USGS FDSN Event Web Service (FDSN is the International Federation of Digital Seismograph Networks, whose query standard the service follows) into a Fivetran destination."
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"
