@@ -59,7 +59,7 @@ The connector requires configuration with your Talon.one credentials and sync se
 
 ## Requirements file
 
-> Note: This connector does not require any additional dependencies, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
+> Note: This connector does not require any additional Python packages beyond those pre-installed in the Connector SDK runtime environment, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
 
