@@ -46,6 +46,7 @@ jobs:
           import pathlib
           import subprocess
           import sys
+          import tomllib
           import venv
           import xml.etree.ElementTree as ET
           from pathlib import Path
@@ -173,6 +174,10 @@ jobs:
               venv.create(env_dir, with_pip=True)
               python = env_dir / "bin" / "python"
 
+              # Dependencies come from pyproject.toml ([project].dependencies) when
+              # present, otherwise from requirements.txt - the same priority the
+              # Connector SDK uses.
+              pyproject = Path(connector, "pyproject.toml")
               requirements = Path(connector, "requirements.txt")
               # fivetran_connector_sdk/requests are pre-installed in the real
               # Connector SDK runtime (per _template_connector/requirements.txt),
@@ -183,12 +188,21 @@ jobs:
                   str(python), "-m", "pip", "install",
                   "fivetran_connector_sdk", "requests", "pytest",
               ]
-              if requirements.is_file():
+              manifest_error = None
+              if pyproject.is_file():
+                  try:
+                      with open(pyproject, "rb") as f:
+                          install += tomllib.load(f).get("project", {}).get("dependencies", [])
+                  except (tomllib.TOMLDecodeError, OSError) as e:
+                      manifest_error = str(e)
+              elif requirements.is_file():
                   install += ["-r", str(requirements)]
 
               # check=False lets us capture non-zero exit codes and add clear,
               # connector-specific failure reasons instead of raising immediately.
-              if subprocess.run(install, check=False).returncode != 0:
+              if manifest_error:
+                  reasons.append(f"invalid pyproject.toml: {manifest_error}")
+              elif subprocess.run(install, check=False).returncode != 0:
                   reasons.append("dependency install failed")
               else:
                   # junit_name is a bare filename, not a path, because the
