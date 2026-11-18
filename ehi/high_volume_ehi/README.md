@@ -86,7 +86,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python library required by the connector beyond those pre-installed in the Fivetran environment.
 
 ```toml
 dependencies = [
@@ -97,7 +97,6 @@ dependencies = [
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 > Note: `pyodbc` requires Microsoft ODBC Driver 18 for SQL Server to be installed on the host. In the Fivetran connector runtime environment this driver is pre-installed.
-
 
 ## Authentication
 

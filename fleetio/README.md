@@ -55,7 +55,7 @@ You can generate your Account Token and API Key [here](https://secure.fleetio.co
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The requirements file imports any libraries necessary for our connector to work.
 We currently only need a package for flattening the JSON information that's returned by the Fleetio API.
 
 ```toml

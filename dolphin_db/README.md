@@ -58,7 +58,7 @@ The connector requires the following configuration parameters for connecting to 
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the following Python packages:
 
 ```toml
 dependencies = [

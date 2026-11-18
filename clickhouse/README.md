@@ -61,7 +61,7 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the clickhouse_connect Python library for connecting to ClickHouse:
 
 ```toml
 dependencies = [

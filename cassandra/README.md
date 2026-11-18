@@ -67,7 +67,7 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the Cassandra Python driver and dateutil for timestamp parsing:
 
 ```toml
 dependencies = [

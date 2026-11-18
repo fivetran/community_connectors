@@ -68,7 +68,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by the connector. For this Apache Pulsar connector, the following library is required:
 
 ```toml
 dependencies = [
