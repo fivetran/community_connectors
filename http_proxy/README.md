@@ -77,10 +77,9 @@ fivetran init --template http_proxy
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector has no external dependencies beyond the packages pre-installed in the Connector SDK runtime environment. The `pyproject.toml` file is not needed and is not included.
 
 > Note: The `requests` library is pre-installed in the Connector SDK runtime environment. Do not add it to `pyproject.toml`.
-
 
 ## Authentication
 

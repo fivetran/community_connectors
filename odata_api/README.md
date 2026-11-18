@@ -50,7 +50,7 @@ fivetran init --template odata_api
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+Each sub-implementation specifies its own dependencies:
 
 - `odata_version_4/pyproject.toml`:
 

@@ -60,7 +60,7 @@ The connector requires the following configuration parameter:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector uses only the standard libraries and packages pre-installed in the Fivetran environment. No additional dependencies are required.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

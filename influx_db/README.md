@@ -57,7 +57,7 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `influxdb3_python` package to connect to InfluxDB.
 
 The connector uses the following packages, which are specified in the `pyproject.toml` file:
 

@@ -73,7 +73,7 @@ The connector requires latitude and longitude to identify the coastal location t
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector uses only the pre-installed packages in the Fivetran environment and does not require any additional dependencies.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

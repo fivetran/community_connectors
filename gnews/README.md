@@ -61,7 +61,7 @@ The `configuration.json` file provides the GNews credentials and query parameter
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector does not require any additional packages beyond those provided by the Fivetran environment.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

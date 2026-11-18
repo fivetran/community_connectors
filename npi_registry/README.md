@@ -74,7 +74,7 @@ To generate your API URL:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector does not require any additional Python packages beyond those pre-installed in the Fivetran environment. Therefore, no `pyproject.toml` file is needed.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

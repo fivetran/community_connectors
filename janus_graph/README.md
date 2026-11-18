@@ -81,7 +81,7 @@ For production (with authentication):
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `gremlinpython` package to communicate with the Gremlin Server API:
 
 ```toml
 dependencies = [

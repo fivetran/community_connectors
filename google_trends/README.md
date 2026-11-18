@@ -73,7 +73,7 @@ You can also define the search array as a constant in `config.py`. The connector
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by the connector. This connector requires the PyTrends library for accessing Google Trends data and Pandas for data processing.
 
 ```toml
 dependencies = [
