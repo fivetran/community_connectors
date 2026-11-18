@@ -1,0 +1,68 @@
+# met_museum_context: the dbt project behind the Met Museum context pack.
+#
+# It builds the models an agent reads instead of the connector's six raw tables. The staging models apply the
+# connector's stamp rule, so a constituent, tag or depicted element the Met or the model no longer reports never
+# reaches an answer, and every count is defined once in the dbt Semantic Layer.
+#
+# Three targets read the same models (profiles.yml):
+#   snowflake  Snowflake reading the Managed Data Lake in place through a catalog-linked database.
+#   lake       DuckDB reading the same Iceberg tables through the Managed Data Lake's Polaris catalog. Compile only:
+#              parity.py attaches the catalog in its own DuckDB session and runs the compiled models there.
+#   local      DuckDB over the connector's local debug warehouse, for tests. No credentials.
+# Every SQL difference between Snowflake and DuckDB sits in macros/dialect.sql, so a model never branches on
+# target.type.
+
+name: met_museum_context
+version: "1.0.0"
+config-version: 2
+
+profile: met_museum_context
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  require_generic_test_arguments_property: true
+  manage_state: true
+
+vars:
+  # The project tag every model and test carries. Not a schema prefix: the pack has its own database, so Production
+  # builds every model into the target schema (macros/generate_schema_name.sql).
+  schema_prefix: met_museum_context
+  # The snowflake target only: the catalog-linked database over the Managed Data Lake.
+  lake_database: "<lake_database>"
+  # The lake target only: the alias parity.py attaches the Polaris catalog under.
+  lake_catalog: "lake"
+  # The snowflake and lake targets: the connection's destination schema in the catalog.
+  lake_schema: "<lake_schema>"
+  # true when the source keeps the lake's lowercase names (a catalog-linked Managed Data Lake database or DuckDB), so
+  # every schema, table and column name is double-quoted. Set false for a standard Fivetran Snowflake destination,
+  # whose names are uppercase and unquoted.
+  quote_lake_identifiers: true
+
+models:
+  met_museum_context:
+    # Views only: the tables are small, and a view always reads the latest sync.
+    +materialized: view
+    +tags: ["met_museum_context"]
+    # Descriptions land in the warehouse, where Cortex and other agents read them.
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +tags: ["staging"]
+    marts:
+      +tags: ["marts"]
+    semantic_layer:
+      +tags: ["semantic_layer"]
+
+data_tests:
+  met_museum_context:
+    +tags: ["met_museum_context"]
+
+# Lets checks/ query the project's own metadata.
+info_schema:
+  version: 1

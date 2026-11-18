@@ -1,3 +1,9 @@
+---
+name: RethinkDB
+description: Sync data from RethinkDB real-time database
+category: Databases
+---
+
 # RethinkDB Connector Example
 
 ## Connector overview

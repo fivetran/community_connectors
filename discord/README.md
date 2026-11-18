@@ -1,3 +1,9 @@
+---
+name: Discord
+description: Sync data from Discord
+category: SaaS & APIs
+---
+
 # Discord Connector Example
 
 ## Connector overview

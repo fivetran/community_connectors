@@ -1,3 +1,9 @@
+---
+name: OData API
+description: Sync data from OData APIs (versions 2 and 4)
+category: SaaS & APIs
+---
+
 # OData API Connector Example
 
 ## Connector overview

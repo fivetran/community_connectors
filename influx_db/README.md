@@ -1,3 +1,9 @@
+---
+name: InfluxDB
+description: Sync time-series data from InfluxDB
+category: Databases
+---
+
 # InfluxDB Connector Example
 
 ## Connector overview

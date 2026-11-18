@@ -1,3 +1,9 @@
+---
+name: Bright Data SERP
+description: Sync Google, Bing, and Yandex search engine results from the Bright Data SERP API
+category: SaaS & APIs
+---
+
 # Bright Data SERP Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: GitHub
+description: Sync repository data, commits, and pull requests from GitHub
+category: SaaS & APIs
+---
+
 # GitHub Connector Example
 
 ## Connector overview

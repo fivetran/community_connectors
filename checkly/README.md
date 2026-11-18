@@ -1,3 +1,9 @@
+---
+name: Checkly
+description: Sync monitoring check data and analytics from Checkly
+category: SaaS & APIs
+---
+
 # Checkly API Connector Example
 
 ## Connector overview

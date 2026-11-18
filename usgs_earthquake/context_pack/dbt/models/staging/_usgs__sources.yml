@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: usgs
+    description: >
+      The earthquake table the usgs_earthquake connector writes. The same dbt project reads it from two places,
+      switched on target.name: the connector's local debug warehouse, attached as usgs_wh (every target but lake), or
+      the Managed Data Lake catalog the agent's DuckDB session attaches under var('lake_catalog') (lake).
+    database: "{{ var('lake_catalog') if target.name == 'lake' else 'usgs_wh' }}"
+    schema: "{{ var('lake_schema') if target.name == 'lake' else 'tester' }}"
+    tables:
+      - name: earthquake
+        description: One row per USGS event, keyed by its preferred id. Deleted events carry _fivetran_deleted = true.

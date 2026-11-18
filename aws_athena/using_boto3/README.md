@@ -1,3 +1,9 @@
+---
+name: AWS Athena (Boto3)
+description: Sync data from AWS Athena using Boto3
+category: Cloud Data Warehouses
+---
+
 # AWS Athena Connector Example - Using Boto3
 
 ## Connector overview

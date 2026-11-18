@@ -1,3 +1,9 @@
+---
+name: JanusGraph
+description: Sync data from JanusGraph.
+category: Databases
+---
+
 # JanusGraph Connector Example
 
 ## Connector overview

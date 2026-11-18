@@ -1,0 +1,26 @@
+name: usgs_earthquake_context
+version: "1.0.0"
+config-version: 2
+
+profile: usgs_earthquake_context
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # The connector's start_date. The time spine starts on the Monday of this date's week.
+  start_date: "2026-08-03"
+  # Set only to compare two copies of the table on the rows each last saw updated by one instant (see the caveat in
+  # stg_usgs__earthquakes.sql). An ISO 8601 UTC instant, for example 2026-10-05T00:00:00Z.
+  updated_at_cutoff: null
+  # The lake target only: the alias the agent's DuckDB session attaches the Managed Data Lake catalog under, and the
+  # destination schema of the deployed connection in that catalog. Set both here or pass them with --var.
+  lake_catalog: "<lake_catalog_alias>"
+  lake_schema: "<lake_schema>"
+
+models:
+  usgs_earthquake_context:
+    # Views only: render_lake_sql.py replays the build as views in the agent's DuckDB session.
+    +materialized: view

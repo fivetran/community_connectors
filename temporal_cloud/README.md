@@ -1,3 +1,9 @@
+---
+name: Temporal Cloud
+description: Sync workflow execution and schedule data from Temporal Cloud.
+category: SaaS & APIs
+---
+
 # Temporal Cloud Connector Example
 
 ## Connector overview

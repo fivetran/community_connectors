@@ -1,3 +1,9 @@
+---
+name: Redshift
+description: Sync records from Redshift
+category: Cloud Data Warehouses
+---
+
 # Redshift Connector Example
 
 ## Connector overview

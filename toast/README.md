@@ -1,3 +1,9 @@
+---
+name: Toast
+description: Sync POS data from Toast
+category: SaaS & APIs
+---
+
 # Toast Connector Example
 
 ## Connector overview

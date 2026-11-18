@@ -1,3 +1,9 @@
+---
+name: Dgraph
+description: Sync e-commerce product catalog from Dgraph graph databases
+category: Databases
+---
+
 # Dgraph E-Commerce Connector Example
 
 ## Connector overview

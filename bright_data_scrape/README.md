@@ -1,3 +1,9 @@
+---
+name: Bright Data Web Scraper
+description: Sync scraped web page content and extracted fields from the Bright Data Web Scraper API
+category: SaaS & APIs
+---
+
 # Bright Data Web Scraper Connector Example
 
 ## Connector overview

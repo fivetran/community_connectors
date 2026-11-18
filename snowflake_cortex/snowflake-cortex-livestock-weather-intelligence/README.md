@@ -1,3 +1,9 @@
+---
+name: Snowflake Cortex Livestock Weather Intelligence
+description: Sync farm weather forecasts and enrich them with Snowflake Cortex livestock health risk assessments.
+category: AI and Connector SDK
+---
+
 # Snowflake Cortex Livestock Weather Intelligence Connector Example
 
 ## Connector overview

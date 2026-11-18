@@ -1,3 +1,9 @@
+---
+name: GitHub Repository Traffic
+description: Sync GitHub repository traffic data
+category: SaaS & APIs
+---
+
 # GitHub Repository Traffic Connector Example
 
 ## Connector overview

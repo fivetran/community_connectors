@@ -1,3 +1,9 @@
+---
+name: Apache Hive (PyHive)
+description: Sync data from Apache Hive using PyHive
+category: Databases
+---
+
 # Apache Hive Connector Example
 
 ## Connector overview

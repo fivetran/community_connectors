@@ -1,0 +1,28 @@
+# Keys never live in this directory: the dbt key pair and tokens come from the environment.
+.env
+.env.*
+
+# dbt build output, logs and the local DuckDB file
+dbt/target/
+dbt/target_*/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+logs/
+target/
+
+# DuckDB files
+*.db
+*.duckdb
+*.duckdb.wal
+*.db.wal
+.duckdb/
+
+# Rendered SQL carries real database and schema names; render it, run it, never commit it.
+rendered/
+
+__pycache__/
+.pytest_cache/
+
+# Agents Schema publish work dir: the fetched dbt artifacts, the OSI file and the staged skill.
+agents_schema_work/

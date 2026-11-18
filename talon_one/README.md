@@ -1,3 +1,9 @@
+---
+name: Talon.One
+description: Sync events data from Talon.One
+category: SaaS & APIs
+---
+
 # Talon.one Connector Example
 
 ## Connector overview

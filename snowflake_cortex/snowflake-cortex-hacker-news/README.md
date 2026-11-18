@@ -1,3 +1,9 @@
+---
+name: Snowflake Cortex Hacker News
+description: Sync Hacker News top stories and enrich them with Snowflake Cortex sentiment and topic classification.
+category: AI and Connector SDK
+---
+
 # Hacker News and Snowflake Cortex Connector Example
 
 ## Connector overview

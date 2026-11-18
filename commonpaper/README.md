@@ -1,3 +1,9 @@
+---
+name: Common Paper
+description: Sync agreement data from Common Paper
+category: SaaS & APIs
+---
+
 # Common Paper Connector Example
 
 ## Connector overview

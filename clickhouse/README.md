@@ -1,3 +1,9 @@
+---
+name: ClickHouse
+description: Sync data from ClickHouse database
+category: Databases
+---
+
 # ClickHouse Connector Example
 
 ## Connector overview

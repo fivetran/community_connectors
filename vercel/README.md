@@ -1,3 +1,9 @@
+---
+name: Vercel
+description: Sync deployment data from Vercel REST API
+category: SaaS & APIs
+---
+
 # Vercel Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: AWS DynamoDB (IAM Role Authentication)
+description: Connect and sync data from AWS DynamoDB
+category: Cloud Data Warehouses
+---
+
 # AWS DynamoDB Connector Using IAM Role Authentication
 
 ## Connector overview

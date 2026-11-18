@@ -1,3 +1,9 @@
+---
+name: Rillet
+description: Sync accounting data from Rillet.
+category: SaaS & APIs
+---
+
 # Rillet Connector Example
 
 ## Connector overview
