@@ -2,4 +2,4 @@
 name = "suitedash"
 version = "0.1.0"
 description = "This example shows how to use Connector SDK to extract companies, contacts, and their relationships data from the SuiteDash CRM, handling proper data flattening and pagination."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

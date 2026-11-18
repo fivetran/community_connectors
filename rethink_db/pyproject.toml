@@ -2,7 +2,7 @@
 name = "rethink-db"
 version = "0.1.0"
 description = "This example demonstrates how to use the Fivetran Connector SDK to sync data from RethinkDB, an open-source database designed for real-time applications."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "rethinkdb==2.4.10.post1",
 ]

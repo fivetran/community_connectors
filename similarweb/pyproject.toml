@@ -2,7 +2,7 @@
 name = "similarweb"
 version = "0.1.0"
 description = "This example demonstrates how to build a Fivetran Connector SDK integration for Similarweb, a digital intelligence platform that provides data, insights, and analytics about websites and apps."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "python_dateutil==2.9.0.post0",
 ]

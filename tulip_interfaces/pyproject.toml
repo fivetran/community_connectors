@@ -2,4 +2,4 @@
 name = "tulip-interfaces"
 version = "0.1.0"
 description = "This connector syncs data from Tulip to Fivetran destinations."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

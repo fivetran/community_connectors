@@ -2,4 +2,4 @@
 name = "zigpoll"
 version = "0.1.0"
 description = "This connector retrieves survey response data from Zigpoll API and syncs it using Fivetran Connector SDK."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"

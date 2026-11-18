@@ -2,7 +2,7 @@
 name = "sybase-iq"
 version = "0.1.0"
 description = "This connector extracts data from a Sybase IQ database using the FreeTDS driver and PyODBC."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<=3.15"
 dependencies = [
     "pyodbc==5.2.0",
 ]
