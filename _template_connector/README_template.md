@@ -93,7 +93,7 @@ fivetran init --template <connector-name>
 *Use one dependency manifest format for the connector: `requirements.txt` or `pyproject.toml`.*
 
 ### If using `requirements.txt`
-*If choosing `requirements.txt`, replace the template's `pyproject.toml` with it. Explain the role of `requirements.txt` in specifying the connector's dependencies.*
+*If choosing `requirements.txt`, replace the template's `pyproject.toml` with it. Explain the role of the `requirements.txt` file in specifying the Python libraries required by the connector.*
 
 *Example content of `requirements.txt`:*
 
