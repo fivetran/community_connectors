@@ -1,3 +1,9 @@
+---
+name: Healthchecks.io
+description: Sync health check monitoring from Healthchecks.io
+category: SaaS & APIs
+---
+
 # Healthchecks.io Connector Example
 
 ## Connector overview

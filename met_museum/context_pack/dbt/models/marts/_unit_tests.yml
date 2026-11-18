@@ -1,0 +1,38 @@
+# Unit tests for the rules an agent's answer depends on. They run on fixtures, so they hold on any engine and on a
+# lake with no enrichment yet.
+
+unit_tests:
+  - name: objects_enriched_keeps_unenriched_objects_and_sorts_lists
+    description: >
+      An object with no enrichment, tags or elements stays in the model with is_enriched false, zero counts and null
+      AI columns, so counts over the model cover the whole collection. An enriched object gets its curator tags and
+      depicted elements as sorted, distinct, ' | '-separated lists. object_decade rounds the begin date down to the
+      decade (1889 is the 1880s).
+    model: fct_objects_enriched
+    given:
+      - input: ref('stg_met__object')
+        rows:
+          - {object_id: 1, department_id: 11, object_begin_date: 1889}
+          - {object_id: 2, department_id: 11, object_begin_date: 1880}
+      - input: ref('stg_met__department')
+        rows:
+          - {department_id: 11, department_name: "European Paintings"}
+      - input: ref('stg_met__object_tag')
+        rows:
+          - {object_id: 2, term: "Trees"}
+          - {object_id: 2, term: "Cypresses"}
+      - input: ref('stg_met__object_visual_attribute')
+        rows:
+          - {object_id: 2, subject_category: "landscape"}
+      - input: ref('stg_met__object_depicted_element')
+        rows:
+          - {object_id: 2, element: "wheat field"}
+          - {object_id: 2, element: "cypress tree"}
+    expect:
+      rows:
+        - {object_id: 1, department_name: "European Paintings", object_decade: 1880, is_enriched: false,
+           curator_tag_count: 0, curator_tags: null, depicted_element_count: 0, depicted_elements: null,
+           subject_category: null}
+        - {object_id: 2, department_name: "European Paintings", object_decade: 1880, is_enriched: true,
+           curator_tag_count: 2, curator_tags: "Cypresses | Trees", depicted_element_count: 2,
+           depicted_elements: "cypress tree | wheat field", subject_category: "landscape"}

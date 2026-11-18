@@ -1,3 +1,9 @@
+---
+name: DolphinDB
+description: Sync data from DolphinDB database
+category: Databases
+---
+
 # DolphinDB Connector Example
 
 ## Connector overview

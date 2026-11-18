@@ -1,3 +1,9 @@
+---
+name: Couchbase Magma
+description: Sync data from self-managed Couchbase Server using Magma storage
+category: Databases
+---
+
 # Couchbase Magma Connector Example
 
 ## Connector overview

@@ -1,3 +1,9 @@
+---
+name: Zigpoll
+description: Sync polling data from Zigpoll
+category: SaaS & APIs
+---
+
 # Zigpoll Connector Example
 
 ## Connector overview

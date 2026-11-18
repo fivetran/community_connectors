@@ -1,3 +1,9 @@
+---
+name: Apache HBase
+description: Connect and sync data from Apache HBase using happybase and thrift libraries
+category: Databases
+---
+
 # Apache HBase Connector Example
 
 ## Connector overview

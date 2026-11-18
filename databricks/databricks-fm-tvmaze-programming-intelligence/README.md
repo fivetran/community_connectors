@@ -1,3 +1,9 @@
+---
+name: Databricks TVMaze Programming Intelligence
+description: Sync TVMaze show metadata and enrich each show with Databricks `ai_query()` programming renewal debate analysis.
+category: AI and Connector SDK
+---
+
 # Databricks TVMaze Programming Intelligence Connector Example
 
 ## Connector overview

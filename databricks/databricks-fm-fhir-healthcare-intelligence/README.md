@@ -1,3 +1,9 @@
+---
+name: Databricks FHIR Healthcare Intelligence
+description: Sync clinical data from a FHIR R4 server and enrich it with AI-powered hybrid analysis using Databricks `ai_query()`.
+category: AI and Connector SDK
+---
+
 # FHIR R4 Healthcare Intelligence Connector Example
 
 ## Connector overview

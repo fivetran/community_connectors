@@ -1,3 +1,9 @@
+---
+name: AWS Athena (SQLAlchemy with PyAthena)
+description: Sync data from AWS Athena using SQLAlchemy with PyAthena
+category: Cloud Data Warehouses
+---
+
 # AWS Athena Connector Example - Using SQLAlchemy and PyAthena
 
 ## Connector overview

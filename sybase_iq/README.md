@@ -1,3 +1,9 @@
+---
+name: Sybase IQ
+description: Sync data from Sybase IQ using the `FreeTDS` driver and `PyODBC`.
+category: Databases
+---
+
 # Sybase IQ Connector Example
 
 ## Connector overview

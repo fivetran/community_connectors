@@ -1,3 +1,9 @@
+---
+name: AWS DocumentDB
+description: Connect to AWS DocumentDB and sync collections (Hybrid Deployment compatible)
+category: Databases
+---
+
 # AWS DocumentDB Connector Example
 
 ## Connector overview

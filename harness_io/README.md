@@ -1,3 +1,9 @@
+---
+name: Harness.io
+description: Connect and sync data from Harness.io
+category: SaaS & APIs
+---
+
 # Harness.io API Connector Example
 
 

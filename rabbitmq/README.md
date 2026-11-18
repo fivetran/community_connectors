@@ -1,3 +1,9 @@
+---
+name: RabbitMQ
+description: Sync messages from RabbitMQ queues
+category: Message Queues & Streaming
+---
+
 # RabbitMQ Connector Example
 
 ## Connector overview

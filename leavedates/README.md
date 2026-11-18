@@ -1,3 +1,9 @@
+---
+name: LeaveDates
+description: Sync leave report data from LeaveDates API
+category: SaaS & APIs
+---
+
 # LeaveDates API Connector Example
 
 ## Connector overview

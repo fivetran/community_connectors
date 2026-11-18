@@ -1,3 +1,9 @@
+---
+name: Better Stack
+description: Sync uptime monitoring data from Better Stack
+category: SaaS & APIs
+---
+
 # Better Stack Uptime Connector Example
 
 ## Connector overview

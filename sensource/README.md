@@ -1,3 +1,9 @@
+---
+name: SenSource
+description: Sync traffic and occupancy metrics from SenSource
+category: SaaS & APIs
+---
+
 # SenSource Connector Example
 
 ## Connector overview

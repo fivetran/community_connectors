@@ -1,3 +1,9 @@
+---
+name: Grey HR
+description: Sync HR data from greytHR API
+category: SaaS & APIs
+---
+
 # Grey HR Connector Example
 
 ## Connector overview

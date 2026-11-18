@@ -1,3 +1,9 @@
+---
+name: GBIF
+description: Sync species occurrence records from the GBIF (Global Biodiversity Information Facility) API
+category: SaaS & APIs
+---
+
 # GBIF Occurrence Connector Example
 
 ## Connector overview

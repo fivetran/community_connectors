@@ -1,3 +1,9 @@
+---
+name: SuiteDash
+description: Sync CRM data from SuiteDash API
+category: SaaS & APIs
+---
+
 # SuiteDash CRM Connector Example
 
 ## Connector overview

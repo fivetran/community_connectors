@@ -1,3 +1,9 @@
+---
+name: Snipe-IT
+description: Sync IT asset management data from Snipe-IT
+category: SaaS & APIs
+---
+
 # Snipe-IT Asset Management Connector Example
 
 ## Connector overview

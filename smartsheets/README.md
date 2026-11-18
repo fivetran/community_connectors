@@ -1,3 +1,9 @@
+---
+name: Smartsheet
+description: Sync sheets and reports from Smartsheets
+category: SaaS & APIs
+---
+
 # Smartsheet API Connector Example
 
 ## Connector overview

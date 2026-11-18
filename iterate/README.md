@@ -1,3 +1,9 @@
+---
+name: Iterate
+description: Sync NPS survey data from Iterate REST API
+category: SaaS & APIs
+---
+
 # Iterate NPS Survey Connector Example
 
 ## Connector overview

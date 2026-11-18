@@ -1,3 +1,9 @@
+---
+name: NPPES NPI Registry
+description: Sync healthcare provider data from NPPES NPI Registry
+category: SaaS & APIs
+---
+
 # NPPES NPI Registry Connector Example
 
 ## Connector overview

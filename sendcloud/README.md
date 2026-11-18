@@ -1,3 +1,9 @@
+---
+name: Sendcloud
+description: Sync shipment data from Sendcloud API
+category: SaaS & APIs
+---
+
 # Sendcloud API Connector Example
 
 ## Connector overview

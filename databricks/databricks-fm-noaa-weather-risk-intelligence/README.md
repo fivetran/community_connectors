@@ -1,3 +1,9 @@
+---
+name: Databricks NOAA Weather Risk Intelligence
+description: Sync NOAA severe weather alerts and use Databricks `ai_query()` for agent-driven discovery and emergency risk analysis.
+category: AI and Connector SDK
+---
+
 # Databricks NOAA Weather Risk Intelligence Connector Example
 
 ## Connector overview

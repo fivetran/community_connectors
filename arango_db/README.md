@@ -1,3 +1,9 @@
+---
+name: ArangoDB
+description: Sync document and edge collections from ArangoDB multi-model database
+category: Databases
+---
+
 # ArangoDB Connector Example
 
 ## Connector overview

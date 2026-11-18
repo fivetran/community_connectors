@@ -1,3 +1,9 @@
+---
+name: GNews
+description: Sync news articles from GNews API
+category: SaaS & APIs
+---
+
 # GNews Search Connector Example
 
 ## Connector overview
