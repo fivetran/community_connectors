@@ -66,7 +66,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file lists the one library the connector needs besides `requests`: `ijson`, which reads a list's records from the response one at a time.
 
 ```toml
 dependencies = [

@@ -58,7 +58,7 @@ The connector requires the following configuration parameters in your `configura
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `psycopg2` library to connect to TimescaleDB. Include it in your `pyproject.toml` file:
 
 ```toml
 dependencies = [

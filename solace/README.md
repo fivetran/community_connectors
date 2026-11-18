@@ -60,7 +60,7 @@ The connector expects the following configuration in the `configuration.json` fi
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+Add the following to `pyproject.toml`:
 
 ```toml
 dependencies = [

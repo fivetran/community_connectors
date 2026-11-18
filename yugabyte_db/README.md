@@ -79,7 +79,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `psycopg2_binary` package for PostgreSQL-compatible database connectivity with YugabyteDB.
 
 ```toml
 dependencies = [

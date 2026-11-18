@@ -70,7 +70,7 @@ The configuration requires your Supabase project URL and API key to establish a 
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by the connector. The main dependency is the Supabase Python client library.
 
 ```toml
 dependencies = [

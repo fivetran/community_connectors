@@ -62,7 +62,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by the connector. This connector requires the Weights & Biases Python SDK to interact with the W&B API.
 
 ```toml
 dependencies = [

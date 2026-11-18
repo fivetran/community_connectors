@@ -106,7 +106,7 @@ The IAM role specified in `iam_role` must have `s3:PutObject` permission on the 
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the following packages, which should be listed in the `pyproject.toml` file:
 
 ```toml
 dependencies = [

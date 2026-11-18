@@ -80,7 +80,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+Include the following dependencies in your `pyproject.toml` file:
 
 ```toml
 dependencies = [

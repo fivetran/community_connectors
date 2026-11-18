@@ -162,7 +162,7 @@ All keys are validated at startup. An invalid `sftp_host_key` raises `ValueError
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by this connector:
 
 ```toml
 dependencies = [

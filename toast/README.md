@@ -62,7 +62,7 @@ Example `configuration.json`:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `cryptography` library for Fernet-based token encryption. Add it to your `pyproject.toml`:
 
 ```toml
 dependencies = [

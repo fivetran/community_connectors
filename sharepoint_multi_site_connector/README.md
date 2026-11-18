@@ -62,7 +62,7 @@ fivetran init --template sharepoint_multi_site_connector
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector uses the `openpyxl` package to parse Excel files (`.xlsx`, `.xlsm`).
 
 ```toml
 dependencies = [

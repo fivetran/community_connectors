@@ -59,7 +59,7 @@ Note: Ensure that the `configuration.json` file is not checked into version cont
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector requires the `PyODBC` library to connect to Sybase IQ databases.
 
 ```toml
 dependencies = [

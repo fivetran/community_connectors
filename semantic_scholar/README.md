@@ -92,7 +92,7 @@ The two caps do different jobs, which is why both exist. `max_enrichments` bound
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+This connector requires no `pyproject.toml`. Its only third-party dependency is `requests`, which is [pre-installed in the Connector SDK runtime environment](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages).
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

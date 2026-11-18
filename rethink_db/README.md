@@ -70,7 +70,7 @@ Configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `rethinkdb` package to connect to RethinkDB databases.
 
 ```toml
 dependencies = [

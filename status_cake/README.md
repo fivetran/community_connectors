@@ -56,7 +56,7 @@ The configuration requires your StatusCake API key for authentication. You can o
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies additional Python libraries required by the connector. Following Fivetran best practices, this connector doesn't require additional dependencies.
 
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 

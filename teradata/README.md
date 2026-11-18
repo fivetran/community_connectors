@@ -56,7 +56,7 @@ The connector uses a configuration file to specify connection details and table 
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The `pyproject.toml` file specifies the Python libraries required by the connector. This connector uses the following library:
 
 ```toml
 dependencies = [

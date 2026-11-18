@@ -56,7 +56,7 @@ The connector requires the following configuration parameters:
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires the `redshift_connector` package to connect to Redshift databases.
 
 ```toml
 dependencies = [

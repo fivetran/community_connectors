@@ -85,7 +85,7 @@ If `tables` is omitted, all user tables in the database are synced automatically
 
 ## Requirements file
 
-Declare the dependencies under `[project].dependencies` in your `pyproject.toml` file:
+The connector requires `pyodbc` to connect to Sybase ASE via the bundled FreeTDS ODBC driver.
 
 ```toml
 dependencies = [
@@ -94,7 +94,6 @@ dependencies = [
 ```
 
 > Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
-
 
 ## Authentication
 
