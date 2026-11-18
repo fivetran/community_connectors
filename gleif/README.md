@@ -60,7 +60,7 @@ The connector requires no authentication, so every configuration value is option
 - `page_size` – Records requested per API call, between 1 and 200. Defaults to 200. The API rejects any larger value.
 - `max_records_per_sync` – Approximate lower bound on records upserted in a single sync, where 0 means no limit. Defaults to 0. Once the limit is met the connector keeps reading until the current `lastUpdateDate` value changes, then stops on that boundary, so a run can overshoot the limit by up to the size of one timestamp group. Refer to `def update(configuration: dict, state: dict)`.
 
-> Note: This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
+This connector does not require any additional Python packages beyond what is pre-installed in the Fivetran environment, so no dependency list needs to be declared in `requirements.txt` or `pyproject.toml`.
 
 ## Authentication
 
