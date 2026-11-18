@@ -14,7 +14,10 @@ from transform import (
     generate_business_dates,
 )
 
-def process_config(base_url, headers, endpoint, table_name, rst_id, timerange, configuration, state):
+
+def process_config(
+    base_url, headers, endpoint, table_name, rst_id, timerange, configuration, state
+):
     """
     This is the generating function for configuration endpoints for a restaurant and timerange
     :param base_url: Toast API URL
@@ -34,10 +37,14 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange, c
     # Keys represent table names, and values are lists of tuples.
     # Each tuple defines a mapping for one or more fields in the table:
     # (field containing a dictionary, key to extract from dictionary, new field name).
-    fields_to_extract = {"menu_group": [("menu", "guid", "menu_id")],
-                         "service_area": [("revenueCenter", "guid", "revenue_center_guid")],
-                         "tables": [("revenueCenter", "guid", "revenue_center_guid"),
-                                    ("serviceArea", "guid", "service_area_guid")]}
+    fields_to_extract = {
+        "menu_group": [("menu", "guid", "menu_id")],
+        "service_area": [("revenueCenter", "guid", "revenue_center_guid")],
+        "tables": [
+            ("revenueCenter", "guid", "revenue_center_guid"),
+            ("serviceArea", "guid", "service_area_guid"),
+        ],
+    }
 
     while more_data:
         try:
@@ -46,10 +53,18 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange, c
             # the URL - an unencoded "+" in timestamps like "...+0000" gets read as a
             # space by Toast's server, producing "Bad request: Invalid date format".
             params = {**timerange, **pagination}
-            response_page, next_token = get_api_response(base_url + endpoint, headers,
-                                                          params=params, configuration=configuration, base_url=base_url, state=state)
-            log.debug(f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}")
-            for o in (response_page or []):
+            response_page, next_token = get_api_response(
+                base_url + endpoint,
+                headers,
+                params=params,
+                configuration=configuration,
+                base_url=base_url,
+                state=state,
+            )
+            log.debug(
+                f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
+            )
+            for o in response_page or []:
                 if fields_to_extract.get(table_name):
                     o = extract_fields(fields_to_extract[table_name], o)
                 o = stringify_lists(o)
@@ -69,6 +84,7 @@ def process_config(base_url, headers, endpoint, table_name, rst_id, timerange, c
             detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
             raise RuntimeError(detailed_message)
 
+
 def process_labor(base_url, headers, endpoint, table_name, rst_id, params, configuration, state):
     """
     This is the generating function for labor endpoints, for a restaurant and a timerange
@@ -80,7 +96,8 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params, confi
     :param endpoint: Toast API endpoint
     :param table_name: table name to store data in destination
     :param rst_id: id for restaurant to query
-    :param params: This is a dictionary of timerange parameters which can vary by endpoint; pass {} when the endpoint takes none (jobs, employees)
+    :param params: This is a dictionary of timerange parameters which can vary by endpoint;
+        pass {} when the endpoint takes none (jobs, employees)
     :param configuration: connector configuration, needed to re-authenticate on a 401
     :param state: connector state, needed to re-authenticate on a 401
     :return:
@@ -93,24 +110,40 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params, confi
     # Each tuple defines a mapping for one or more fields in the table:
     # (field containing a dictionary, key to extract from dictionary, new field name).
     fields_to_extract = {
-        "shift": [("employeeReference", "guid", "employee_reference_id"),
-                  ("jobReference", "guid", "job_reference_id")],
-        "time_entry": [("employeeReference", "guid", "employee_reference_id"),
-                       ("jobReference", "guid", "job_reference_id"),
-                       ("shiftReference", "guid", "shift_reference_id")]
+        "shift": [
+            ("employeeReference", "guid", "employee_reference_id"),
+            ("jobReference", "guid", "job_reference_id"),
+        ],
+        "time_entry": [
+            ("employeeReference", "guid", "employee_reference_id"),
+            ("jobReference", "guid", "job_reference_id"),
+            ("shiftReference", "guid", "shift_reference_id"),
+        ],
     }
 
     try:
-        response_page, next_token = get_api_response(base_url + endpoint, headers, params=params,
-                                                      configuration=configuration, base_url=base_url, state=state)
-        log.debug(f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}")
+        response_page, next_token = get_api_response(
+            base_url + endpoint,
+            headers,
+            params=params,
+            configuration=configuration,
+            base_url=base_url,
+            state=state,
+        )
+        log.debug(
+            f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
+        )
 
-        for o in (response_page or []):
+        for o in response_page or []:
             if endpoint == "/labor/v1/timeEntries" and o.get("breaks"):
                 process_child(o["breaks"], "break", "time_entry_id", o["guid"])
             elif endpoint == "/labor/v1/employees":
-                process_child(o.get("jobReferences", []), "employee_job_reference", "employee_id", o["guid"])
-                process_child(o.get("wageOverrides", []), "employee_wage_override", "employee_id", o["guid"])
+                process_child(
+                    o.get("jobReferences", []), "employee_job_reference", "employee_id", o["guid"]
+                )
+                process_child(
+                    o.get("wageOverrides", []), "employee_wage_override", "employee_id", o["guid"]
+                )
             elif endpoint == "/labor/v1/shifts":
                 o = flatten_fields(["scheduleConfig"], o)
 
@@ -131,6 +164,7 @@ def process_labor(base_url, headers, endpoint, table_name, rst_id, params, confi
         stack_trace = traceback.format_exc()
         detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
         raise RuntimeError(detailed_message)
+
 
 def process_cash(base_url, headers, endpoint, table_name, rst_id, params, configuration, state):
     """
@@ -156,16 +190,30 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params, config
     # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
     fields_to_flatten = {
         "cash_deposit": ["employee", "creator"],
-        "cash_entry": ["approverOrShiftReviewSubject", "creatorOrShiftReviewSubject", "cashDrawer",
-                       "employee1", "employee2", "payoutReason", "noSaleReason"]}
+        "cash_entry": [
+            "approverOrShiftReviewSubject",
+            "creatorOrShiftReviewSubject",
+            "cashDrawer",
+            "employee1",
+            "employee2",
+            "payoutReason",
+            "noSaleReason",
+        ],
+    }
     try:
         date_range = generate_business_dates(params["startDate"], params["endDate"])
 
         for d in date_range:
-            response_page, next_token = get_api_response(base_url + endpoint + "?businessDate=" + d, headers,
-                                                          configuration=configuration, base_url=base_url, state=state)
-            # log.debug(f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}")
-            for o in (response_page or []):
+            response_page, next_token = get_api_response(
+                base_url + endpoint + "?businessDate=" + d,
+                headers,
+                configuration=configuration,
+                base_url=base_url,
+                state=state,
+            )
+            # log.debug(f"restaurant {rst_id}: response_page has "
+            #           f"{len(response_page or [])} items for {endpoint}")
+            for o in response_page or []:
                 o = flatten_fields(fields_to_flatten[table_name], o)
                 o["restaurant_id"] = rst_id
                 o = replace_guid_with_id(o)
@@ -177,6 +225,7 @@ def process_cash(base_url, headers, endpoint, table_name, rst_id, params, config
         stack_trace = traceback.format_exc()
         detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
         raise RuntimeError(detailed_message)
+
 
 def process_orders(base_url, headers, endpoint, table_name, rst_id, params, configuration, state):
     """
@@ -193,7 +242,6 @@ def process_orders(base_url, headers, endpoint, table_name, rst_id, params, conf
     :param state: connector state, needed to re-authenticate on a 401
     """
 
-
     headers["Toast-Restaurant-External-ID"] = rst_id  # Move outside loop for efficiency
     params = params.copy()  # Avoid modifying original params
     params.update({"pageSize": 100, "page": 1})  # Set pagination defaults
@@ -207,9 +255,17 @@ def process_orders(base_url, headers, endpoint, table_name, rst_id, params, conf
     try:
         for page_num in range(1, 1_000_000):  # Prevent infinite loops; max reasonable pages
             params["page"] = page_num
-            response_page, next_token = get_api_response(base_url + endpoint, headers, params=params,
-                                                          configuration=configuration, base_url=base_url, state=state)
-            log.debug(f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}")
+            response_page, next_token = get_api_response(
+                base_url + endpoint,
+                headers,
+                params=params,
+                configuration=configuration,
+                base_url=base_url,
+                state=state,
+            )
+            log.debug(
+                f"restaurant {rst_id}: response_page has {len(response_page or [])} items for {endpoint}"
+            )
 
             if not response_page:
                 break  # No more data
@@ -244,6 +300,7 @@ def process_orders(base_url, headers, endpoint, table_name, rst_id, params, conf
         detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
         raise RuntimeError(detailed_message)
 
+
 def process_payments(order):
     """
     This function processes payment information for an order.
@@ -254,7 +311,14 @@ def process_payments(order):
     """
     # flatten these fields, e.g. "info": {"id": 1, "type": "foo"}
     # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
-    fields_to_flatten = ["cashDrawer", "createdDevice", "lastModifiedDevice", "otherPayment", "refund", "server"]
+    fields_to_flatten = [
+        "cashDrawer",
+        "createdDevice",
+        "lastModifiedDevice",
+        "otherPayment",
+        "refund",
+        "server",
+    ]
     if "checks" in order and order["checks"]:
         process_child(order["checks"], "orders_check", "orders_id", order["guid"])
         for check in order["checks"]:
@@ -262,15 +326,18 @@ def process_payments(order):
                 for payment in check["payments"]:
                     op.upsert(
                         table="orders_check_payment",
-                        data={"orders_check_id": check["guid"],
-                              "payment_id": payment["guid"],
-                              "orders_guid": order["guid"]}
+                        data={
+                            "orders_check_id": check["guid"],
+                            "payment_id": payment["guid"],
+                            "orders_guid": order["guid"],
+                        },
                     )
                     payment = flatten_fields(fields_to_flatten, payment)
                     payment["restaurant_id"] = order["restaurant_id"]
                     process_void_info(payment)
                     payment = replace_guid_with_id(payment)
                     op.upsert(table="payment", data=payment)
+
 
 def process_pricing_features(order):
     """
@@ -282,9 +349,10 @@ def process_pricing_features(order):
         for feature in order["pricingFeatures"]:
             op.upsert(
                 table="orders_pricing_feature",
-                data={"orders_id": order["guid"], "pricing_feature": feature}
+                data={"orders_id": order["guid"], "pricing_feature": feature},
             )
         order.pop("pricingFeatures", None)  # Remove processed field
+
 
 def process_void_info(payment):
     """
@@ -300,9 +368,12 @@ def process_void_info(payment):
         if payment["voidInfo"].get("voidUser"):
             payment["void_info_user_guid"] = payment["voidInfo"]["voidUser"]["guid"]
         if payment["voidInfo"].get("voidReason"):
-            payment["void_info_reason_entity_type"] = payment["voidInfo"]["voidReason"]["entityType"]
+            payment["void_info_reason_entity_type"] = payment["voidInfo"]["voidReason"][
+                "entityType"
+            ]
             payment["void_info_reason_guid"] = payment["voidInfo"]["voidReason"]["guid"]
         payment.pop("voidInfo", None)
+
 
 # item_fulfillment's primary key includes prep_station_id, which Toast leaves null
 # for every level-1/2 (expediter) record -- a real prep_station_id is only ever
@@ -313,6 +384,7 @@ def process_void_info(payment):
 # are treated as distinct. A join against prep_station.id will simply never match
 # this value, same as a null join would never have matched.
 NO_PREP_STATION_ID = "NO_PREP_STATION"
+
 
 def process_prep_stations(base_url, headers, rst_id, configuration, state):
     """
@@ -338,12 +410,19 @@ def process_prep_stations(base_url, headers, rst_id, configuration, state):
     try:
         while more_data:
             response_page, next_token = get_api_response(
-                base_url + "/kitchen/v1/published/prepStations", headers,
-                params=pagination, configuration=configuration, base_url=base_url, state=state
+                base_url + "/kitchen/v1/published/prepStations",
+                headers,
+                params=pagination,
+                configuration=configuration,
+                base_url=base_url,
+                state=state,
             )
-            log.debug(f"restaurant {rst_id}: response_page has {len(response_page or [])} items for /kitchen/v1/published/prepStations")
+            log.debug(
+                f"restaurant {rst_id}: response_page has {len(response_page or [])} items "
+                f"for /kitchen/v1/published/prepStations"
+            )
 
-            for ps in (response_page or []):
+            for ps in response_page or []:
                 ps["restaurant_id"] = rst_id
 
                 # kitchenPrinter is null on a large share of real prep stations -- always
@@ -352,7 +431,9 @@ def process_prep_stations(base_url, headers, rst_id, configuration, state):
                 # column AND a leftover null kitchenPrinter column depending on which rows
                 # happened to have a printer.
                 kitchen_printer = ps.pop("kitchenPrinter", None)
-                ps["kitchen_printer_guid"] = kitchen_printer.get("guid") if kitchen_printer else None
+                ps["kitchen_printer_guid"] = (
+                    kitchen_printer.get("guid") if kitchen_printer else None
+                )
 
                 for connected in ps.pop("connectedPrepStations", None) or []:
                     op.upsert(
@@ -361,8 +442,8 @@ def process_prep_stations(base_url, headers, rst_id, configuration, state):
                             "restaurant_id": rst_id,
                             "prep_station_id": ps["guid"],
                             "guid": connected.get("guid"),
-                            "entityType": connected.get("entityType")
-                        }
+                            "entityType": connected.get("entityType"),
+                        },
                     )
 
                 ps = replace_guid_with_id(ps)
@@ -378,6 +459,7 @@ def process_prep_stations(base_url, headers, rst_id, configuration, state):
         stack_trace = traceback.format_exc()
         detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
         raise RuntimeError(detailed_message)
+
 
 def process_item_fulfillments(base_url, headers, rst_id, business_date, configuration, state):
     """
@@ -399,8 +481,12 @@ def process_item_fulfillments(base_url, headers, rst_id, business_date, configur
 
     try:
         response_page, _ = get_api_response(
-            base_url + "/kitchen/v1/export/itemFulfillments", headers,
-            params={"businessDate": business_date}, configuration=configuration, base_url=base_url, state=state
+            base_url + "/kitchen/v1/export/itemFulfillments",
+            headers,
+            params={"businessDate": business_date},
+            configuration=configuration,
+            base_url=base_url,
+            state=state,
         )
 
         for item in response_page or []:

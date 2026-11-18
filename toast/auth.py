@@ -11,6 +11,7 @@ from fivetran_connector_sdk import Logging as log
 TOKEN_REFRESH_INTERVAL_SECONDS = 86340
 FIVETRAN_CONNECTIONS_BASE_URL = "https://api.fivetran.com/v1/connections"
 
+
 def get_session_token(base_url, configuration, state):
     """
     Returns a valid Toast bearer token. Reuses configuration["token"] directly when it
@@ -46,20 +47,24 @@ def get_session_token(base_url, configuration, state):
         # persist, etc.). Not fatal in any case - this still self-heals by refreshing
         # below - but it means the "store the token in configuration instead of state"
         # approach isn't holding, so flag it loudly rather than silently refreshing.
-        log.warning("state has a prior last_token_refresh_time but configuration['token'] "
-                   "is missing - refreshing again. Expected once during migration off the "
-                   "old state-cached-token approach, or after a `fivetran deploy "
-                   "--configuration <file>` reset the config post-migration; unexpected "
-                   "otherwise")
+        log.warning(
+            "state has a prior last_token_refresh_time but configuration['token'] "
+            "is missing - refreshing again. Expected once during migration off the "
+            "old state-cached-token approach, or after a `fivetran deploy "
+            "--configuration <file>` reset the config post-migration; unexpected "
+            "otherwise"
+        )
 
     if last_refresh and has_token:
-        seconds_since_refresh = (datetime.datetime.now(datetime.timezone.utc)
-                                 - datetime.datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))).total_seconds()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        last_refresh_dt = datetime.datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
+        seconds_since_refresh = (now - last_refresh_dt).total_seconds()
         if seconds_since_refresh < TOKEN_REFRESH_INTERVAL_SECONDS:
             log.info("token still fresh, reusing configuration['token']")
             return configuration["token"]
 
     return refresh_session_token(base_url, configuration, state)
+
 
 def refresh_session_token(base_url, configuration, state):
     """
@@ -77,12 +82,13 @@ def refresh_session_token(base_url, configuration, state):
     payload = {
         "clientId": configuration.get("clientId"),
         "clientSecret": configuration.get("clientSecret"),
-        "userAccessType": configuration.get("userAccessType")
+        "userAccessType": configuration.get("userAccessType"),
     }
 
     try:
-        auth_response = rq.post(f"{base_url}/authentication/v1/authentication/login",
-                                json=payload, timeout=10)
+        auth_response = rq.post(
+            f"{base_url}/authentication/v1/authentication/login", json=payload, timeout=10
+        )
         auth_response.raise_for_status()
         auth_token = auth_response.json().get("token", {}).get("accessToken")
 
@@ -96,6 +102,7 @@ def refresh_session_token(base_url, configuration, state):
     state["_needs_token_push"] = True
 
     return auth_token
+
 
 def push_token_to_fivetran(configuration, state):
     """
@@ -134,7 +141,10 @@ def push_token_to_fivetran(configuration, state):
     # fivetran_system_key, token) that must never be written to logs.
     if os.environ.get("FIVETRAN_DEPLOYMENT_MODEL") == "local_debug":
         updated_keys = [entry["key"] for entry in payload["config"]["secrets_list"]]
-        log.info(f"[local_debug] Skipping Fivetran REST API call. Would have PATCHed {update_url} with keys: {updated_keys}")
+        log.info(
+            f"[local_debug] Skipping Fivetran REST API call. Would have PATCHed "
+            f"{update_url} with keys: {updated_keys}"
+        )
         state["last_token_refresh_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         return True
 
@@ -144,14 +154,16 @@ def push_token_to_fivetran(configuration, state):
         "content-type": "application/json",
     }
     try:
-        response = rq.patch(update_url, json=payload, headers=headers)
+        response = rq.patch(update_url, json=payload, headers=headers, timeout=10)
         response.raise_for_status()
     except rq.exceptions.RequestException as e:
-        log.error(f"Failed to push refreshed Toast token to this connection's Fivetran "
-                  f"configuration (PATCH {update_url}) - fivetran_system_key may be missing, "
-                  f"invalid, or lacking CONNECTOR: MANAGE for this connection. Toast data "
-                  f"synced fine this run, but every sync will keep re-authenticating against "
-                  f"Toast from scratch until this is fixed: {e}")
+        log.error(
+            f"Failed to push refreshed Toast token to this connection's Fivetran "
+            f"configuration (PATCH {update_url}) - fivetran_system_key may be missing, "
+            f"invalid, or lacking CONNECTOR: MANAGE for this connection. Toast data "
+            f"synced fine this run, but every sync will keep re-authenticating against "
+            f"Toast from scratch until this is fixed: {e}"
+        )
         return False
 
     refreshed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -159,7 +171,10 @@ def push_token_to_fivetran(configuration, state):
     state["last_token_refresh_time"] = refreshed_at
     return True
 
-def get_api_response(endpoint_path, headers, configuration=None, base_url=None, state=None, **kwargs):
+
+def get_api_response(
+    endpoint_path, headers, configuration=None, base_url=None, state=None, **kwargs
+):
     """
     Sends an HTTP GET request to the provided URL with specified parameters.
 
@@ -199,13 +214,17 @@ def get_api_response(endpoint_path, headers, configuration=None, base_url=None, 
         if response.status_code == 401:
             if retry_count_401 >= max_retries_401:  # Fail after max retries
                 log.error(f"401 Unauthorized - Max retries reached for {endpoint_path}")
-                return None, None
+                response.raise_for_status()
 
             retry_count_401 += 1
 
             if configuration is not None and base_url is not None:
-                log.warning(f"401 Unauthorized - refreshing token and retrying {retry_count_401}/{max_retries_401}")
-                fresh_token = refresh_session_token(base_url, configuration, state if state is not None else {})
+                log.warning(
+                    f"401 Unauthorized - refreshing token and retrying {retry_count_401}/{max_retries_401}"
+                )
+                fresh_token = refresh_session_token(
+                    base_url, configuration, state if state is not None else {}
+                )
                 headers["Authorization"] = f"Bearer {fresh_token}"
             else:
                 log.warning(f"401 Unauthorized - Retrying {retry_count_401}/{max_retries_401}")
@@ -260,11 +279,16 @@ def get_api_response(endpoint_path, headers, configuration=None, base_url=None, 
         # raising - previously any 500 crashed the whole sync immediately.
         if response.status_code >= 500:
             if retry_count_5xx >= max_retries_5xx:
-                log.error(f"{response.status_code} Server Error - Max retries reached for {endpoint_path}")
+                log.error(
+                    f"{response.status_code} Server Error - Max retries reached for {endpoint_path}"
+                )
                 response.raise_for_status()
-            wait_time = 10 * (2 ** retry_count_5xx)
+            wait_time = 10 * (2**retry_count_5xx)
             retry_count_5xx += 1
-            log.warning(f"{response.status_code} Server Error, retrying {retry_count_5xx}/{max_retries_5xx} in {wait_time}s: {endpoint_path}")
+            log.warning(
+                f"{response.status_code} Server Error, retrying "
+                f"{retry_count_5xx}/{max_retries_5xx} in {wait_time}s: {endpoint_path}"
+            )
             time.sleep(wait_time)
             continue
 

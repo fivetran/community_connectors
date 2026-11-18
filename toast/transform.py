@@ -3,6 +3,7 @@ import uuid
 
 from fivetran_connector_sdk import Operations as op
 
+
 def stringify_lists(d):
     """
     The stringify_lists function changes lists to strings
@@ -17,7 +18,8 @@ def stringify_lists(d):
             new_dict[key] = value
     return new_dict
 
-def flatten_dict (parent_row: dict, dict_field: dict, prefix: str):
+
+def flatten_dict(parent_row: dict, dict_field: dict, prefix: str):
     """
     Flattens a field containing a dictionary into a series of fields prefixed with the original field name
     Optionally leaves off prefix for specified fields
@@ -50,17 +52,21 @@ def flatten_dict (parent_row: dict, dict_field: dict, prefix: str):
 
     return parent_row
 
+
 def replace_guid_with_id(d: dict):
     if "guid" in d:
         d["id"] = d.pop("guid")
     return d
 
+
 def flatten_fields(fields: list, row: dict):
     """
-    Takes in a list of fields to flatten within a row, calls flatten_dict() if any of those fields are present
+    Takes in a list of fields to flatten within a row, calls flatten_dict() if any of those
+    fields are present
     :param fields: a list of strings which could be keys in "row"
     :param row: a dictionary "row" that could have values that are dictionaries
-    :return: dictionary with dictionary values flattened, if their keys are in "fields". The original keys are removed.
+    :return: dictionary with dictionary values flattened, if their keys are in "fields". The
+        original keys are removed.
     """
     row = {**row}  # Ensures row modifications don't affect the original dictionary
     row = replace_guid_with_id(row)
@@ -72,6 +78,7 @@ def flatten_fields(fields: list, row: dict):
 
     return row
 
+
 def extract_fields(fields: list, row: dict):
     """
     Takes in a list of fields and sub-fields within a row.
@@ -80,18 +87,20 @@ def extract_fields(fields: list, row: dict):
     but we only want one of the keys.
     :param fields: a list of tuples indicating the keys to extract and the name of the new key.
     :param row: a dictionary "row" with keys that have keys that we need to extract
-    :return: dictionary with new keys, if their keys have keys that are in "fields". The original keys are removed.
+    :return: dictionary with new keys, if their keys have keys that are in "fields". The
+        original keys are removed.
     """
     row = {**row}
 
-    for (field, sub_field, new_name) in fields:
+    for field, sub_field, new_name in fields:
         if row.get(field) and sub_field in row[field]:
             row[new_name] = row[field][sub_field]
             row.pop(field, None)
 
     return row
 
-def process_child (parent, table_name, id_field_name, id_field):
+
+def process_child(parent, table_name, id_field_name, id_field):
     """
     Iterates through records in parent list to generate child tables.
     If child tables also contain child records
@@ -103,31 +112,39 @@ def process_child (parent, table_name, id_field_name, id_field):
     """
 
     # dictionary of connector tables and the child fields (lists) that get their own tables
-    # e.g. {"table_name": [("childField01", "child_table_name_01"), ("childField02", "child_table_name_02")] }
-    relationships = {"orders_check": [
+    # e.g. {"table_name": [("childField01", "child_table_name_01"),
+    #                       ("childField02", "child_table_name_02")]}
+    relationships = {
+        "orders_check": [
             ("selections", "orders_check_selection"),
             ("appliedDiscounts", "orders_check_applied_discount"),
-            ("appliedServiceCharges", "orders_check_applied_service_charge")],
+            ("appliedServiceCharges", "orders_check_applied_service_charge"),
+        ],
         "orders_check_applied_discount": [
             ("comboItems", "orders_check_applied_discount_combo_item"),
-            ("triggers", "orders_check_applied_discount_trigger")],
+            ("triggers", "orders_check_applied_discount_trigger"),
+        ],
         "orders_check_applied_service_charge": [
-            ("appliedTax", "orders_check_applied_service_charge_applied_tax")],
+            ("appliedTax", "orders_check_applied_service_charge_applied_tax")
+        ],
         "orders_check_selection": [
             ("appliedTaxes", "orders_check_selection_applied_tax"),
             ("modifiers", "orders_check_selection_modifier"),
-            ("appliedDiscounts", "orders_check_selection_applied_discount")],
-        "orders_check_selection_applied_discount":
-            [("comboItems", "orders_check_selection_applied_discount_combo_item"),
-             ("triggers", "orders_check_selection_applied_discount_trigger")],
+            ("appliedDiscounts", "orders_check_selection_applied_discount"),
+        ],
+        "orders_check_selection_applied_discount": [
+            ("comboItems", "orders_check_selection_applied_discount_combo_item"),
+            ("triggers", "orders_check_selection_applied_discount_trigger"),
+        ],
         # Toast modifiers can themselves have modifiers (e.g. a cocktail's liquor-upgrade
         # modifier nested inside its pour-size modifier), nested to arbitrary depth. Recurse
         # into the same table rather than a new one, and use the 3rd tuple element to say
         # "keep tying rows back to the same orders_check_selection_id at every depth"
         # instead of the default behavior of renaming the FK to table_name + '_id' each level.
         "orders_check_selection_modifier": [
-            ("modifiers", "orders_check_selection_modifier", "orders_check_selection_id")]
-                     }
+            ("modifiers", "orders_check_selection_modifier", "orders_check_selection_id")
+        ],
+    }
 
     # fields_to_flatten is a mapping of fields to flatten from source data.
     # Keys represent table names, and values are lists of field names.
@@ -141,15 +158,34 @@ def process_child (parent, table_name, id_field_name, id_field):
         "orders_check_applied_discount": ["approver", "appliedDiscountReason", "discount"],
         "orders_check_applied_discount_trigger": ["selection"],
         "orders_check_applied_service_charge": ["serviceCharge"],
-        "orders_check_selection": ["salesCategory", "itemGroup", "item", "diningOption", "refundDetails", "voidReason"],
-        "orders_check_selection_applied_discount": ["approver", "appliedDiscountReason", "discount"],
+        "orders_check_selection": [
+            "salesCategory",
+            "itemGroup",
+            "item",
+            "diningOption",
+            "refundDetails",
+            "voidReason",
+        ],
+        "orders_check_selection_applied_discount": [
+            "approver",
+            "appliedDiscountReason",
+            "discount",
+        ],
         "orders_check_selection_applied_tax": ["taxRate"],
-        "orders_check_selection_modifier": ["diningOption", "item", "itemGroup", "optionGroup", "salesCategory"
-            , "preModifier", "voidReason" ],
-        "orders_check_selection_applied_discount_trigger": ["selection"]}
+        "orders_check_selection_modifier": [
+            "diningOption",
+            "item",
+            "itemGroup",
+            "optionGroup",
+            "salesCategory",
+            "preModifier",
+            "voidReason",
+        ],
+        "orders_check_selection_applied_discount_trigger": ["selection"],
+    }
 
     for p in parent:
-        #log.debug(f"processing {table_name}")
+        # log.debug(f"processing {table_name}")
         p[id_field_name] = id_field
         if table_name in relationships:
             for relationship in relationships[table_name]:
@@ -163,22 +199,14 @@ def process_child (parent, table_name, id_field_name, id_field):
                     if self_referential:
                         for child in p[child_key]:
                             child["parent_modifier_id"] = p["guid"]
-                        process_child(
-                            p[child_key],
-                            child_table_name,
-                            relationship[2],
-                            id_field
-                        )
+                        process_child(p[child_key], child_table_name, relationship[2], id_field)
                     else:
                         process_child(
-                            p[child_key],
-                            child_table_name,
-                            table_name + "_id",
-                            p["guid"]
+                            p[child_key], child_table_name, table_name + "_id", p["guid"]
                         )
                 p.pop(child_key, None)
         if table_name in fields_to_flatten:
-            #log.debug(f"flattening fields in {table_name}")
+            # log.debug(f"flattening fields in {table_name}")
             p = flatten_fields(fields_to_flatten[table_name], p)
         # Toast sometimes omits a guid for appliedTaxes[] entries. flatten_fields() above has
         # already renamed any real guid to "id", so check "id" (not "guid", which no longer
@@ -193,10 +221,12 @@ def process_child (parent, table_name, id_field_name, id_field):
         p = stringify_lists(p)
         p = replace_guid_with_id(p)
         op.upsert(table=table_name, data=p)
-        # need to also handle deletes here, for child tables and their children (e.g. orders_check and orders_check_selection)
+        # need to also handle deletes here, for child tables and their children
+        # (e.g. orders_check and orders_check_selection)
 
         if p.get("deleted") and "id" in p:
             op.delete(table=table_name, keys={"id": p["id"]})
+
 
 def rename_guid_fields(item):
     """
@@ -222,6 +252,7 @@ def rename_guid_fields(item):
             item[new_name] = item.pop(old_name)
     return item
 
+
 def is_older_than_30_days(date_to_check):
     """
     Checks whether date_to_check is older than 30 days.
@@ -229,7 +260,7 @@ def is_older_than_30_days(date_to_check):
     :param date_to_check:
     :return: boolean based on whether date is older than 30 days
     """
-    now = datetime.datetime.now(datetime.UTC)  # Timezone-aware UTC datetime
+    now = datetime.datetime.now(datetime.timezone.utc)  # Timezone-aware UTC datetime
 
     # Convert to datetime if input is a string
     if isinstance(date_to_check, str):
@@ -237,15 +268,17 @@ def is_older_than_30_days(date_to_check):
 
     return date_to_check < now - datetime.timedelta(days=30)
 
-def generate_business_dates (start_ts, end_ts):
+
+def generate_business_dates(start_ts, end_ts):
     """
-    Takes in start_date and end_date, and generates a list of dates in YYYYMMDD format that include those dates
+    Takes in start_date and end_date, and generates a list of dates in YYYYMMDD format that
+    include those dates
     :param start_ts: ISO format datetime
     :param end_ts: ISO format datetime later than start_ts
     :return: list of YYYYMMDD dates between start_ts and end_ts, inclusive
     """
-    start_date = datetime.datetime.fromisoformat(start_ts)
-    end_date = datetime.datetime.fromisoformat(end_ts)
+    start_date = datetime.datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
+    end_date = datetime.datetime.fromisoformat(end_ts.replace("Z", "+00:00"))
     delta = end_date - start_date
 
     date_list = []
@@ -253,6 +286,7 @@ def generate_business_dates (start_ts, end_ts):
         date_list.append((start_date + datetime.timedelta(days=i)).strftime("%Y%m%d"))
 
     return date_list
+
 
 def get_target_business_dates(state, configuration, initial_sync_ts):
     """
@@ -264,9 +298,10 @@ def get_target_business_dates(state, configuration, initial_sync_ts):
     still open and accumulating fulfillments, so syncing it would capture a partial
     day that never gets revisited once the cursor moves past it.
 
-    - First sync (no state yet): backfills all the way back to configuration["initialSyncStart"]
-      by default, matching how far every other endpoint backfills - configuration["itemFulfillmentsInitialDaysBack"]
-      overrides this with a specific day count instead, when set (e.g. for a bounded local test run).
+    - First sync (no state yet): backfills all the way back to
+      configuration["initialSyncStart"] by default, matching how far every other endpoint
+      backfills - configuration["itemFulfillmentsInitialDaysBack"] overrides this with a
+      specific day count instead, when set (e.g. for a bounded local test run).
     - Every sync after: resumes the day after the last synced date, through
       yesterday. Normally that's exactly one new day; if a sync was skipped or the
       connector was paused, this naturally catches up on every date in between,
@@ -281,11 +316,22 @@ def get_target_business_dates(state, configuration, initial_sync_ts):
 
     last_synced = state.get("item_fulfillment_last_synced_date")
     if last_synced:
-        start = datetime.datetime.strptime(last_synced, "%Y%m%d").date() + datetime.timedelta(days=1)
+        start = datetime.datetime.strptime(last_synced, "%Y%m%d").date() + datetime.timedelta(
+            days=1
+        )
     else:
         configured_days_back = configuration.get("itemFulfillmentsInitialDaysBack")
         if configured_days_back:
-            start = yesterday - datetime.timedelta(days=int(configured_days_back) - 1)
+            try:
+                days_back = int(configured_days_back)
+            except ValueError:
+                days_back = None
+            if days_back is None or days_back < 1:
+                raise ValueError(
+                    "itemFulfillmentsInitialDaysBack must be a positive integer, got "
+                    f"{configured_days_back!r}"
+                )
+            start = yesterday - datetime.timedelta(days=days_back - 1)
         else:
             start = datetime.datetime.fromisoformat(initial_sync_ts.replace("Z", "+00:00")).date()
 
@@ -295,6 +341,7 @@ def get_target_business_dates(state, configuration, initial_sync_ts):
         dates.append(d.strftime("%Y%m%d"))
         d += datetime.timedelta(days=1)
     return dates
+
 
 def get_endpoint_timerange(endpoint, state, configuration, initial_sync_ts, start_timestamp):
     """
@@ -327,6 +374,7 @@ def get_endpoint_timerange(endpoint, state, configuration, initial_sync_ts, star
         to_ts = start_timestamp
 
     return from_ts, to_ts
+
 
 def set_endpoint_timerange(endpoint, state, to_ts):
     """
