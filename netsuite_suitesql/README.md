@@ -1,3 +1,9 @@
+---
+name: NetSuite SuiteQL
+description: Extract General Ledger and Trial Balance source data from NetSuite using SuiteQL over REST Web Services, without a SuiteAnalytics Connect subscription
+category: SaaS & APIs
+---
+
 # NetSuite SuiteQL Connector Example
 
 ## Connector overview
