@@ -114,7 +114,18 @@ __TABLES = [
     {
         "table": "transaction",
         "alias": "t",
-        "columns": ["id", "tranid", "trandate", "type", "entity", "memo", "status"],
+        # 'postingperiod' joins to accountingperiod.id. NetSuite can post a transaction to a period
+        # other than the one containing 'trandate', so period-based GL/TB must use this field.
+        "columns": [
+            "id",
+            "tranid",
+            "trandate",
+            "postingperiod",
+            "type",
+            "entity",
+            "memo",
+            "status",
+        ],
         "primary_key": ["id"],
         "transaction_id_column": "t.id",
         # No 'subsidiary'/usable date of its own - filtered via membership in transactionline's
@@ -143,7 +154,9 @@ __TABLES = [
             "netamount",
             "posting",
         ],
-        "primary_key": ["transaction", "transactionline", "accountingbook"],
+        # 'account' is part of the key: one line can post to several accounts within the same
+        # accounting book, and without it those postings would overwrite each other on upsert.
+        "primary_key": ["transaction", "transactionline", "accountingbook", "account"],
         "joins": [
             {"table": "transaction", "alias": "t", "on": "t.id = tal.transaction"},
             {
@@ -255,9 +268,41 @@ def get_oauth1_auth(configuration: dict):
 
 
 def resolve_date_to(configuration: dict):
-    """Resolve optional 'date_to': None if omitted/blank (open-ended range), else passed through as-is."""
-    raw_value = configuration.get("date_to")
+    """Resolve optional 'date_to': None if omitted/blank (open-ended range), else the whitespace-trimmed value."""
+    raw_value = str(configuration.get("date_to") or "").strip()
     return raw_value if raw_value else None
+
+
+def build_extraction_scope(date_from: str, date_to, subsidiary_ids: list) -> dict:
+    """
+    Normalized identity of what an extraction covers. Saved in state so an interrupted sync is
+    only resumed when the configured scope is unchanged - otherwise saved windows and offsets
+    would refer to a different date range or subsidiary selection.
+    """
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "subsidiary_ids": sorted(subsidiary_ids, key=int),
+    }
+
+
+def start_or_resume_extraction(state: dict, scope: dict, table_names: list) -> bool:
+    """
+    Decide whether this sync resumes an interrupted extraction or starts a new one, resetting
+    'state' in place for a new one (all progress dropped, so every table truncates afresh).
+    A new extraction starts when there is no saved progress, the scope changed, or every table
+    already finished (the previous extraction completed - this sync is the next full reload).
+    Returns:
+        True if resuming an interrupted extraction, False if starting a fresh one.
+    """
+    tables_state = state.get("tables") or {}
+    all_completed = all(tables_state.get(name, {}).get("completed") for name in table_names)
+    if state.get("scope") == scope and tables_state and not all_completed:
+        return True
+    state.clear()
+    state["scope"] = scope
+    state["tables"] = {}
+    return False
 
 
 def parse_date(value: str) -> date:
@@ -648,9 +693,10 @@ def sync_simple_table(session, base_url: str, auth, table_config: dict, state: d
 
     tables_state = state.setdefault("tables", {})
     table_state = tables_state.get(table_name)
-    if table_state is None or table_state.get("completed"):
+    if table_state is None:
         # Fresh extraction: clear the destination copy once, then record that in state so a
         # resumed (interrupted) sync does not truncate again and wipe rows already re-loaded.
+        # (update() skips tables already completed in the current extraction.)
         truncate_table(table_name)
         table_state = {"offset": 0, "completed": False}
         tables_state[table_name] = table_state
@@ -679,17 +725,19 @@ def sync_simple_table(session, base_url: str, auth, table_config: dict, state: d
         has_more = bool(page.get("hasMore"))
         table_state["offset"] = offset + __PAGE_LIMIT
 
-        if not has_more:
-            break
-
+        # Checked whether or not NetSuite still reports hasMore: a response that stops exactly at
+        # the cap may be truncated, and accepting it would silently drop rows.
         if total_rows >= __MAX_ROWS_PER_TABLE:
             raise RuntimeError(
-                f"Table '{table_name}' has reached {total_rows} row(s) with more still available "
-                f"from NetSuite (hard cap: {__MAX_ROWS_PER_TABLE}). This table is synced as an "
+                f"Table '{table_name}' has reached {total_rows} row(s), NetSuite's hard cap of "
+                f"{__MAX_ROWS_PER_TABLE} rows per query, so the result may be truncated. This table is synced as an "
                 "unfiltered whole (no date/subsidiary splitting applies to it), so this cap "
                 "cannot be worked around the way it is for the transaction-related tables - "
                 "raising rather than silently truncating."
             )
+
+        if not has_more:
+            break
 
         checkpoint_state(state)
         # DEBUG (not INFO): fires once per 1,000 rows - would be excessive at production-visible
@@ -738,7 +786,8 @@ def sync_windowed_table(
 
     tables_state = state.setdefault("tables", {})
     table_state = tables_state.get(table_name)
-    if table_state is None or table_state.get("completed") or "windows" not in table_state:
+    # (update() skips tables already completed in the current extraction.)
+    if table_state is None or "windows" not in table_state:
         table_state = {
             "windows": [
                 {"start": date_from, "end": date_to, "subsidiary_ids": subsidiary_ids, "offset": 0}
@@ -787,6 +836,10 @@ def sync_windowed_table(
             count = get_row_count(
                 session, base_url, auth, table_config, w_start, w_end, w_subsidiary_ids, w_id_range
             )
+            if window.pop("oversized", False):
+                # A previous fetch of this window hit the row cap even though its count looked
+                # safe (source data grew), so treat it as over the threshold and split it.
+                count = max(count, __MAX_ROWS_PER_TABLE)
             log.debug(f"Table '{table_name}': window {window_label} has {count} row(s)")
 
             if count > __SAFE_ROW_THRESHOLD:
@@ -888,6 +941,7 @@ def sync_windowed_table(
         query, params = build_query(table_config, w_start, w_end, w_subsidiary_ids, w_id_range)
         log.debug(f"Table '{table_name}' SuiteQL query for window {window_label}: {query}")
         window_total = window["offset"]
+        hit_row_cap = False
 
         while True:
             offset = window["offset"]
@@ -903,6 +957,22 @@ def sync_windowed_table(
             has_more = bool(page.get("hasMore"))
             window["offset"] = offset + __PAGE_LIMIT
 
+            if window_total >= __MAX_ROWS_PER_TABLE:
+                # The initial COUNT can be stale (data changes between the count and the fetch, or
+                # across an interrupted sync), and NetSuite may end a capped response with
+                # hasMore=false. Never accept a window that reached the cap as complete: restart it
+                # from offset 0 flagged oversized so it is re-counted and split. Rows already
+                # upserted are idempotent (keyed on the primary key), so re-fetching is safe.
+                log.warning(
+                    f"Table '{table_name}': window {window_label} reached NetSuite's "
+                    f"{__MAX_ROWS_PER_TABLE}-row cap - discarding progress and splitting it further"
+                )
+                window["offset"] = 0
+                window["oversized"] = True
+                checkpoint_state(state)
+                hit_row_cap = True
+                break
+
             if has_more:
                 checkpoint_state(state)
                 # DEBUG (not INFO): fires once per 1,000 rows - see sync_simple_table's identical
@@ -914,6 +984,9 @@ def sync_windowed_table(
                 )
             else:
                 break
+
+        if hit_row_cap:
+            continue  # re-examine this same window (offset 0, flagged oversized) so it splits
 
         total_rows += window_total
         table_state["total_rows"] = total_rows
@@ -1096,10 +1169,22 @@ def update(configuration: dict, state: dict):
     base_url = f"https://{host}{__SUITEQL_PATH}"
     auth = get_oauth1_auth(configuration)
 
-    date_from = configuration["date_from"]
+    # Use the trimmed values validate_configuration accepted - raw values may carry whitespace
+    # that would break date parsing in split_window.
+    date_from = str(configuration["date_from"]).strip()
     date_to = resolve_date_to(configuration)
     subsidiary_ids = parse_subsidiaries(configuration)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # split point only, see split_window
+
+    # Resume an interrupted extraction only if its scope is unchanged; otherwise (or if the last
+    # extraction fully finished) reset all progress so every table truncates and reloads afresh.
+    scope = build_extraction_scope(date_from, date_to, subsidiary_ids)
+    resuming = start_or_resume_extraction(state, scope, [t["table"] for t in __TABLES])
+    log.info(
+        "Resuming an interrupted extraction"
+        if resuming
+        else "Starting a fresh extraction (no saved progress, scope changed, or previous run completed)"
+    )
 
     date_range_description = (
         f"{date_from} to {date_to}"
@@ -1117,6 +1202,11 @@ def update(configuration: dict, state: dict):
     try:
         for table_config in __TABLES:
             table_name = table_config.get("table", "<unknown>")
+            if state["tables"].get(table_name, {}).get("completed"):
+                # Finished earlier in this (resumed) extraction - don't truncate and reload it.
+                log.info(f"Skipping table '{table_name}': already completed in this extraction")
+                rows_by_table[table_name] = 0
+                continue
             try:
                 if table_has_date_filter(table_config):
                     rows_by_table[table_name] = sync_windowed_table(

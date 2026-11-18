@@ -34,7 +34,7 @@ fivetran init --template netsuite_suitesql
 
 - Extracts GL and Trial Balance source data with SuiteQL over REST Web Services, with no SuiteAnalytics Connect subscription.
 - Authenticates with TBA (OAuth 1.0a, HMAC-SHA256) as a dedicated integration user (refer to `def get_oauth1_auth`).
-- Ships a deployable SuiteCloud (SDF) package that creates a read-only, least-privilege NetSuite role (`sdf/fivetran_netsuite_role`).
+- Ships a deployable SuiteCloud (SDF) package that creates a read-only NetSuite role limited to the record types the connector needs (`sdf/fivetran_netsuite_role`).
 - Filters transaction data by date range and subsidiary.
 - Handles NetSuite's 100,000-row SuiteQL limit by splitting large windows by date, then subsidiary, then transaction ID (refer to `def sync_windowed_table`).
 - Retries transient errors with exponential backoff (refer to `def execute_suiteql`).
@@ -106,8 +106,10 @@ The connector pages through each SuiteQL result with `limit` and `offset`, 1,000
 
 - Each sync is a full re-extraction. There is no incremental cursor.
 - At the start of each fresh extraction of a table, the connector truncates that table once (refer to `def truncate_table`) and then upserts the current rows. Rows that were deleted in NetSuite, or that fall outside a narrowed date range or subsidiary list, are soft-deleted in the destination (`_fivetran_deleted = true`) instead of lingering as active rows. The truncate is recorded in the checkpointed state, so a resumed sync does not truncate again.
+- An extraction covers all six tables. If a sync is interrupted, the next sync resumes it: tables already completed are skipped (not truncated or reloaded again) and the interrupted table continues from its checkpoint. Once every table has completed, the next sync starts a new extraction and truncates each table again.
+- The state also records the extraction scope (date range and subsidiary selection). If you change **Date From**, **Date To**, or **Subsidiaries** while an extraction is unfinished, the saved progress is discarded and the next sync restarts all tables with a fresh truncate, so no rows from the old scope are retained.
 - Date and subsidiary filters are passed to SuiteQL as bound parameters, and configuration values are validated before use (refer to `def validate_configuration`).
-- `state` holds only the progress needed to resume an interrupted sync: per-table completion, the pending windows, and the current offset.
+- `state` holds only the progress needed to resume an interrupted sync: the extraction scope, per-table completion, the pending windows, and the current offset.
 
 ### What's synced
 
@@ -115,6 +117,8 @@ The connector pages through each SuiteQL result with `limit` and `offset`, 1,000
 - `transactionline` is filtered directly: it has its own `subsidiary` column and is joined to `transaction` to filter on `trandate`.
 - `transaction` has no `subsidiary` column and no usable date column of its own for this filter. It is filtered through the matching `transactionline` rows with a subquery.
 - `transactionaccountingline` is the GL posting detail per transaction line. It has neither `subsidiary` nor `trandate`, so it is joined to `transaction` for the date and to `transactionline` for the subsidiary. It joins to `transactionline` on `tl.id = tal.transactionline`, not on `linesequencenumber`: the two values differ on many lines, and joining on the sequence number drops or misassociates accounting lines.
+
+`transaction.postingperiod` is synced and joins to `accountingperiod.id`. NetSuite can post a transaction to a period other than the one containing its `trandate`, so use `postingperiod` (not `trandate`) when assigning transactions to accounting periods for period-based GL and Trial Balance results.
 
 `transactionline.postingperiod` cannot be selected or filtered through SuiteQL REST in the account this connector was built against (the query fails with `500 UNEXPECTED_ERROR`), so the connector filters on `transaction.trandate` instead.
 
@@ -130,6 +134,8 @@ NetSuite caps a SuiteQL query at 100,000 rows. To guarantee full coverage regard
 4. If a window is a single day and still too large, split it into one window per configured subsidiary.
 5. If a window is a single day for a single subsidiary and still too large, split by transaction ID range (refer to `def get_id_range` and `def split_id_range`).
 6. If a window cannot be split any further and is still over the threshold, the sync fails with an error instead of silently truncating the data.
+
+The count can go stale if data changes while a sync runs. If a fetched window reaches the 100,000-row cap anyway, the connector never accepts it as complete: it restarts that window and splits it further (rows already upserted are overwritten by primary key, so nothing is duplicated).
 
 The state keeps the list of pending windows, so an interrupted sync resumes mid-window without redoing finished windows. The dimension tables are not windowed; if one ever reached the row limit, the sync fails with an error.
 
@@ -152,8 +158,10 @@ The connector creates the following tables (refer to `def schema`). It selects a
 | `account` | `id` | `id`, `acctnumber`, `accountsearchdisplayname`, `accttype`, `subsidiary`, `isinactive` |
 | `accountingperiod` | `id` | All columns |
 | `transactionline` | `transaction`, `linesequencenumber` | `transaction`, `id`, `linesequencenumber`, `subsidiary`, `department`, `class`, `location`, `memo` |
-| `transaction` | `id` | `id`, `tranid`, `trandate`, `type`, `entity`, `memo`, `status` |
-| `transactionaccountingline` | `transaction`, `transactionline`, `accountingbook` | `transaction`, `transactionline`, `account`, `accountingbook`, `debit`, `credit`, `amount`, `netamount`, `posting` |
+| `transaction` | `id` | `id`, `tranid`, `trandate`, `postingperiod`, `type`, `entity`, `memo`, `status` |
+| `transactionaccountingline` | `transaction`, `transactionline`, `accountingbook`, `account` | `transaction`, `transactionline`, `account`, `accountingbook`, `debit`, `credit`, `amount`, `netamount`, `posting` |
+
+`account` is part of the `transactionaccountingline` primary key because one transaction line can post to several accounts within the same accounting book.
 
 `transactionaccountingline.transactionline` references `transactionline.id`, so the connector syncs `id` on `transactionline` to let you join the two tables in the destination. The `id` value is unique only within a transaction, not across the table.
 
@@ -248,7 +256,7 @@ Enter the values from the [Configuration file](#configuration-file) section in t
 ## Access model
 
 - Read-only: every data permission the role holds is granted at View level, so the connector cannot create, edit, or delete NetSuite records.
-- Scoped: access is limited to the six tables above. No other part of the account is accessible, and NetSuite's role and permission system enforces this at the source, not the connector's code.
+- Permission-scoped, not table-scoped: the role grants View access to the record types the connector needs (transactions, accounts, accounting periods, subsidiaries), REST Web Services access, and access to all subsidiaries and accounting books. It does not enforce a six-table allowlist. The six-table selection and the date and subsidiary filters are enforced by the connector's queries, not by the token's authorization, so treat the credentials as able to read any data those permissions cover.
 - Dedicated credentials: the connector authenticates as a dedicated integration user with a revocable access token, never as a person's own login, and it cannot log in interactively.
 - Repeatable: the role is defined in a version-controlled SDF package instead of being assembled by selecting permission boxes one at a time.
 
