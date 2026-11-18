@@ -1,5 +1,5 @@
 [project]
-name = "delta-sharing"
+name = "delta-sharing-connector"
 version = "0.1.0"
 description = "A Fivetran Connector SDK connector that syncs data from any Delta Sharing-compatible server into your Fivetran destination."
 requires-python = ">=3.10,<3.15"
