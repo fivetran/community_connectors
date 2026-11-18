@@ -80,7 +80,7 @@ Configuration parameters:
 
 ## Requirements file
 
-This example does not require a `pyproject.toml` file because it uses only packages that are already available in the Fivetran environment. If you add a `pyproject.toml` file for customization, leave it empty unless you introduce additional external dependencies.
+The `pyproject.toml` file contains project metadata. This example uses only packages already available in the Fivetran environment, so no `dependencies` array is needed. Retain the project metadata and add a `dependencies` array only if you introduce additional external dependencies.
 > Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
