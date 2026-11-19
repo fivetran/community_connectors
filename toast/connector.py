@@ -1,29 +1,63 @@
 """
-This is an example to extract data from Toast, technology platform primarily designed for the restaurant industry.
-It provides an all-in-one point-of-sale (POS) and management system tailored to meet the unique needs
-of restaurants, cafes, and similar businesses.
-See the Technical Reference documentation (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
-and the Best Practices documentation (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
+2025-04-28
+To add new config endpoint and sync it back to configuration["initialSyncStart"]:
+1. Add endpoint and table name to list of endpoints in sync_items() function
+2. Add table name and primary_key to schema definition in schema() function
+3. If synced_endpoints is not already in state, then make sure configuration.json has
+    synced_endpoints (comma-delimited list of endpoints already synced, e.g.
+    /config/v2/alternatePaymentTypes,/config/v2/diningOptions...)
 """
 
-import requests as rq
+# See the Technical Reference documentation
+# (https://fivetran.com/docs/connectors/connector-sdk/technical-reference#update)
+# and the Best Practices documentation
+# (https://fivetran.com/docs/connectors/connector-sdk/best-practices) for details
+
 import traceback
-from datetime import datetime, timezone, timedelta
-import time
+import datetime
 import json
-import copy
-import uuid
-from cryptography.fernet import Fernet
 
-# Import required classes from fivetran_connector_sdk.
-# For supporting Connector operations like Update() and Schema()
-from fivetran_connector_sdk import Connector
+# Import required classes from fivetran_connector_sdk
+from fivetran_connector_sdk import (
+    Connector,
+)  # For supporting Connector operations like Update() and Schema()
+from fivetran_connector_sdk import (
+    Operations as op,
+)  # For supporting Data operations like Upsert(), Update(), Delete() and checkpoint()
+from fivetran_connector_sdk import Logging as log  # For enabling Logs in your connector code
 
-# For enabling Logs in your connector code
-from fivetran_connector_sdk import Logging as log
+from auth import get_session_token, get_api_response, push_token_to_fivetran
+from transform import get_endpoint_timerange, set_endpoint_timerange, get_target_business_dates
+from endpoints import (
+    process_config,
+    process_labor,
+    process_cash,
+    process_orders,
+    process_prep_stations,
+    process_item_fulfillments,
+)
 
-# For supporting Data operations like Upsert(), Update(), Delete() and checkpoint()
-from fivetran_connector_sdk import Operations as op
+
+def validate_configuration(configuration: dict):
+    """
+    Checks for the configuration values needed to refresh and push the Toast token via
+    the Fivetran REST API (see get_session_token/update_configuration). A system key's
+    permissions can't be checked via the API (GET /v1/system-keys/{id} rejects system-key
+    auth outright: "Access denied. Method is not allowed for system key.") and can't be
+    changed after creation, so there's no scope pre-check here - a wrong/under-scoped key
+    fails the first time get_session_token()/update_configuration() actually PATCHes the
+    connection, and every sync after that behaves the same way once it's set correctly.
+    The other required values (domain, clientId, clientSecret, userAccessType,
+    initialSyncStart) already fail with a clear KeyError from direct dict access elsewhere
+    in update().
+    :param configuration: a dictionary that holds the configuration settings for the connector.
+    :raises ValueError: if fivetran_system_key is missing.
+    """
+    if "fivetran_system_key" not in configuration:
+        raise ValueError(
+            "Could not find 'fivetran_system_key' in configuration - required to push "
+            "refreshed Toast tokens back to this connection via the Fivetran REST API"
+        )
 
 
 def update(configuration: dict, state: dict):
@@ -37,18 +71,79 @@ def update(configuration: dict, state: dict):
     """
 
     try:
+        validate_configuration(configuration)
+
+        # Leftover from the old Fernet-encrypted-token-in-state approach this replaced -
+        # unused by any code from here on, drop them so they don't linger indefinitely
+        # on connections upgrading from that version. configuration["key"] was the
+        # actual Fernet secret, so drop it from configuration too - it'll disappear
+        # from Fivetran's stored config on the next push_token_to_fivetran() PATCH,
+        # rather than lingering there unused.
+        state.pop("encrypted_token", None)
+        state.pop("token_ttl", None)
+        configuration.pop("key", None)
+
         domain = configuration["domain"]
         base_url = f"https://{domain}"
-        key = configuration["key"]
-        headers, state = make_headers(configuration, base_url, state, key)
+        token = get_session_token(base_url, configuration, state)
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
         start_timestamp = (
-            datetime.now(timezone.utc).isoformat("T", "milliseconds").replace("+00:00", "Z")
+            datetime.datetime.now(datetime.timezone.utc)
+            .isoformat("T", "milliseconds")
+            .replace("+00:00", "Z")
         )
-        from_ts, to_ts = set_timeranges(state, configuration, start_timestamp)
+        initial_sync_dt = datetime.datetime.fromisoformat(
+            configuration["initialSyncStart"].replace("Z", "+00:00")
+        )
+        initial_sync_ts = initial_sync_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
-        # start the sync
-        sync_items(base_url, headers, from_ts, to_ts, start_timestamp, state)
+        """
+        Get list of synced tables from state.
+        If state doesn't contain a list of tables, getting it from configuration allows
+        implementing this with connectors that don't yet track which tables are synced.
+        """
+        if state.get("synced_endpoints"):
+            endpoints_previously_synced = state["synced_endpoints"]
+            log.debug(f"tables synced to date: {endpoints_previously_synced}")
+        elif configuration.get("synced_endpoints"):
+            endpoints_previously_synced = configuration["synced_endpoints"].split(",")
+            log.debug(f"tables synced to date: {endpoints_previously_synced}")
+        else:
+            endpoints_previously_synced = []
+
+        log.debug(state)
+
+        try:
+            # start the sync
+            sync_items(
+                base_url,
+                headers,
+                initial_sync_ts,
+                start_timestamp,
+                configuration,
+                state,
+                endpoints_previously_synced,
+            )
+        finally:
+            # Push any refreshed Toast token to this connection's own Fivetran configuration
+            # only now, after all of this sync's Toast data has already been upserted/
+            # checkpointed - runs whether sync_items() succeeded or raised, so a broken
+            # fivetran_system_key never costs a sync its Toast data. push_token_to_fivetran()
+            # never raises itself, so it can't mask an exception from sync_items() above.
+            # Checkpoint again afterward so last_token_refresh_time (set only on a successful
+            # push, after sync_items()'s own last checkpoint has already run) is actually
+            # persisted - otherwise the platform never sees it, and every sync re-authenticates
+            # against Toast from scratch instead of reusing a still-fresh token.
+            if state.pop("_needs_token_push", False):
+                if push_token_to_fivetran(configuration, state):
+                    op.checkpoint(state)
+
+        # If this line is missing from a sync's logs, the sync did not reach the end of
+        # update() - it was killed/crashed somewhere above, not merely slow. This is the
+        # clearest marker for distinguishing "ran to completion" from "cut off mid-run
+        # with no exception".
+        log.info("sync completed successfully")
 
     except Exception as e:
         # Return error response
@@ -58,21 +153,30 @@ def update(configuration: dict, state: dict):
         raise RuntimeError(detailed_message)
 
 
-def sync_items(base_url, headers, ts_from, ts_to, start_timestamp, state):
+def sync_items(
+    base_url,
+    headers,
+    initial_sync_ts,
+    start_timestamp,
+    configuration,
+    state,
+    endpoints_previously_synced,
+):
     """
     This is the main generator function for the connector.
     It calls other functions that are specific to the endpoint type.
+    Each endpoint tracks and advances its own timestamp cursor in state["endpoint_ts"],
+    so endpoints sync independently of each other instead of sharing one global cursor.
     :param base_url: Toast API URL
     :param headers: authentication headers
-    :param ts_from: Timestamp to start the current iteration
-    :param ts_to: Timestamp to end the current iteration
+    :param initial_sync_ts
     :param start_timestamp: timestamp that the sync was started
     :return:
     """
     more_data = True
     first_pass = True  # indicates whether to call endpoints that don't have an end timestamp
 
-    # config endpoint is a list of tuples ("endpoint", "destination_table_name")
+    # config_endpoints is a list of tuples ("endpoint", "destination_table_name")
     config_endpoints = [
         ("/config/v2/alternatePaymentTypes", "alternate_payment_types"),
         ("/config/v2/diningOptions", "dining_option"),
@@ -87,27 +191,93 @@ def sync_items(base_url, headers, ts_from, ts_to, start_timestamp, state):
         ("/config/v2/tables", "tables"),
     ]
 
-    while more_data:
-        # set timerange dicts
-        timerange_params = {"startDate": ts_from, "endDate": ts_to}
-        modified_params = {"modifiedStartDate": ts_from, "modifiedEndDate": ts_to}
-        config_params = {"lastModified": ts_from}
-        state["to_ts"] = ts_to
-        log.debug(f"state updated, new state: {repr(state)}")
+    # timerange_endpoints is a list of tuples
+    # ("endpoint", "destination_table_name", process_fn, param_style)
+    # each one syncs on its own independent, 30-day-chunked cursor in state["endpoint_ts"][endpoint]
+    timerange_endpoints = [
+        ("/cashmgmt/v1/entries", "cash_entry", process_cash, "range"),
+        ("/cashmgmt/v1/deposits", "cash_deposit", process_cash, "range"),
+        ("/orders/v2/ordersBulk", "orders", process_orders, "range"),
+        ("/labor/v1/shifts", "shift", process_labor, "range"),
+        ("/labor/v1/timeEntries", "time_entry", process_labor, "modified"),
+    ]
 
+    while more_data:
         # Get response from API call.
         response_page, next_token = get_api_response(
-            base_url + "/partners/v1/restaurants", headers
+            base_url + "/partners/v1/restaurants",
+            headers,
+            configuration=configuration,
+            base_url=base_url,
+            state=state,
         )
 
         # Process the items.
         if not response_page:
             break  # End pagination if there are no records in response.
 
+        # prep_station is small reference-style data - always a full pull, no state
+        # needed. truncate() soft-deletes every existing row; the per-restaurant
+        # upserts below then "revive" every prep station that still exists. A prep
+        # station actually removed/deactivated in Toast since the last sync is never
+        # re-upserted, so it correctly stays deleted - without this, a full-pull-
+        # every-time table would only ever grow, never reflect removals. Must run
+        # exactly once per sync, before any upserts to these tables.
+        if first_pass:
+            op.truncate(table="prep_station")
+            op.truncate(table="prep_station_connected_prep_station")
+
+        # Compute every endpoint's timerange for THIS pass once, before the restaurant
+        # loop - not per restaurant. state["endpoint_ts"] is keyed only by endpoint, not
+        # by (endpoint, restaurant), so reading/advancing it inside the restaurant loop
+        # would hand each restaurant a different slice of the cursor instead of every
+        # restaurant getting the same window in a given pass.
+        config_endpoint_lastmodified = {}
+        if first_pass:
+            for endpoint, _table_name in config_endpoints:
+                not_in_cursor = endpoint not in state.get("endpoint_ts", {})
+                not_previously_synced = endpoint not in endpoints_previously_synced
+                if not_in_cursor and not_previously_synced:
+                    config_endpoint_lastmodified[endpoint] = initial_sync_ts
+                    log.info(
+                        f"endpoint {endpoint} not synced previously, syncing back to {initial_sync_ts}"
+                    )
+                else:
+                    ep_from_ts, _ = get_endpoint_timerange(
+                        endpoint, state, configuration, initial_sync_ts, start_timestamp
+                    )
+                    config_endpoint_lastmodified[endpoint] = ep_from_ts
+
+        # active_timerange_endpoints holds (endpoint, table_name, process_fn, param_style,
+        # ep_from_ts, ep_to_ts) only for endpoints that still need to sync this pass -
+        # one already caught up to start_timestamp is skipped entirely, once, here.
+        active_timerange_endpoints = []
+        for endpoint, table_name, process_fn, param_style in timerange_endpoints:
+            ep_from_ts, ep_to_ts = get_endpoint_timerange(
+                endpoint, state, configuration, initial_sync_ts, start_timestamp
+            )
+            if ep_from_ts >= start_timestamp:
+                continue  # this endpoint has already caught up, skip it this pass
+            log.info(f"***** {endpoint} timerange is from {ep_from_ts} to {ep_to_ts} ***** ")
+            active_timerange_endpoints.append(
+                (endpoint, table_name, process_fn, param_style, ep_from_ts, ep_to_ts)
+            )
+
+        # item_fulfillment advances one business day at a time via its own state cursor
+        # (see get_target_business_dates()) rather than the timestamp-range cursors above,
+        # but the dates needed are still the same for every restaurant in this pass, so
+        # they're computed once here rather than per restaurant.
+        target_dates = []
+        if first_pass:
+            target_dates = get_target_business_dates(state, configuration, initial_sync_ts)
+            if not target_dates:
+                log.info(
+                    "item_fulfillment: already caught up through yesterday, nothing new to sync"
+                )
+
         # Iterate over each user in the 'items' list and perform an upsert operation.
         # The 'upsert' operation inserts the data into the destination.
         restaurant_count = len(response_page)
-        log.info(f"***** timerange is from {ts_from} to {ts_to} ***** ")
         for index, r in enumerate(response_page):
             id = r["restaurantGuid"]
             # rename some fields in response
@@ -124,838 +294,105 @@ def sync_items(base_url, headers, ts_from, ts_to, start_timestamp, state):
             # only process these on the first pass since they don't have an end timestamp
             if first_pass:
                 for endpoint, table_name in config_endpoints:
-                    process_config(base_url, headers, endpoint, table_name, id, config_params)
+                    config_params = {"lastModified": config_endpoint_lastmodified[endpoint]}
+                    process_config(
+                        base_url,
+                        headers,
+                        endpoint,
+                        table_name,
+                        id,
+                        config_params,
+                        configuration,
+                        state,
+                    )
 
                 # no timerange_params, only sync during first pass
                 for endpoint, table_name in [
                     ("/labor/v1/jobs", "job"),
                     ("/labor/v1/employees", "employee"),
                 ]:
-                    process_labor(base_url, headers, endpoint, table_name, id)
+                    process_labor(
+                        base_url, headers, endpoint, table_name, id, {}, configuration, state
+                    )
 
-            # cash management endpoints
-            process_cash(
-                base_url, headers, "/cashmgmt/v1/entries", "cash_entry", id, timerange_params
-            )
-            process_cash(
-                base_url, headers, "/cashmgmt/v1/deposits", "cash_deposit", id, timerange_params
-            )
+                process_prep_stations(base_url, headers, id, configuration, state)
 
-            # orders
-            process_orders(
-                base_url, headers, "/orders/v2/ordersBulk", "orders", id, timerange_params
-            )
+                # item_fulfillment: same target_dates (computed above) for every restaurant
+                for business_date in target_dates:
+                    process_item_fulfillments(
+                        base_url, headers, id, business_date, configuration, state
+                    )
 
-            # labor endpoints
-            # these two endpoints can only retrieve 30 days at a time
-            process_labor(
-                base_url, headers, "/labor/v1/shifts", "shift", id, params=timerange_params
-            )
-            process_labor(
-                base_url,
-                headers,
-                "/labor/v1/timeEntries",
-                "time_entry",
-                id,
-                params=modified_params,
-            )
+            # cash management, orders, and labor endpoints: each syncs on its own cursor,
+            # same window (computed above) for every restaurant in this pass
+            for (
+                endpoint,
+                table_name,
+                process_fn,
+                param_style,
+                ep_from_ts,
+                ep_to_ts,
+            ) in active_timerange_endpoints:
+                if param_style == "range":
+                    ep_params = {"startDate": ep_from_ts, "endDate": ep_to_ts}
+                else:
+                    ep_params = {"modifiedStartDate": ep_from_ts, "modifiedEndDate": ep_to_ts}
+                process_fn(
+                    base_url, headers, endpoint, table_name, id, ep_params, configuration, state
+                )
 
-        # Save the progress by checkpointing the state. This is important for ensuring that the sync process can resume
-        # from the correct position in case of interruptions.
+        # Advance every endpoint's cursor once per pass, after all restaurants in this
+        # pass are done - not per restaurant, for the same reason the computation above
+        # happens once per pass rather than once per restaurant.
+        if first_pass:
+            for endpoint, _table_name in config_endpoints:
+                set_endpoint_timerange(endpoint, state, start_timestamp)
+        for (
+            endpoint,
+            _table_name,
+            _process_fn,
+            _param_style,
+            _ep_from_ts,
+            ep_to_ts,
+        ) in active_timerange_endpoints:
+            set_endpoint_timerange(endpoint, state, ep_to_ts)
+
+        # Advance item_fulfillment's date cursor once per pass too, to the last date in
+        # this pass's target_dates - same reasoning as the cursors just above.
+        if target_dates:
+            state["item_fulfillment_last_synced_date"] = target_dates[-1]
+
+        # Save the progress by checkpointing the state. This is important for ensuring that
+        # the sync process can resume from the correct position in case of interruptions.
         # checkpointing every 30 days for convenience,
         # since we can only ask for 30 days of shifts and time entries at a time
-        op.checkpoint(state)
         first_pass = False
 
-        # Determine if we should continue pagination based on the total items and the current offset.
-        if ts_to < start_timestamp:
-            # get new timestamps
-            ts_from, ts_to = set_timeranges(state, {}, start_timestamp)
-        else:
-            more_data = False
+        # Every endpoint has now been through get_endpoint_timerange/set_endpoint_timerange
+        # at least once, so the old global cursor and synced-endpoints tracking are fully
+        # redundant from here on - drop them.
+        state.pop("to_ts", None)
+        state.pop("synced_endpoints", None)
 
+        log.debug(f"state updated, new state: {repr(state)}")
+        op.checkpoint(state)
 
-def process_config(base_url, headers, endpoint, table_name, rst_id, timerange):
-    """
-    This is the generating function for configuration endpoints for a restaurant and timerange
-    :param base_url: Toast API URL
-    :param headers: authentication headers
-    :param endpoint: Toast API endpoint
-    :param table_name: table name to store data in destination
-    :param rst_id: id for restaurant to query
-    :param timerange: time range to query
-    :return:
-    """
-    headers["Toast-Restaurant-External-ID"] = rst_id
-    more_data = True
-    pagination = {}
-    # fields_to_extract is a mapping of fields to extract from source data.
-    # Keys represent table names, and values are lists of tuples.
-    # Each tuple defines a mapping for one or more fields in the table:
-    # (field containing a dictionary, key to extract from dictionary, new field name).
-    fields_to_extract = {
-        "menu_group": [("menu", "guid", "menu_id")],
-        "service_area": [("revenueCenter", "guid", "revenue_center_guid")],
-        "tables": [
-            ("revenueCenter", "guid", "revenue_center_guid"),
-            ("serviceArea", "guid", "service_area_guid"),
-        ],
-    }
-
-    while more_data:
-        try:
-            params = {**timerange, **pagination}
-            response_page, next_token = get_api_response(
-                base_url + endpoint, headers, params=params
-            )
-            if response_page is None:
-                # get_api_response() returns None specifically to signal a failed request (a
-                # 400, or exhausted 401 retries) -- distinct from a genuine empty [] response.
-                # Raise rather than treat this as "nothing to upsert": the caller checkpoints
-                # after this loop, so silently continuing would let a failed request's time
-                # range get checkpointed as done, permanently skipping that data instead of
-                # retrying it next sync.
-                raise RuntimeError(
-                    f"Failed to fetch {endpoint} for restaurant {rst_id} -- see prior log for details"
-                )
-            log.debug(
-                f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
-            )
-            for o in response_page:
-                if fields_to_extract.get(table_name):
-                    o = extract_fields(fields_to_extract[table_name], o)
-                o = stringify_lists(o)
-                o["restaurant_id"] = rst_id
-                o = replace_guid_with_id(o)
-                op.upsert(table=table_name, data=o)
-
-            if next_token:
-                pagination["pageToken"] = next_token
-            else:
-                more_data = False
-
-        except Exception as e:
-            # Return error response
-            exception_message = str(e)
-            stack_trace = traceback.format_exc()
-            detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
-            raise RuntimeError(detailed_message)
-
-
-def process_labor(base_url, headers, endpoint, table_name, rst_id, params=None):
-    """
-    This is the generating function for labor endpoints, for a restaurant and a timerange
-    Labor endpoints do not use pagination
-    Time range parameters are optional for breaks, shifts, and time entries.
-    Time range parameters are not accepted for jobs and employees
-    :param base_url: Toast API URL
-    :param headers: authentication headers
-    :param endpoint: Toast API endpoint
-    :param table_name: table name to store data in destination
-    :param rst_id: id for restaurant to query
-    :param params: This is a dictionary of timerange parameters which can vary by endpoint
-    :return:
-    """
-    params = params or {}
-    headers["Toast-Restaurant-External-ID"] = rst_id
-
-    # fields_to_extract is a mapping of fields to extract from source data.
-    # Keys represent table names, and values are lists of tuples.
-    # Each tuple defines a mapping for one or more fields in the table:
-    # (field containing a dictionary, key to extract from dictionary, new field name).
-    fields_to_extract = {
-        "shift": [
-            ("employeeReference", "guid", "employee_reference_id"),
-            ("jobReference", "guid", "job_reference_id"),
-        ],
-        "time_entry": [
-            ("employeeReference", "guid", "employee_reference_id"),
-            ("jobReference", "guid", "job_reference_id"),
-            ("shiftReference", "guid", "shift_reference_id"),
-        ],
-    }
-
-    try:
-        response_page, next_token = get_api_response(base_url + endpoint, headers, params=params)
-        if response_page is None:
-            # See the identical check in process_config() -- None signals a failed request,
-            # distinct from a genuine empty [] response. Raise instead of silently continuing,
-            # since the caller checkpoints after this loop regardless.
-            raise RuntimeError(
-                f"Failed to fetch {endpoint} for restaurant {rst_id} -- see prior log for details"
-            )
-        log.debug(
-            f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
+        # Keep looping while any timerange-based endpoint still hasn't caught up to start_timestamp.
+        endpoint_ts = state.get("endpoint_ts", {})
+        more_data = any(
+            endpoint_ts.get(endpoint, initial_sync_ts) < start_timestamp
+            for endpoint, _, _, _ in timerange_endpoints
         )
-
-        for o in response_page:
-            if endpoint == "/labor/v1/timeEntries" and o.get("breaks"):
-                process_child(o["breaks"], "break", "time_entry_id", o["guid"])
-            elif endpoint == "/labor/v1/employees":
-                process_child(
-                    o.get("jobReferences", []), "employee_job_reference", "employee_id", o["guid"]
-                )
-                process_child(
-                    o.get("wageOverrides", []), "employee_wage_override", "employee_id", o["guid"]
-                )
-            elif endpoint == "/labor/v1/shifts":
-                o = flatten_fields(["scheduleConfig"], o)
-
-            if table_name in fields_to_extract:
-                o = extract_fields(fields_to_extract[table_name], o)
-
-            o = stringify_lists(o)
-            o["restaurant_id"] = rst_id
-            o = replace_guid_with_id(o)
-            op.upsert(table=table_name, data=o)
-
-            if o.get("deleted") and "id" in o:
-                op.delete(table=table_name, keys={"id": o["id"]})
-
-    except Exception as e:
-        # Return error response
-        exception_message = str(e)
-        stack_trace = traceback.format_exc()
-        detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
-        raise RuntimeError(detailed_message)
-
-
-def process_cash(base_url, headers, endpoint, table_name, rst_id, params):
-    """
-    This is the generating function for cash management endpoints, for a restaurant and a timerange
-    Cash management endpoints take a single business date as a parameter,
-    so this function calls the generate_business_dates function to get a list of dates
-    within the provided timerange
-    :param base_url: Toast API URL
-    :param headers: authentication headers
-    :param endpoint: Toast API endpoint
-    :param table_name: table name to store data in destination
-    :param rst_id: id for restaurant to query
-    :param params: This is a dictionary of timerange parameters
-    :return:
-    """
-    headers["Toast-Restaurant-External-ID"] = rst_id
-    # fields_to_flatten is a mapping of fields to flatten from source data.
-    # Keys represent table names, and values are lists of field names.
-    # The dictionary in each field should be used to create new fields, prefixed by the original field name.
-    # e.g. "info": {"id": 1, "type": "foo"}
-    # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
-    fields_to_flatten = {
-        "cash_deposit": ["employee", "creator"],
-        "cash_entry": [
-            "approverOrShiftReviewSubject",
-            "creatorOrShiftReviewSubject",
-            "cashDrawer",
-            "employee1",
-            "employee2",
-            "payoutReason",
-            "noSaleReason",
-        ],
-    }
-    try:
-        date_range = generate_business_dates(params["startDate"], params["endDate"])
-
-        for d in date_range:
-            response_page, next_token = get_api_response(
-                base_url + endpoint + "?businessDate=" + d, headers
-            )
-            if response_page is None:
-                # See the identical check in process_config() -- None signals a failed request
-                # for this business date, distinct from a genuine empty [] response. Raise
-                # instead of silently skipping the date, since the caller checkpoints past the
-                # whole range regardless.
-                raise RuntimeError(
-                    f"Failed to fetch {endpoint} for restaurant {rst_id} on {d} -- see prior log for details"
-                )
-            for o in response_page:
-                o = flatten_fields(fields_to_flatten[table_name], o)
-                o["restaurant_id"] = rst_id
-                o = replace_guid_with_id(o)
-                op.upsert(table=table_name, data=o)
-
-    except Exception as e:
-        # Return error response
-        exception_message = str(e)
-        stack_trace = traceback.format_exc()
-        detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
-        raise RuntimeError(detailed_message)
-
-
-def process_orders(base_url, headers, endpoint, table_name, rst_id, params):
-    """
-    This is the main generating function for the bulkOrders endpoint.
-    This function upserts/deletes the orders table only.
-    Other tables that are children come from process_payments or process_pricing_features.
-    :param base_url: Toast API URL
-    :param headers: authentication headers
-    :param endpoint: Toast API endpoint
-    :param table_name: table name to store data in destination
-    :param rst_id: id for restaurant to query
-    :param params: This is a dictionary of timerange parameters which can vary by endpoint
-    """
-
-    headers["Toast-Restaurant-External-ID"] = rst_id  # Move outside loop for efficiency
-    params = params.copy()  # Avoid modifying original params
-    params.update({"pageSize": 100, "page": 1})  # Set pagination defaults
-
-    # flatten these fields, e.g. "info": {"id": 1, "type": "foo"}
-    # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
-    fields_to_flatten = ["server", "createdDevice", "lastModifiedDevice"]
-    # extract guids from these fields, make a new field ending in _guid, and pop the original
-    fields_extract_ids = ["diningOption", "table", "serviceArea", "revenueCenter"]
-
-    try:
-        for page_num in range(1, 1_000_000):  # Prevent infinite loops; max reasonable pages
-            params["page"] = page_num
-            response_page, next_token = get_api_response(
-                base_url + endpoint, headers, params=params
-            )
-            log.debug(
-                f"restaurant {rst_id}: response_page has {len(response_page)} items for {endpoint}"
-            )
-
-            if not response_page:
-                break  # No more data
-
-            for order in response_page:
-                order["restaurant_id"] = rst_id
-                process_payments(order)
-                process_pricing_features(order)
-
-                order = flatten_fields(fields_to_flatten, order)
-
-                for field in fields_extract_ids:
-                    if order.get(field) and "guid" in order[field]:
-                        order[f"{field}_guid"] = order[field]["guid"]
-                        order.pop(field, None)
-
-                order.pop("checks", None)
-                order = stringify_lists(order)
-                order = replace_guid_with_id(order)
-                op.upsert(table=table_name, data=order)
-
-                if order.get("deleted") and "id" in order:
-                    op.delete(table=table_name, keys={"id": order["id"]})
-
-            if len(response_page) < params["pageSize"]:
-                break  # No more pages available
-
-    except Exception as e:
-        # Return error response
-        exception_message = str(e)
-        stack_trace = traceback.format_exc()
-        detailed_message = f"Error Message: {exception_message}\nStack Trace:\n{stack_trace}"
-        raise RuntimeError(detailed_message)
-
-
-def process_payments(order):
-    """
-    This function processes payment information for an order.
-    It upserts the orders_check_payment and payment tables.
-    It passes the checks list to the process_child function to generate the orders_check table
-    and its children.
-    :param order: a single order dictionary
-    """
-    # flatten these fields, e.g. "info": {"id": 1, "type": "foo"}
-    # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
-    fields_to_flatten = [
-        "cashDrawer",
-        "createdDevice",
-        "lastModifiedDevice",
-        "otherPayment",
-        "refund",
-        "server",
-    ]
-    if "checks" in order and order["checks"]:
-        process_child(order["checks"], "orders_check", "orders_id", order["guid"])
-        for check in order["checks"]:
-            if "payments" in check:
-                for payment in check["payments"]:
-                    op.upsert(
-                        table="orders_check_payment",
-                        data={
-                            "orders_check_id": check["guid"],
-                            "payment_id": payment["guid"],
-                            "orders_guid": order["guid"],
-                        },
-                    )
-                    payment = flatten_fields(fields_to_flatten, payment)
-                    payment["restaurant_id"] = order["restaurant_id"]
-                    process_void_info(payment)
-                    payment = replace_guid_with_id(payment)
-                    op.upsert(table="payment", data=payment)
-
-
-def process_pricing_features(order):
-    """
-    This function processes pricing features for an order.
-    It upserts the orders_pricing_feature table.
-    :param order: a single order dictionary
-    """
-    if "pricingFeatures" in order and order["pricingFeatures"]:
-        for feature in order["pricingFeatures"]:
-            op.upsert(
-                table="orders_pricing_feature",
-                data={"orders_id": order["guid"], "pricing_feature": feature},
-            )
-        order.pop("pricingFeatures", None)  # Remove processed field
-
-
-def process_child(parent, table_name, id_field_name, id_field):
-    """
-    Iterates through records in parent list to generate child tables.
-    If child tables also contain child records
-    :param parent: parent record (list) which contains children
-    :param table_name: connector table name for parent record
-    :param id_field_name: id field name in parent record to tie child to parent
-    :param id_field: id field value in parent record
-    :return:
-    """
-
-    # dictionary of connector tables and the child fields (lists) that get their own tables
-    # e.g. {"table_name": [("childField01", "child_table_name_01"), ("childField02", "child_table_name_02")] }
-    relationships = {
-        "orders_check": [
-            ("selections", "orders_check_selection"),
-            ("appliedDiscounts", "orders_check_applied_discount"),
-            ("appliedServiceCharges", "orders_check_applied_service_charge"),
-        ],
-        "orders_check_applied_discount": [
-            ("comboItems", "orders_check_applied_discount_combo_item"),
-            ("triggers", "orders_check_applied_discount_trigger"),
-        ],
-        "orders_check_applied_service_charge": [
-            ("appliedTax", "orders_check_applied_service_charge_applied_tax")
-        ],
-        "orders_check_selection": [
-            ("appliedTaxes", "orders_check_selection_applied_tax"),
-            ("modifiers", "orders_check_selection_modifier"),
-            ("appliedDiscounts", "orders_check_selection_applied_discount"),
-        ],
-        "orders_check_selection_applied_discount": [
-            ("comboItems", "orders_check_selection_applied_discount_combo_item"),
-            ("triggers", "orders_check_selection_applied_discount_trigger"),
-        ],
-    }
-
-    # fields_to_flatten is a mapping of fields to flatten from source data.
-    # Keys represent table names, and values are lists of field names.
-    # The dictionary in each field should be used to create new fields, prefixed by the original field name.
-    # e.g. "info": {"id": 1, "type": "foo"}
-    # would become {"info_id": 1, "info_type": "foo} and the "info" key will be popped
-    fields_to_flatten = {
-        "break": ["breakType"],
-        "employee_wage_override": ["jobReference"],
-        "orders_check": ["customer", "createdDevice", "lastModifiedDevice"],
-        "orders_check_applied_discount": ["approver", "appliedDiscountReason", "discount"],
-        "orders_check_applied_discount_trigger": ["selection"],
-        "orders_check_applied_service_charge": ["serviceCharge"],
-        "orders_check_selection": [
-            "salesCategory",
-            "itemGroup",
-            "item",
-            "diningOption",
-            "refundDetails",
-            "voidReason",
-        ],
-        "orders_check_selection_applied_discount": [
-            "approver",
-            "appliedDiscountReason",
-            "discount",
-        ],
-        "orders_check_selection_applied_tax": ["taxRate"],
-        "orders_check_selection_modifier": [
-            "diningOption",
-            "item",
-            "itemGroup",
-            "optionGroup",
-            "salesCategory",
-            "preModifier",
-            "voidReason",
-        ],
-        "orders_check_selection_applied_discount_trigger": ["selection"],
-    }
-
-    for p in parent:
-        # log.debug(f"processing {table_name}")
-        p[id_field_name] = id_field
-        if table_name in relationships:
-            for child_key, child_table_name in relationships[table_name]:
-                if len(p.get(child_key, [])) > 0:  # Use .get() to handle missing keys gracefully
-                    process_child(p[child_key], child_table_name, table_name + "_id", p["guid"])
-                p.pop(child_key, None)
-        # Toast modifiers are recursive: a modifier can itself carry its own "modifiers" list
-        # (e.g. a pour-size modifier nesting a liquor-brand upgrade modifier). The generic
-        # `relationships` map above can't express this directly -- a self-referential entry
-        # there would rename the FK at each nesting level (table_name + "_id"), but nested
-        # modifiers need to keep the SAME top-level orders_check_selection_id as their
-        # ancestors. Recurse into the same table at any depth, propagating the same
-        # id_field_name/id_field this call received, and record each nested modifier's
-        # immediate parent separately via parent_modifier_id (absent/None for the non-nested
-        # case). Without this, a nested modifier's entire "modifiers" list got stringified into
-        # a MODIFIERS text blob by stringify_lists() below instead of getting its own row.
-        if table_name == "orders_check_selection_modifier":
-            nested_modifiers = p.pop("modifiers", None)
-            if nested_modifiers:
-                for nested in nested_modifiers:
-                    nested["parent_modifier_id"] = p["guid"]
-                process_child(
-                    nested_modifiers, "orders_check_selection_modifier", id_field_name, id_field
-                )
-        if table_name in fields_to_flatten:
-            # log.debug(f"flattening fields in {table_name}")
-            p = flatten_fields(fields_to_flatten[table_name], p)
-        # Toast sometimes omits a guid for appliedTaxes[] entries. flatten_fields() above has
-        # already renamed any real guid to "id", so check "id" (not "guid", which no longer
-        # exists at this point) and generate a deterministic id from stable fields -- not a
-        # random uuid4 -- so the same tax line gets the same id on every sync instead of a new
-        # duplicate row each time.
-        if table_name == "orders_check_selection_applied_tax" and p.get("id") is None:
-            basis = f"{id_field}-{p.get('taxRate_id', '')}"
-            p["id"] = "gen-" + str(uuid.uuid5(uuid.NAMESPACE_OID, basis))
-        if table_name == "orders_check":
-            p.pop("payments", None)
-        p = stringify_lists(p)
-        p = replace_guid_with_id(p)
-        op.upsert(table=table_name, data=p)
-        # need to also handle deletes here, for child tables and their children (e.g. orders_check and orders_check_selection)
-
-        if p.get("deleted") and "id" in p:
-            op.delete(table=table_name, keys={"id": p["id"]})
-
-
-def process_void_info(payment):
-    """
-    Processing payment["voidInfo"], heavily nested field that seemed easier to handle this way
-    May revisit in the future
-    :param payment: single payment record
-    :return:
-    """
-    if payment.get("voidInfo"):
-        payment["void_info_approver_guid"] = payment["voidInfo"]["voidApprover"]["guid"]
-        payment["void_info_business_date"] = payment["voidInfo"]["voidBusinessDate"]
-        payment["void_info_date"] = payment["voidInfo"]["voidDate"]
-        if payment["voidInfo"].get("voidUser"):
-            payment["void_info_user_guid"] = payment["voidInfo"]["voidUser"]["guid"]
-        if payment["voidInfo"].get("voidReason"):
-            payment["void_info_reason_entity_type"] = payment["voidInfo"]["voidReason"][
-                "entityType"
-            ]
-            payment["void_info_reason_guid"] = payment["voidInfo"]["voidReason"]["guid"]
-        payment.pop("voidInfo", None)
-
-
-def make_headers(conf, base_url, state, key):
-    """
-    Create authentication headers, reusing a cached token if possible.
-
-    :param conf: Dictionary containing authentication details.
-    :param base_url: Base URL of the API.
-    :param state: Dictionary storing token and expiration details.
-    :param key: Encryption key (Fernet) used for token encryption/decryption.
-    :return: Tuple (headers, updated_state)
-    """
-    fernet = Fernet(key)
-    current_time = time.time()
-
-    # Check if a valid token exists and is not expiring in the next hour
-    has_cached_token = "encrypted_token" in state and "token_ttl" in state
-    token_not_expiring_soon = has_cached_token and state["token_ttl"] > current_time + 3600
-    if token_not_expiring_soon:
-        try:
-            auth_token = fernet.decrypt(state["encrypted_token"].encode()).decode()
-            log.info("encrypted_token found with at least an hour left, reusing")
-            return {"Authorization": f"Bearer {auth_token}", "Accept": "application/json"}, state
-        except Exception as e:
-            print(f"⚠️ Token decryption failed: {e}, re-authenticating...")
-
-    # No valid token OR token expiring within 1 hour, request a new one
-    payload = {
-        "clientId": conf.get("clientId"),
-        "clientSecret": conf.get("clientSecret"),
-        "userAccessType": conf.get("userAccessType"),
-    }
-
-    try:
-        log.info("encrypted_token not found in state or is expiring soon, requesting new token")
-        auth_response = rq.post(
-            f"{base_url}/authentication/v1/authentication/login", json=payload, timeout=10
-        )
-        auth_response.raise_for_status()
-        auth_page = auth_response.json()
-
-        # Extract token safely
-        auth_token = auth_page.get("token", {}).get("accessToken")
-        token_expiry = auth_page.get("token", {}).get("expiresIn", 3600)  # Default to 1 hour
-
-        if not auth_token:
-            raise ValueError("Authentication failed: accessToken missing in response")
-
-        # Encrypt and store the new token
-        try:
-            encrypted_token = fernet.encrypt(auth_token.encode()).decode()
-            state["encrypted_token"] = encrypted_token
-            state["token_ttl"] = current_time + token_expiry  # Store expiry timestamp
-        except Exception as enc_error:
-            print(f"⚠️ Token encryption failed: {enc_error}. Proceeding without storing.")
-
-        return {"Authorization": f"Bearer {auth_token}", "Accept": "application/json"}, state
-
-    except rq.exceptions.RequestException as e:
-        raise RuntimeError(f"❌ Failed to authenticate: {e}")
-
-
-def is_older_than_30_days(date_to_check):
-    """
-    Checks whether date_to_check is older than 30 days.
-    Is time-zone aware and handles date_to_check being a string and not a datetime
-    :param date_to_check:
-    :return: boolean based on whether date is older than 30 days
-    """
-    now = datetime.now(timezone.utc)  # Timezone-aware UTC datetime
-
-    # Convert to datetime if input is a string
-    if isinstance(date_to_check, str):
-        date_to_check = datetime.fromisoformat(date_to_check.replace("Z", "+00:00"))
-
-    return date_to_check < now - timedelta(days=30)
-
-
-def set_timeranges(state, configuration, start_timestamp):
-    """
-    Takes in current state and start timestamp of current sync.
-    from_ts is always either the end of the last sync or the initialSyncStart found in the config file.
-    If from_ts is more than 30 days ago, then set a to_ts that is 30 days later than from_ts.
-    Otherwise, to_ts is the time that this sync was triggered.
-    :param state:
-    :param configuration:
-    :param start_timestamp:
-    :return: from_ts, to_ts
-    """
-    if "to_ts" in state:
-        from_ts = state["to_ts"]
-    else:
-        from_ts = configuration["initialSyncStart"]
-
-    if is_older_than_30_days(from_ts):  # Pass the string, since function handles conversion
-        from_ts_dt = datetime.fromisoformat(from_ts.replace("Z", "+00:00"))
-        to_ts = from_ts_dt + timedelta(days=30)
-        to_ts = to_ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    else:
-        to_ts = start_timestamp
-
-    return from_ts, to_ts
-
-
-def generate_business_dates(start_ts, end_ts):
-    """
-    Takes in start_date and end_date, and generates a list of dates in YYYYMMDD format that include those dates
-    :param start_ts: ISO format datetime
-    :param end_ts: ISO format datetime later than start_ts
-    :return: list of YYYYMMDD dates between start_ts and end_ts, inclusive
-    """
-
-    # Replace 'Z' with '+00:00' to make it compatible with Python 3.10's fromisoformat()
-    start_ts = start_ts.replace("Z", "+00:00")
-    end_ts = end_ts.replace("Z", "+00:00")
-
-    start_date = datetime.fromisoformat(start_ts)
-    end_date = datetime.fromisoformat(end_ts)
-    delta = end_date - start_date
-
-    date_list = []
-    for i in range(delta.days + 1):
-        date_list.append((start_date + timedelta(days=i)).strftime("%Y%m%d"))
-
-    return date_list
-
-
-def get_api_response(endpoint_path, headers, **kwargs):
-    """
-    Sends an HTTP GET request to the provided URL with specified parameters.
-
-    - Retries if a 401 Unauthorized response occurs (up to a limit).
-    - Skips the endpoint if a 403 Forbidden response is received.
-    - Handles rate-limiting (429) and retries accordingly.
-    - Logs and returns API responses.
-
-    :param endpoint_path: API URL
-    :param headers: Request headers
-    :param kwargs: Additional request parameters
-    :return: Tuple (response JSON, next_page_token) or (None, None) if failed
-    """
-    timerange_data = kwargs.get("data", {})
-    params = copy.deepcopy(kwargs.get("params", {}))
-
-    max_retries_401 = 3  # Limit retries for 401 errors
-    retry_count_401 = 0
-
-    while True:
-        response = rq.get(endpoint_path, headers=headers, data=timerange_data, params=params)
-
-        # Handle 401 Unauthorized (retry up to max retries)
-        if response.status_code == 401:
-            if retry_count_401 >= max_retries_401:  # Fail after max retries
-                log.error(f"401 Unauthorized - Max retries reached for {endpoint_path}")
-                return None, None
-
-            retry_count_401 += 1
-            # reauth here?
-
-            log.warning(f"401 Unauthorized - Retrying {retry_count_401}/{max_retries_401}")
-            time.sleep(2)
-            continue
-
-        # Handle 403 Forbidden (Skip the endpoint)
-        if response.status_code == 403:
-            log.info(f"403 Forbidden - Skipping {endpoint_path}")
-            raise PermissionError(f"403 Forbidden: Access denied to {endpoint_path}")
-
-        # Handle 429 Too Many Requests
-        if response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-            rate_limit_reset = response.headers.get("X-Toast-RateLimit-Reset")
-
-            wait_time = None
-            if retry_after:
-                wait_time = int(retry_after)
-            elif rate_limit_reset:
-                try:
-                    reset_time = int(rate_limit_reset)
-                    wait_time = max(0, reset_time - int(time.time()))
-                except ValueError:
-                    log.warning(f"Invalid X-Toast-RateLimit-Reset value: {rate_limit_reset}")
-                    wait_time = 5  # Fallback wait time
-
-            if wait_time:
-                log.info(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-                continue  # Retry request
-
-        # Handle 409 Conflict: Retry without pageToken
-        if response.status_code == 409:
-            params.pop("pageToken", None)
-            log.info(f"Received 409 error, retrying {endpoint_path} without pageToken")
-            continue  # Retry without pageToken
-
-        # Handle 400 Bad Request
-        if response.status_code == 400:
-            log.info(f"Bad request: {response.json().get('message')}")
-            return None, None
-
-        response.raise_for_status()  # Raise error for unexpected HTTP issues
-
-        response_page = response.json()
-        response_headers = response.headers
-        next_page_token = response_headers.get("Toast-Next-Page-Token")
-
-        return response_page, next_page_token  # Return successful response
-
-
-def stringify_lists(d):
-    """
-    The stringify_lists function changes lists to strings
-    :param d: any dictionary
-    :return: the dictionary with lists represented as strings
-    """
-    new_dict = {}
-    for key, value in d.items():
-        if isinstance(value, list):
-            new_dict[key] = str(value)
-        else:
-            new_dict[key] = value
-    return new_dict
-
-
-def flatten_dict(parent_row: dict, dict_field: dict, prefix: str):
-    """
-    Flattens a field containing a dictionary into a series of fields prefixed with the original field name
-    Optionally leaves off prefix for specified fields
-    :param parent_row: a dictionary containing a key whose value is a dictionary
-    :param dict_field: the key whose value is a dictionary
-    :param prefix: the prefix to add to the name of keys in dict_field to make new keys in parent_row
-    :return: parent_row with dict_field flattened into multiple fields
-    """
-    # dicts in these fields have unique enough names that they do not need the field prefix
-    fields_to_not_prefix = ["refundDetails", "jobReference"]
-
-    if not dict_field:  # Quick exit for empty dictionaries
-        return parent_row
-
-    dict_field = replace_guid_with_id(dict_field)
-    for key, value in dict_field.items():
-        if key.startswith(prefix):
-            new_key = key  # Keep it unchanged
-        elif key == "tipRefundAmount" and prefix == "refund":
-            new_key = "refund_tip_amount"
-        elif prefix in fields_to_not_prefix:
-            new_key = key  # Keep it unchanged for exempted fields
-        else:
-            new_key = f"{prefix}_{key}"  # Build the new flattened key
-
-        if isinstance(value, dict):  # If the value is another dictionary, recurse
-            flatten_dict(parent_row, value, new_key)
-        else:
-            parent_row[new_key] = value  # Store the value directly if not a dictionary
-
-    return parent_row
-
-
-def replace_guid_with_id(d: dict):
-    if "guid" in d:
-        d["id"] = d.pop("guid")
-    return d
-
-
-def flatten_fields(fields: list, row: dict):
-    """
-    Takes in a list of fields to flatten within a row, calls flatten_dict() if any of those fields are present
-    :param fields: a list of strings which could be keys in "row"
-    :param row: a dictionary "row" that could have values that are dictionaries
-    :return: dictionary with dictionary values flattened, if their keys are in "fields". The original keys are removed.
-    """
-    row = {**row}  # Ensures row modifications don't affect the original dictionary
-    row = replace_guid_with_id(row)
-    for field in fields:
-        value = row.get(field)  # Avoids multiple dictionary lookups
-        if value is not None:
-            row = flatten_dict(row, value, field)
-        row.pop(field, None)  # Remove the field in a single step
-
-    return row
-
-
-def extract_fields(fields: list, row: dict):
-    """
-    Takes in a list of fields and sub-fields within a row.
-    Returns the row with sub-field extracted and field popped.
-    Used instead of flatten_fields() in cases where a value has a dict with more than one key,
-    but we only want one of the keys.
-    :param fields: a list of tuples indicating the keys to extract and the name of the new key.
-    :param row: a dictionary "row" with keys that have keys that we need to extract
-    :return: dictionary with new keys, if their keys have keys that are in "fields". The original keys are removed.
-    """
-    row = {**row}
-
-    for field, sub_field, new_name in fields:
-        if row.get(field) and sub_field in row[field]:
-            row[new_name] = row[field][sub_field]
-            row.pop(field, None)
-
-    return row
 
 
 def schema(configuration: dict):
     """
-    Define the schema function which lets you configure the schema your connector delivers.
-    See the technical reference documentation for more details on the schema function:
-    https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
+    # Define the schema function which lets you configure the schema your connector delivers.
+    # See the technical reference documentation for more details on the schema function:
+    # https://fivetran.com/docs/connectors/connector-sdk/technical-reference#schema
     :param configuration: a dictionary that holds the configuration settings for the connector.
     :return: a list of tables with primary keys and any datatypes that we want to specify
     """
-    if "key" not in configuration:
-        raise ValueError("Could not find 'key' in configs")
-
     return [
         {"table": "restaurant", "primary_key": ["id"]},
         # labor tables
@@ -1022,6 +459,7 @@ def schema(configuration: dict):
         {"table": "cash_entry", "primary_key": ["id"], "columns": {"date": "UTC_DATETIME"}},
         # config tables
         {"table": "alternate_payment_types", "primary_key": ["id"]},
+        {"table": "break_types", "primary_key": ["id"]},
         {"table": "dining_option", "primary_key": ["id"], "columns": {"curbside": "BOOLEAN"}},
         {
             "table": "discounts",
@@ -1035,11 +473,81 @@ def schema(configuration: dict):
             "primary_key": ["id"],
             "columns": {"inheritOptionGroups": "BOOLEAN", "inheritUnitOfMeasure": "BOOLEAN"},
         },
+        {"table": "menu_option_group", "primary_key": ["id"]},
+        {"table": "printers", "primary_key": ["id"]},
         {"table": "restaurant_service", "primary_key": ["id"]},
         {"table": "revenue_center", "primary_key": ["id"]},
         {"table": "sale_category", "primary_key": ["id"]},
         {"table": "service_area", "primary_key": ["id"]},
         {"table": "tables", "primary_key": ["id"]},
+        # kitchen tables
+        # Root cause confirmed via direct Snowflake query against real loaded data
+        # (716,858 item_fulfillment rows, 2,044 prep_station rows): Toast reuses the
+        # *same* prep_station guid across every one of Topgolf's ~109 locations (every
+        # restaurant has an identically-configured "Grill", "Bev-Lower", etc., defined
+        # once at the chain level) -- some guids repeat up to 110 times. So `id` alone
+        # was never a valid primary key for prep_station; that's what caused Fivetran's
+        # writer to fail trying to merge ~109 different restaurants' rows onto what it
+        # believed was a single unique key within one sync batch (matches the repeated
+        # "Close failed: has data to be flushed in the partition" error). The correct
+        # key is the composite ["restaurant_id", "id"] -- same pattern this connector
+        # already uses for orders_check_selection (["id", "orders_check_id"]) for the
+        # identical reason: an entity that legitimately repeats per parent.
+        #
+        # This isn't just "the guid repeats, so restaurant_id must be needed" -- that
+        # reasoning alone turned out to be wrong for dining_option/menu_item (checked
+        # separately: every attribute is identical across every restaurant sharing a
+        # guid there, so those are genuinely one canonical chain-wide entity each, and
+        # do NOT need restaurant_id). prep_station is different because it's been
+        # verified to have real per-restaurant variation: for one shared prep_station
+        # guid, EXPO_ROUTING is 'SEND_TO_EXPO' at 62 restaurants and 'SKIP_EXPO' at 47
+        # -- collapsing to one row would silently keep only whichever restaurant
+        # happened to sync last, discarding the other's real routing config.
+        {"table": "prep_station", "primary_key": ["restaurant_id", "id"]},
+        # connectedPrepStations is empty in 100% of real Topgolf data (confirmed:
+        # 0 rows loaded across every restaurant checked), so this table never
+        # receives a row today and Fivetran can't infer a type for its primary key
+        # columns from data alone -- force STRING explicitly, per Toast's own
+        # ToastReference schema (guid and entityType are both declared `type:
+        # string` in the Kitchen API spec).
+        #
+        # NOT including restaurant_id in the key here, even though prep_station_id
+        # (like prep_station.id) isn't globally unique on its own -- adding
+        # restaurant_id to both the key and the upsert data at once triggered a
+        # real Fivetran-side migration-ordering bug on this table: a "check for
+        # duplicate records" query ran against the new restaurant_id column before
+        # that column had ever been created (since the table has literally never
+        # received a row to infer it from), and failed with
+        # "SQL compilation error: invalid identifier 'RESTAURANT_ID'". Given this
+        # table is empirically always empty in production, restaurant_id isn't
+        # worth the risk here -- revisit only if real connectedPrepStations data
+        # ever actually shows up.
+        {
+            "table": "prep_station_connected_prep_station",
+            "primary_key": ["prep_station_id", "guid"],
+            "columns": {"prep_station_id": "STRING", "guid": "STRING", "restaurant_id": "STRING"},
+        },
+        # ItemFulfillment has no guid of its own from the API. Verified against
+        # 716,858 real records: (order_id, selection_id, item_fulfillment_level,
+        # prep_station_id) has zero collisions. prep_station_id is set to the
+        # NO_PREP_STATION_ID sentinel (never a real null) for every level-1/2
+        # (expediter) record, since a NULL in a primary key breaks Fivetran's
+        # upsert/merge matching.
+        {
+            "table": "item_fulfillment",
+            "primary_key": [
+                "order_id",
+                "selection_id",
+                "item_fulfillment_level",
+                "prep_station_id",
+            ],
+            "columns": {
+                "prep_station_id": "STRING",
+                "ticket_fired_at": "UTC_DATETIME",
+                "item_fulfilled_at": "UTC_DATETIME",
+                "item_started_at": "UTC_DATETIME",
+            },
+        },
         # orders tables
         {
             "table": "orders",
@@ -1144,12 +652,15 @@ def schema(configuration: dict):
 connector = Connector(update=update, schema=schema)
 
 # Check if the script is being run as the main module.
-# This is Python's standard entry method allowing your script to be run directly from the command line or IDE 'run' button.
-# This is useful for debugging while you write your code. Note this method is not called by Fivetran when executing your connector in production.
+# This is Python's standard entry method allowing your script to be run directly from the
+# command line or IDE 'run' button.
+# This is useful for debugging while you write your code. Note this method is not called by
+# Fivetran when executing your connector in production.
 # Please test using the Fivetran debug command prior to finalizing and deploying your connector.
 if __name__ == "__main__":
     # Open the configuration.json file and load its contents into a dictionary.
     with open("configuration.json", "r") as f:
         configuration = json.load(f)
-    # Adding this code to your `connector.py` allows you to test your connector by running your file directly from your IDE.
+    # Adding this code to your `connector.py` allows you to test your connector by running
+    # your file directly from your IDE.
     connector.debug(configuration=configuration)

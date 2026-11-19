@@ -1,8 +1,9 @@
 {
-    "clientId": "<YOUR_CLIENT_ID>",
-    "clientSecret": "<YOUR_CLIENT_SECRET>",
-    "userAccessType": "TOAST_MACHINE_CLIENT",
-    "domain": "<YOUR_DOMAIN>",
-    "initialSyncStart": "<ISO_FORMAT_TIMESTAMP>",
-    "key": "<BASE_64_ENCODED_FERNET_KEY>"
+  "clientId": "<YOUR_TOAST_CLIENT_ID>",
+  "clientSecret": "<YOUR_TOAST_CLIENT_SECRET>",
+  "userAccessType": "TOAST_MACHINE_CLIENT",
+  "domain": "ws-api.toasttab.com",
+  "initialSyncStart": "<YOUR_INITIAL_SYNC_START_TIMESTAMP>",
+  "fivetran_system_key": "<YOUR_FIVETRAN_SYSTEM_KEY>",
+  "itemFulfillmentsInitialDaysBack": "<YOUR_ITEM_FULFILLMENT_BACKFILL_DAYS>"
 }
