@@ -2,4 +2,4 @@
 name = "deltek-vantagepoint"
 version = "0.1.0"
 description = "This connector syncs data from the Deltek Vantagepoint REST API to a Fivetran destination."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"

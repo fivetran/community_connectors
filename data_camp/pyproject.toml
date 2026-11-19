@@ -2,4 +2,4 @@
 name = "data-camp"
 version = "0.1.0"
 description = "The DataCamp custom connector for Fivetran fetches course catalog data from the DataCamp LMS Catalog API and syncs it to your destination."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"
