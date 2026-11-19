@@ -52,6 +52,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **JanusGraph** ([janus_graph](https://github.com/fivetran/community_connectors/tree/main/janus_graph)) - Sync data from JanusGraph.
 - **InfluxDB** ([influx_db](https://github.com/fivetran/community_connectors/tree/main/influx_db)) - Sync time-series data from InfluxDB
 - **Neo4j** ([neo4j](https://github.com/fivetran/community_connectors/tree/main/neo4j)) - Extract data from Neo4j graph databases
+- **PlanetScale** ([planetscale](https://github.com/fivetran/community_connectors/tree/main/planetscale)) - Sync data from PlanetScale (Vitess) databases, including deletes, using the VStream change stream without polling the source.
 - **QuestDB** ([quest_db](https://github.com/fivetran/community_connectors/tree/main/quest_db)) - Sync high-performance time series data from QuestDB
 - **RavenDB** ([raven_db](https://github.com/fivetran/community_connectors/tree/main/raven_db)) - Sync document data from RavenDB NoSQL database
 - **Redis** ([redis](https://github.com/fivetran/community_connectors/tree/main/redis)) - Sync gaming leaderboards and player statistics from Redis
@@ -99,6 +100,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Snowflake Cortex NVD CVE Threat Intelligence** ([snowflake_cortex/snowflake-cortex-code-nvd-cve-threat-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-code-nvd-cve-threat-intelligence)) - Sync NVD CVE records and enrich vulnerabilities with Snowflake Cortex multi-agent threat intelligence.
 - **Snowflake Cortex Hacker News** ([snowflake_cortex/snowflake-cortex-hacker-news](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-hacker-news)) - Sync Hacker News top stories and enrich them with Snowflake Cortex sentiment and topic classification.
 - **Snowflake Cortex Livestock Weather Intelligence** ([snowflake_cortex/snowflake-cortex-livestock-weather-intelligence](https://github.com/fivetran/community_connectors/tree/main/snowflake_cortex/snowflake-cortex-livestock-weather-intelligence)) - Sync farm weather forecasts and enrich them with Snowflake Cortex livestock health risk assessments.
+- **USDA Boxed Beef** ([usda_boxed_beef/connector](https://github.com/fivetran/community_connectors/tree/main/usda_boxed_beef/connector)) - Sync USDA AMS wholesale boxed beef prices from the Livestock Mandatory Reporting DataMart (the daily Choice and Select cutout, primal values, negotiated cut, ground beef and trimmings prices, and weekly Prime cut prices), picking up corrections by published date, with a context pack ([usda_boxed_beef/context_pack](https://github.com/fivetran/community_connectors/tree/main/usda_boxed_beef/context_pack)) that gives AI agents tested dbt v2 tables on DuckDB and agent instructions with checked questions.
 - **USGS Earthquake** ([usgs_earthquake/connector](https://github.com/fivetran/community_connectors/tree/main/usgs_earthquake/connector)) - Sync earthquake and seismic events from the USGS FDSN Event Web Service, including revisions and deletes, with a context pack ([usgs_earthquake/context_pack](https://github.com/fivetran/community_connectors/tree/main/usgs_earthquake/context_pack)) that gives AI agents a dbt and MetricFlow semantic layer and DuckDB agent instructions.
 
 ### SaaS & APIs
@@ -137,6 +139,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Healthchecks.io** ([healthchecks](https://github.com/fivetran/community_connectors/tree/main/healthchecks)) - Sync health check monitoring from Healthchecks.io
 - **HubSpot** ([hubspot](https://github.com/fivetran/community_connectors/tree/main/hubspot)) - Sync event data from HubSpot
 - **HTTP Proxy with requests** ([http_proxy](https://github.com/fivetran/community_connectors/tree/main/http_proxy)) - Demonstrates how to route API requests through an HTTP or HTTPS proxy using the requests library
+- **Investran Report Wizard** ([investran_report_wizard](https://github.com/fivetran/community_connectors/tree/main/investran_report_wizard)) - Run Investran Report Wizard reports and load the CSV results
 - **Iterate** ([iterate](https://github.com/fivetran/community_connectors/tree/main/iterate)) - Sync NPS survey data from Iterate REST API
 - **Keycloak** ([keycloak](https://github.com/fivetran/community_connectors/tree/main/keycloak)) - Sync IAM data from Keycloak Admin API
 - **LeaveDates** ([leavedates](https://github.com/fivetran/community_connectors/tree/main/leavedates)) - Sync leave report data from LeaveDates API
@@ -144,6 +147,8 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **MailerLite** ([mailerlite](https://github.com/fivetran/community_connectors/tree/main/mailerlite)) - Sync email marketing data from MailerLite
 - **MasterTax** ([mastertax](https://github.com/fivetran/community_connectors/tree/main/mastertax)) - Sync data from MasterTax API
 - **MeiliSearch** ([meilisearch](https://github.com/fivetran/community_connectors/tree/main/meilisearch)) - Sync index metadata and documents from MeiliSearch
+- Met Museum ([met_museum/connector](https://github.com/fivetran/community_connectors/tree/main/met_museum/connector)) - Syncs public-domain objects, artists and curator tags from The Metropolitan Museum of Art Collection API, with optional Snowflake Cortex vision enrichment, and a context pack ([met_museum/context_pack](https://github.com/fivetran/community_connectors/tree/main/met_museum/context_pack)) with a dbt v2 project, agent instructions and a Snowflake and DuckDB parity check.
+- **Meta Lead Ads** ([meta_lead_ads](https://github.com/fivetran/community_connectors/tree/main/meta_lead_ads)) - Sync lead data from Facebook (Meta) Lead Ads using the Graph API
 - **Microsoft Excel** ([microsoft_excel](https://github.com/fivetran/community_connectors/tree/main/microsoft_excel)) - Sync data from Microsoft Excel files
 - **Microsoft Intune** ([microsoft_intune](https://github.com/fivetran/community_connectors/tree/main/microsoft_intune)) - Retrieve managed devices from Microsoft Intune
 - **n8n** ([n8n](https://github.com/fivetran/community_connectors/tree/main/n8n)) - Sync workflow automation data from n8n
@@ -156,7 +161,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Oktopost** ([oktopost](https://github.com/fivetran/community_connectors/tree/main/oktopost)) - Sync social media exports from Oktopost BI API
 - **Open-Meteo Marine Weather** ([open_meteo_marine_weather](https://github.com/fivetran/community_connectors/tree/main/open_meteo_marine_weather)) - Sync hourly and daily marine weather data (wave height, direction, period, swell, wind waves) from the Open-Meteo Marine Weather API
 - **Oracle Primavera P6** ([oracle_primavera_p6](https://github.com/fivetran/community_connectors/tree/main/oracle_primavera_p6)) - Sync project, activity, and resource data from the Oracle Primavera P6 EPPM Data Service REST API
-- **Oura Ring** ([oura_ring](https://github.com/fivetran/community_connectors/tree/main/oura_ring)) - Sync daily activity, sleep, readiness, stress, and heart rate data from the Oura Ring API v2.
+- **Oura Ring** ([oura_ring](https://github.com/fivetran/community_connectors/tree/main/oura_ring)) - Sync daily activity, sleep, readiness, stress, heart rate, and detailed sleep period data from the Oura API v2.
 - **OWASP API Vulnerabilities** ([owasp_api_vulns](https://github.com/fivetran/community_connectors/tree/main/owasp_api_vulns)) - Sync OWASP API vulnerability data from NVD 2.0
 - **Partech (Punchh)** ([partech](https://github.com/fivetran/community_connectors/tree/main/partech)) - Sync POS data from Partech (formerly Punchh)
 - **Pindrop** ([pindrop](https://github.com/fivetran/community_connectors/tree/main/pindrop)) - Sync nightly report data from Pindrop
