@@ -1,0 +1,36 @@
+# Run dbt from this dbt/ directory with --profiles-dir ., so the relative paths below resolve from here.
+# On the dbt platform this file is not used: the project's connection and environments replace it.
+met_museum_context:
+  target: local
+  outputs:
+    # The connector's local debug warehouse, attached read-only. `fivetran debug`, run from the sibling connector/
+    # directory, writes it to connector/files/warehouse.db. Set MET_WAREHOUSE to read a copy somewhere else.
+    # Sources: met_wh.tester.<table>. The models build into met_local.duckdb, or into MET_LOCAL_DB when it is set.
+    local:
+      type: duckdb
+      path: "{{ env_var('MET_LOCAL_DB', 'met_local.duckdb') }}"
+      schema: met
+      threads: 4
+      attach:
+        - path: "{{ env_var('MET_WAREHOUSE', '../../connector/files/warehouse.db') }}"
+          alias: met_wh
+          read_only: true
+    # Compile only, for parity.py. Sources resolve to <lake_catalog>.<lake_schema>.<table>; parity.py attaches the
+    # Polaris catalog under that alias in its own session, so nothing here attaches it or holds its secret.
+    lake:
+      type: duckdb
+      path: .duckdb/lake/met_pack.duckdb
+      schema: met
+      threads: 4
+    # Snowflake with key-pair authentication. Every value comes from the environment; nothing secret lives here.
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'MET_MUSEUM_CONTEXT') }}"
+      threads: 4
