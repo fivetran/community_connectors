@@ -1,0 +1,10 @@
+{
+  "sf_api_url": "<YOUR_SAP_API_BASE_URL_E_G_HTTPS_API4_SAPSF_COM_ODATA_V2>",
+  "sf_client_id": "<YOUR_SAP_OAUTH_CLIENT_ID>",
+  "sf_company_id": "<YOUR_SAP_COMPANY_ID>",
+  "sf_user_id": "<YOUR_SAP_API_USER_ID>",
+  "sf_private_key": "<YOUR_RSA_PRIVATE_KEY_PEM_OR_BASE64>",
+  "sf_access_token": "<YOUR_BEARER_TOKEN_LEAVE_EMPTY_FOR_OAUTH>",
+  "force_full_form_pass": "<TRUE_OR_FALSE_DEFAULT_FALSE>",
+  "form_full_pass_interval_days": "<NUMBER_OF_DAYS_DEFAULT_7>"
+}
