@@ -88,6 +88,16 @@ SETUP_TEST_TIMEOUT_SECONDS = 15
 
 # The tables to sync: one entry per table, written as "dataset.table" or "project.dataset.table".
 # Every table needs a primary key, declared in BigQuery or set with "primary_keys". All options are
-# described in the README, in the Table specifications section. For example:
-#   "analytics.events": {"primary_keys": ["event_id"], "filter": "event_date >= today-90d"},
+# described in the README, in the Table specifications section. For example, two public tables that
+# read only the newest partitions:
+# TABLE_SPECS = {
+#     "bigquery-public-data.wikipedia.pageviews_2026": {
+#         "primary_keys": ["datehour", "wiki", "title"],
+#         "filter": "datehour >= today",
+#     },
+#     "bigquery-public-data.google_trends.top_terms": {
+#         "primary_keys": ["refresh_date", "dma_id", "term", "week"],
+#         "filter": "refresh_date >= today-2d",
+#     },
+# }
 TABLE_SPECS = {}
