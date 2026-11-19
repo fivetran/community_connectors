@@ -38,6 +38,82 @@ fivetran init --template bigquery
 
 > Note: List the tables to sync in `table_specs.py` before running `fivetran debug`. See [Table specifications](#table-specifications).
 
+## Quickstart
+
+This quickstart syncs a small public table, `bigquery-public-data.google_trends.top_terms`, to a local DuckDB file with `fivetran debug`, and then shows how to deploy the connector. Everything runs on your machine until the last step. To sync your own table, change the table in step 4. You need Python (see [Requirements](#requirements)) and a Google Cloud project with the BigQuery API enabled. A Fivetran account is only needed for step 8.
+
+1. Create and activate a virtual environment.
+
+   On macOS and Linux:
+
+   ```
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+   On Windows (PowerShell):
+
+   ```
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   ```
+
+   Install the Connector SDK and create the project from this connector.
+
+   ```
+   pip install fivetran-connector-sdk
+   fivetran init --template bigquery
+   ```
+
+   Change into the project folder that contains `connector.py`, and install the requirements in the same environment.
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+   The Fivetran CLI imports `connector.py` on your machine, so a missing package stops `fivetran debug` and `fivetran deploy` with an `ImportError`. The SDK may print a notice that suggests removing some of these packages from `requirements.txt`. Ignore it, because they are needed.
+
+2. Create a service account and a JSON key by following the steps in [Authentication](#authentication). For this public table the service account only needs `BigQuery Job User` and `BigQuery Read Session User` on your project. Save the key outside the project folder, for example as `~/bigquery-key.json`, because `fivetran deploy` uploads the project folder.
+
+3. Create `configuration.json` from the key file. This command sets `service_account_key` to the whole key and `project_id` to the project in the key.
+
+   ```
+   python -c "import json, os; key = open(os.path.expanduser('~/bigquery-key.json')).read(); json.dump({'service_account_key': key, 'project_id': json.loads(key)['project_id']}, open('configuration.json', 'w'), indent=2)"
+   ```
+
+4. List the table to sync in `table_specs.py` by replacing `TABLE_SPECS = {}` with the following. The table has a daily partition on `refresh_date`, and the filter limits the sync to its two newest partitions, about 2 million rows. For your own table, write `dataset.table`, or `project.dataset.table` for another project, and set `primary_keys` unless the table declares a primary key. See [Table specifications](#table-specifications).
+
+   ```python
+   TABLE_SPECS = {
+       "bigquery-public-data.google_trends.top_terms": {
+           "primary_keys": ["refresh_date", "dma_id", "term", "week"],
+           "filter": "refresh_date >= today-2d",
+       },
+   }
+   ```
+
+5. Run the connector locally. The first sync takes about two minutes and ends with `SYNC SUCCEEDED`. If it pauses for about a minute at the start, see [Local debug runs](#local-debug-runs).
+
+   ```
+   fivetran debug
+   ```
+
+6. Look at the synced data. The table is `tester_google_trends.top_terms`: `tester` is the local destination, and the dataset name is part of the schema name. You should see about 2 million rows for two refresh dates.
+
+   ```
+   python -c "import duckdb; print(duckdb.connect('files/warehouse.db').execute('select count(*), min(refresh_date), max(refresh_date) from tester_google_trends.top_terms').fetchall())"
+   ```
+
+7. Run `fivetran debug` again. The second sync reads 0 rows, because no partition changed since the first one. The saved progress is in `files/state.json`.
+
+8. Deploy the connector. Create an API key at https://fivetran.com/dashboard/user/api-config, which is the base64-encoded `key:secret` string, and run the command in the same activated environment. The connection name may only contain lowercase letters, digits and underscores. The connection is created paused, so start its sync from the Fivetran dashboard. If the command ends with a timeout, check the dashboard before running it again, because the connection may already exist.
+
+   ```
+   fivetran deploy --api-key <API_KEY> --destination <DESTINATION_NAME> --connection <CONNECTION_NAME> --configuration configuration.json
+   ```
+
+> Note: Do not commit `configuration.json` or the key file to version control.
+
 ## Features
 
 - Multiple datasets in one connection, each written to its own destination schema, including tables from other projects such as a shared data project or `bigquery-public-data`.
@@ -360,6 +436,29 @@ The speed of a sync is limited mostly by the SDK, which sends rows one at a time
 - Only the first sync is long. Later syncs read only the new and changed rows.
 
 The sync time shown on the Fivetran dashboard also includes the time to load the rows into the destination, which this connector does not control.
+
+### Test at scale
+
+The connector was deployed to Fivetran and tested against the public table `bigquery-public-data.wikipedia.pageviews_2026`, which is partitioned by `datehour` and receives new rows every hour. The table was synced to a Snowflake destination with the primary key `["datehour", "wiki", "title"]` and the filter `datehour >= today`, so that only the partition of the current day was read. Both syncs were started from the Fivetran dashboard.
+
+| | First sync | Second sync |
+|---|---|---|
+| Rows read | 25,401,740 | 44,208,938 |
+| Duration | about 36 minutes | about 62 minutes |
+| Rows loaded | 25,401,740 | 44,208,938 |
+
+The first sync read about 15,000 rows per second while extracting, which is faster than the local run above, and the load into Snowflake took only seconds at the end. The second sync re-read the whole partition of the current day, including the 25.4 million rows from the first sync, because the partition had been modified. It finished with the same number of distinct keys as rows, so re-reading did not create duplicates.
+
+To check the accuracy, the destination was compared with BigQuery as the partition stood when each sync started, using BigQuery time travel (`FOR SYSTEM_TIME AS OF`). All of the following matched exactly for both syncs:
+
+- The number of rows, the number of distinct primary keys and the sum of `views`.
+- The first and last hour, the number of hours, and the number of `NULL` values in every column.
+- The total length of the `title` column in characters and in bytes, which shows that non-ASCII text arrived intact.
+- The row count, `views` total, and title lengths of every hour and wiki group (10,864 groups after the first sync and 18,280 after the second), with none missing or extra.
+- Every row with 500 or more views, and a hash-based sample of about 3,800 rows after the first sync and 7,000 after the second, compared value by value.
+- No rows were marked as deleted.
+
+What the test shows about cost: a partition that keeps growing is read again in full on every sync, because every new row modifies it. For a table like this, sync it less often than the time a sync takes, or use a filter that excludes the partition that is still being written. Fivetran counts monthly active rows by primary key, once per month, so re-reading rows that are already in the destination should not add monthly active rows within the same month, but it does cost sync time and BigQuery read charges. Check the usage page of the connection in the Fivetran dashboard to confirm this for your account.
 
 ### Reading the logs
 
