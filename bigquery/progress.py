@@ -11,8 +11,22 @@ from fivetran_connector_sdk import Logging as log
 import threading  # For the locks that protect counters shared by the worker threads
 import time  # For measuring how long tables take
 
-# How often a long running table logs its progress
-from table_specs import PROGRESS_LOG_INTERVAL_SECONDS
+# Settings that are described in the logs, see describe_settings
+from table_specs import (
+    BATCH_TARGET_ROWS,
+    CURSOR_MARGIN_SECONDS,
+    FLUSH_MAX_BYTES,
+    FLUSH_MAX_VALUES,
+    LOOKBACK_DAYS,
+    LOOKBACK_PARTITIONS,
+    MAX_PARALLEL_TABLES,
+    MODIFIED_MARGIN_SECONDS,
+    PROGRESS_LOG_INTERVAL_SECONDS,
+    READ_STREAMS_PER_TABLE,
+    SCHEMA_CHANGE_DEFAULT,
+    STREAMING_GRACE_SECONDS,
+    STREAMING_MIN_LOOKBACK,
+)
 
 # Number of other running tables that are named in a table's completion line. A single underscore
 # is used because names with two underscores are renamed inside classes.
@@ -75,6 +89,13 @@ def describe_filter(filter_condition):
     return " ".join(str(filter_condition).split()) if filter_condition else ""
 
 
+def _lookback_source(plan):
+    """Say whether the lookback of a table is the default or set in TABLE_SPECS."""
+    options = plan.options or {}
+    chosen = "lookback_partitions" in options or "lookback_days" in options
+    return "spec" if chosen else "default"
+
+
 def _describe_strategy(plan):
     """
     Describe how a table is read, for the line that is logged when the table starts.
@@ -94,6 +115,83 @@ def _describe_strategy(plan):
     if plan.full_by_default:
         return "no partition or cursor column"
     return "strategy FULL"
+
+
+def describe_strategy(plan):
+    """
+    Describe which data a table reads on every sync after the first, as key=value pairs.
+    Args:
+        plan: TablePlan
+    Returns:
+        Text such as "strategy=partition column=event_date granularity=DAY detect_modified=auto".
+    """
+    if plan.partition_column and plan.strategy == "INCREMENTAL":
+        unit = plan.granularity if plan.partition_kind == "TIME" else "RANGE"
+        return (
+            f"strategy=partition column={plan.partition_column} granularity={unit} "
+            f"detect_modified=auto margin={MODIFIED_MARGIN_SECONDS}s "
+            f"lookback={plan.lookback} ({_lookback_source(plan)}) streaming_tail=auto"
+        )
+    if plan.partition_column:
+        return f"strategy=full column={plan.partition_column} reason=spec"
+    if plan.cursor_column and plan.strategy == "INCREMENTAL":
+        return (
+            f"strategy=cursor column={plan.cursor_column} "
+            f"margin={plan.cursor_margin_seconds:g}s null_cursor=read"
+        )
+    reason = "no_partition_or_cursor_column" if plan.full_by_default else "spec"
+    return f"strategy=full reason={reason}"
+
+
+def _format_option(name, value):
+    """Format one TABLE_SPECS option as name=value, without printing long lists."""
+    if name in ("include", "exclude", "column_types") and hasattr(value, "__len__"):
+        return f"{name}={len(value)}_columns"
+    if isinstance(value, (list, tuple)):
+        return f"{name}={','.join(str(item) for item in value)}"
+    text = " ".join(str(value).split())
+    return f'{name}="{text}"' if " " in text else f"{name}={text}"
+
+
+def describe_settings(plan):
+    """
+    List the options set for a table in TABLE_SPECS and the defaults that apply, as key=value
+    pairs.
+    Args:
+        plan: TablePlan
+    Returns:
+        Text such as "spec: primary_keys=id filter="d >= today" defaults: on_schema_change=resync".
+    """
+    options = plan.options or {}
+    chosen = " ".join(_format_option(name, value) for name, value in options.items())
+    defaults = []
+    if "on_schema_change" not in options:
+        defaults.append(f"on_schema_change={plan.on_schema_change}")
+    if plan.cursor_column and "cursor_margin_seconds" not in options:
+        defaults.append(f"cursor_margin_seconds={plan.cursor_margin_seconds:g}")
+    text = f"spec: {chosen or 'none'}"
+    return text + (f" defaults: {' '.join(defaults)}" if defaults else "")
+
+
+def describe_global_settings():
+    """
+    List the settings of table_specs.py that apply to all tables, for the start of a sync.
+    Returns:
+        A tuple of two lines of key=value text: the change detection and the read settings.
+    """
+    detection = (
+        f"detect_modified=auto modified_margin={MODIFIED_MARGIN_SECONDS}s "
+        f"lookback_days={LOOKBACK_DAYS} lookback_partitions={LOOKBACK_PARTITIONS} "
+        f"streaming_grace={STREAMING_GRACE_SECONDS}s "
+        f"streaming_min_lookback={STREAMING_MIN_LOOKBACK} "
+        f"cursor_margin={CURSOR_MARGIN_SECONDS}s on_schema_change={SCHEMA_CHANGE_DEFAULT}"
+    )
+    reading = (
+        f"parallel_tables={MAX_PARALLEL_TABLES} read_streams={READ_STREAMS_PER_TABLE} "
+        f"batch_rows={BATCH_TARGET_ROWS} flush_values={FLUSH_MAX_VALUES} "
+        f"flush_bytes={FLUSH_MAX_BYTES}"
+    )
+    return detection, reading
 
 
 def describe_plan(plan, mode):
@@ -253,6 +351,8 @@ class RunProgress:
             position = self.started_count
             self._running.append(plan.key)
         log.info(f"{plan.key}: started ({position}/{self.total}) - {describe_plan(plan, mode)}")
+        log.info(f"{plan.key}: {describe_strategy(plan)}")
+        log.info(f"{plan.key}: {describe_settings(plan)}")
         return progress
 
     def _stop_running(self, progress):

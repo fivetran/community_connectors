@@ -64,7 +64,13 @@ from table_specs import (
 )
 
 # For describing tables and durations in logs
-from progress import describe_plan, format_bytes, format_duration, plan_kind
+from progress import (
+    describe_global_settings,
+    describe_plan,
+    format_bytes,
+    format_duration,
+    plan_kind,
+)
 
 # OAuth scope required for metadata queries and for the Storage Read API
 __BIGQUERY_SCOPE = "https://www.googleapis.com/auth/bigquery"
@@ -265,6 +271,7 @@ class TablePlan:
         streaming_buffer: True when BigQuery reports rows in the table's streaming buffer, which
             means rows are being streamed into it
         cursor_margin_seconds: how far before the last cursor value a cursor-based read starts
+        options: the options of the table's TABLE_SPECS entry, shown in the logs
     """
 
     stream: str
@@ -293,6 +300,7 @@ class TablePlan:
     truncate_on_resync: bool = False
     streaming_buffer: bool = False
     cursor_margin_seconds: float = CURSOR_MARGIN_SECONDS
+    options: dict = None
 
 
 @dataclass
@@ -1194,6 +1202,7 @@ def _build_plan(ref, table):
         truncate_on_resync=truncate_on_resync,
         streaming_buffer=getattr(table, "streaming_buffer", None) is not None,
         cursor_margin_seconds=cursor_margin_seconds,
+        options={name_: value for name_, value in spec.items() if name_ != "skip"},
     )
 
 
@@ -1372,6 +1381,9 @@ def _log_plans(plans, skipped, seconds):
         seconds: how long reading the metadata took
     """
     _log_summary(plans, skipped, seconds)
+    detection, reading = describe_global_settings()
+    log.info(f"config: {detection}")
+    log.info(f"config: {reading}")
     for plan in plans:
         if plan.full_by_default and plan.num_bytes >= FULL_REFRESH_WARNING_BYTES:
             _note_skipped(
@@ -2394,6 +2406,24 @@ def _partition_passes(plan, partition, tests):
     return True
 
 
+def _explain_selection(selected, watermark, start_point, seen):
+    """
+    Count why the selected partitions are read, for the log line of the sync.
+    Args:
+        selected: partitions that are read, in key order
+        watermark: highest partition key fully synced, or None
+        start_point: high-water mark of the last completed sync, or the start of the initial load
+        seen: partitions the previous sync saw within the margin before the start point
+    Returns:
+        Text such as "new=2 modified=1 lookback=1", or "reason=no_saved_progress".
+    """
+    if watermark is None:
+        return "reason=no_saved_progress"
+    older = [p for p in selected if p["key"] <= watermark]
+    modified = sum(1 for p in older if _changed(p, start_point, seen))
+    return f"new={len(selected) - len(older)} modified={modified} lookback={len(older) - modified}"
+
+
 def _plan_partition_batches(
     plan, partitions, watermark, start_point, seen, completed, lookback, streaming=False
 ):
@@ -2438,10 +2468,12 @@ def _plan_partition_batches(
         expected_rows += null_partition["rows"]
     if streaming:
         batches.append(_streaming_batch(plan, dated))
-    outside = f", {len(dated) - len(ordered):,} outside the filter" if tests else ""
+    reason = _explain_selection(selected, watermark, start_point, seen)
+    outside = f" outside_filter={len(dated) - len(ordered):,}" if tests else ""
+    tail = " streaming_tail=yes" if streaming else ""
     log.info(
-        f"{plan.key}: {len(dated):,} partition(s){outside}, {len(selected):,} to read "
-        f"(~{expected_rows:,} rows) in {len(batches)} batch(es)"
+        f"{plan.key}: plan partitions={len(dated):,}{outside} read={len(selected):,} {reason}"
+        f"{tail} rows~{expected_rows:,} batches={len(batches)}"
     )
     return batches, expected_rows
 
@@ -2636,8 +2668,8 @@ def _sync_partitioned(ctx, plan, state, progress):
     )
     if streaming:
         log.info(
-            f"{plan.key}: rows are streamed into the table, so the newest {lookback} partition(s) "
-            "and the rows that are not in a listed partition yet are read on every sync"
+            f"{plan.key}: streaming detected lookback={lookback} unlisted_rows=read "
+            f"grace={STREAMING_GRACE_SECONDS}s"
         )
         _note_skipped(
             "Rows are streamed into these tables, and BigQuery's partition metadata can lag "

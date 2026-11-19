@@ -469,10 +469,14 @@ Connected to BigQuery project my-project
 Table metadata read in 2s: 2 table(s) to sync in 1 dataset(s), 41,200,000 rows, 18.3 GB
 Strategies: 1 incremental by partition, 1 incremental by cursor column, 0 full reload
 Largest tables: sales.events (17.9 GB), sales.orders (412.0 MB)
+config: detect_modified=auto modified_margin=600s lookback_days=0 lookback_partitions=0 streaming_grace=7200s streaming_min_lookback=1 cursor_margin=3600s on_schema_change=resync
+config: parallel_tables=2 read_streams=4 batch_rows=5000000 flush_values=4000000 flush_bytes=268435456
 Sync started: 2 table(s), 2 at a time
 sales.events: started (1/2) - initial load | partition column event_date (DAY), lookback 0 | primary key: event_id | 41,000,000 rows, 17.9 GB, 24 columns
+sales.events: strategy=partition column=event_date granularity=DAY detect_modified=auto margin=600s lookback=0 (default) streaming_tail=auto
+sales.events: spec: primary_keys=event_id filter="event_date >= today-730d" defaults: on_schema_change=resync
 sales.orders: started (2/2) - initial load | cursor column updated_at | primary key: order_id | 200,000 rows, 412.0 MB, 18 columns
-sales.events: 730 partition(s), 730 to read (~41,000,000 rows) in 9 batch(es)
+sales.events: plan partitions=730 read=730 reason=no_saved_progress rows~41,000,000 batches=9
 sales.orders: completed in 12s - 200,000 rows read, ~412.0 MB scanned (1/2 tables done; running: sales.events)
 sales.events: batch 1/9 done [partitions 20240101..20240318 (78)] - 4,600,000 rows; 4,600,000 of ~41,000,000 rows read (11%), 4m10s, 18,400 rows/s
 sales.events: progress - 5,300,000 of ~41,000,000 rows read (12%), 4m50s, 18,300 rows/s
@@ -481,7 +485,10 @@ Sync finished in 38m21s - 2/2 tables, 41,200,000 rows read, ~18.3 GB scanned (es
 ```
 
 - Start line - the mode (`initial load`, `resuming initial load`, `incremental` or `full reload`), how the table is read (partition column and granularity with the lookback, cursor column, or no partition or cursor column), the primary key, the size from BigQuery metadata, the number of columns and any filter.
-- Partition line - for partitioned tables, how many partitions exist, how many the table filter rules out (only when the filter has a condition on the partition column), how many will be read and the rows in them, and the number of batches.
+- Config lines - the values of `table_specs.py` that apply to every table: that modified partitions are detected automatically and the margin used, the default lookback, the streamed-table and cursor margins, the default for schema changes, and the read and checkpoint limits.
+- Strategy line - how the table finds changed data on every sync after the first: `partition` (partitions that BigQuery shows as modified since the last sync, found automatically, plus new partitions and the lookback), `cursor` (rows after the last cursor value minus the margin), or `full`. A lookback shows whether it is the default or set in the spec (`spec`).
+- Spec line - the options that are set for the table in `TABLE_SPECS`, and the defaults that apply, such as `on_schema_change`.
+- Plan line - for partitioned tables, how many partitions exist, how many the table filter rules out (`outside_filter`, only when the filter has a condition on the partition column), how many are read, why (`new`, `modified` since the last sync, or `lookback`; `reason=no_saved_progress` for a first load), the expected rows and the number of batches. `streaming_tail=yes` means rows that are not in a listed partition yet are read as well.
 - Progress lines - a line about once a minute (`PROGRESS_LOG_INTERVAL_SECONDS`) for tables that take long, and one after every batch of partitions. They show the rows read, the speed, and the percentage when the expected size is reliable. When a filter or a cursor can make the real number smaller, the line shows `up to ~N expected` instead of a percentage.
 - Completion line - the duration, the rows read, the estimated bytes that BigQuery will scan (the sum of the read sessions' estimates), how many tables are done and which others are still running.
 - Failures - a failed table logs one error line with its name, the time and rows so far, and the error. The sync then fails.
