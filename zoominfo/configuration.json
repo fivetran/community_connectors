@@ -1,0 +1,5 @@
+{
+  "client_id": "<YOUR_ZOOMINFO_CLIENT_ID>",
+  "client_secret": "<YOUR_ZOOMINFO_CLIENT_SECRET>",
+  "refresh_token": "<YOUR_ZOOMINFO_REFRESH_TOKEN>"
+}
