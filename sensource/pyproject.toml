@@ -2,4 +2,4 @@
 name = "sensource"
 version = "0.1.0"
 description = "The SenSource custom connector fetches data from the SenSource API, which provides traffic and occupancy metrics for physical spaces."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"
