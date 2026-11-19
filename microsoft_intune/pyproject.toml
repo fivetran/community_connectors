@@ -2,4 +2,4 @@
 name = "microsoft-intune"
 version = "0.1.0"
 description = "This example demonstrates how to build a connector for Microsoft Intune with Fivetran Connector SDK, using the Microsoft Graph API to retrieve managed device data."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"

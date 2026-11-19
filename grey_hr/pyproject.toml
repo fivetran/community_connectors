@@ -2,4 +2,4 @@
 name = "grey-hr"
 version = "0.1.0"
 description = "This connector syncs Employee, Leave Transactions, and Attendance Insights data from the greytHR API to Fivetran destinations."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"

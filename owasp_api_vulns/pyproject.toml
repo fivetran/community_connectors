@@ -2,4 +2,4 @@
 name = "owasp-api-vulns"
 version = "0.1.0"
 description = "This connector retrieves API security vulnerability data from the National Vulnerability Database (NVD) 2.0 API."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"
