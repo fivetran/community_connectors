@@ -2,4 +2,4 @@
 name = "empty-project"
 version = "0.1.0"
 description = "A blank starting point for building a Fivetran connector from scratch using the Fivetran Connector SDK."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"

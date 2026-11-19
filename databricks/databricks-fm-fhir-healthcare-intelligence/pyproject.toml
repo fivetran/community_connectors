@@ -2,4 +2,4 @@
 name = "databricks-databricks-fm-fhir-healthcare-intelligence"
 version = "0.1.0"
 description = "This connector syncs clinical data from a FHIR R4 server and enriches it with AI-powered hybrid analysis using Databricks ai_query()."
-requires-python = ">=3.11,<=3.15"
+requires-python = ">=3.11,<3.16"
