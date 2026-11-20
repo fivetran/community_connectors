@@ -1,0 +1,7 @@
+[project]
+name = "arango-db"
+version = "0.1.0"
+description = "This connector demonstrates how to sync data from ArangoDB, a native multi-model database that combines document, graph, and key-value capabilities."
+dependencies = [
+    "python-arango==8.2.2",
+]

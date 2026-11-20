@@ -1,0 +1,8 @@
+[project]
+name = "cassandra"
+version = "0.1.0"
+description = "This connector integrates Cassandra databases with Fivetran, syncing data from Cassandra clusters to your destination."
+dependencies = [
+    "cassandra-driver",
+    "python-dateutil",
+]

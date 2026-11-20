@@ -74,9 +74,10 @@ Optional parameters:
 > Note: When submitting connector code as a community connector in the open-source [Community Connector repository](https://github.com/fivetran/community_connectors/tree/main), ensure the `configuration.json` file has placeholder values. When adding the connector to your production repository, ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
 
 ## Requirements file
-This connector does not require a `requirements.txt` file. It uses the Fivetran Connector SDK and the `requests` library, which are available in the Connector SDK runtime environment.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+This connector does not require a `pyproject.toml` file. It uses the Fivetran Connector SDK and the `requests` library, which are available in the Connector SDK runtime environment.
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 The connector authenticates using OAuth2 password grant against Vantagepoint's token endpoint (`{base_url}/api/token`), using the `username`, `password`, `database`, `client_id`, and `client_secret` configuration values. The resulting access token is valid for 12 hours, comfortably longer than a single sync, and is refreshed automatically if a request returns a 401 response. Refer to `get_access_token` in `authentication.py`.
