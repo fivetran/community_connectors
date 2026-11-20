@@ -2,4 +2,3 @@
 name = "federal-register"
 version = "0.1.0"
 description = "This connector syncs documents from the Federal Register API into a Fivetran destination."
-requires-python = ">=3.11,<3.16"

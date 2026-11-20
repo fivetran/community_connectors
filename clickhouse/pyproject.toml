@@ -2,7 +2,6 @@
 name = "clickhouse"
 version = "0.1.0"
 description = "This connector shows how to pull data from ClickHouse databases."
-requires-python = ">=3.11,<3.16"
 dependencies = [
     "clickhouse_connect==0.8.17",
 ]
