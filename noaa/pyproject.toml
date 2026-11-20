@@ -2,4 +2,3 @@
 name = "noaa"
 version = "0.1.0"
 description = "This connector retrieves weather observation data and active alerts from the National Weather Service (NOAA) API and syncs it to Fivetran destinations."
-requires-python = ">=3.11,<3.16"

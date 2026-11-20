@@ -2,4 +2,3 @@
 name = "open-meteo-marine-weather"
 version = "0.1.0"
 description = "This connector syncs marine weather data from the Open-Meteo Marine Weather API for a configured coastal location."
-requires-python = ">=3.11,<3.16"

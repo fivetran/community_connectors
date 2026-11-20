@@ -2,4 +2,3 @@
 name = "hubspot"
 version = "0.1.0"
 description = "This connector demonstrates how to sync event analytics data from HubSpot using the Fivetran Connector SDK."
-requires-python = ">=3.11,<3.16"

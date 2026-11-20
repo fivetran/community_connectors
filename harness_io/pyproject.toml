@@ -2,4 +2,3 @@
 name = "harness-io"
 version = "0.1.0"
 description = "This connector extracts data from Harness.io API and loads it into a destination using Fivetran's Connector SDK."
-requires-python = ">=3.11,<3.16"

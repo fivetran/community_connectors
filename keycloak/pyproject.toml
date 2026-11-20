@@ -2,4 +2,3 @@
 name = "keycloak"
 version = "0.1.0"
 description = "Keycloak is an open-source identity and access management solution that provides authentication, authorization, and user management capabilities."
-requires-python = ">=3.11,<3.16"

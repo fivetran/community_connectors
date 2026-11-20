@@ -2,4 +2,3 @@
 name = "oktopost"
 version = "0.1.0"
 description = "The Oktopost connector fetches export metadata and CSV data from the Oktopost BI Export API for data synchronization."
-requires-python = ">=3.11,<3.16"

@@ -2,4 +2,3 @@
 name = "mastertax"
 version = "0.1.0"
 description = "This connector fetches data extracts from the MasterTax API provided by ADP."
-requires-python = ">=3.11,<3.16"
