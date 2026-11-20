@@ -170,7 +170,7 @@ A publish from a dbt Production run on 2026-10-25 wrote these rows:
   - a dbt platform token that can read the Production run's artifacts, and, optionally, a Semantic Layer token for the compiled SQL;
   - for the credentials in `WAREHOUSE_CREDENTIALS`, a role that can create a schema in the pack database (the CLI creates `AGENTS` on its first run) and create and replace tables in it;
   - a pack database whose `AGENTS` schema no other dbt project publishes to. The publish replaces the `DBT_*`, `OSI_*` and `SKILL_USE` tables, so a second project publishing into the same schema would replace the pack's model, column, lineage and metric rows, and the pack's publish would replace that project's.
-- For local testing only: the dbt CLI with DuckDB, and a local sync of the connector, so that `../connector/files/warehouse.db` exists. The project uses dbt v2 settings (`info_schema` in `dbt_project.yml`) that dbt-core 1.x rejects, so the pack has no `requirements.txt`: use the dbt v2 CLI, which ran the local build (dbt 2.0.9), or the dbt platform. `render_sql.py` needs only the Python standard library. `publish_agents_schema.py` needs only the two packages above.
+- For local testing only: the dbt CLI with DuckDB, and a local sync of the connector, so that `../connector/files/warehouse.db` exists. The project uses dbt v2 settings (`info_schema` in `dbt_project.yml`) that dbt-core 1.x rejects, so the pack has no `pyproject.toml`: use the dbt v2 CLI, which ran the local build (dbt 2.0.9), or the dbt platform. `render_sql.py` needs only the Python standard library. `publish_agents_schema.py` needs only the two packages above.
 
 ## Connect your AI to this data
 

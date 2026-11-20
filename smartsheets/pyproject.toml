@@ -1,0 +1,4 @@
+[project]
+name = "smartsheets"
+version = "0.1.0"
+description = "This connector demonstrates how to sync row-level data from Smartsheet using the Fivetran Connector SDK, and the Smartsheet Sheets API and Reports API."

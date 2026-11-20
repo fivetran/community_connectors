@@ -80,14 +80,16 @@ Configuration parameters:
 
 ## Requirements file
 
-Include the following dependencies in your `requirements.txt` file:
+Include the following dependencies in your `pyproject.toml` file:
 
-```
-pytidb>=0.0.11
-certifi>=2026.10.19
+```toml
+dependencies = [
+  "pytidb>=0.0.11",
+  "certifi>=2026.10.19",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

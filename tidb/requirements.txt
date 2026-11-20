@@ -1,2 +1,0 @@
-pytidb>=0.0.11  # For connecting to TiDB database
-certifi>=2026.10.19  # For CA bundle used in TLS connections

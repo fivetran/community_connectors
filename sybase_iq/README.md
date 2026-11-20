@@ -61,11 +61,13 @@ Note: Ensure that the `configuration.json` file is not checked into version cont
 
 This connector requires the `PyODBC` library to connect to Sybase IQ databases.
 
-```
-pyodbc==5.2.0
+```toml
+dependencies = [
+  "pyodbc==5.2.0",
+]
 ```
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

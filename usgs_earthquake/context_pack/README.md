@@ -37,7 +37,7 @@ The source switches on `target.name`:
 
 ## Requirements
 
-- Python 3.12 and the pinned packages in `requirements.txt`: the Anthropic Python SDK, DuckDB, PyYAML, dbt-core, dbt-duckdb, MetricFlow and dbt-metricflow. These are the pack's dependencies, not the connector's.
+- Python 3.12 and the pinned packages in `pyproject.toml`: the Anthropic Python SDK, DuckDB, PyYAML, dbt-core, dbt-duckdb, MetricFlow and dbt-metricflow. These are the pack's dependencies, not the connector's.
 - A local sync of the connector, so that `../connector/files/warehouse.db` exists.
 - For `generate` only: an Anthropic API key.
 - For the lake path only: a DuckDB session, or an agent tool that runs DuckDB SQL, with the Managed Data Lake catalog attached.
@@ -49,7 +49,7 @@ Create a virtual environment and install the pack's dependencies, from the repos
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r usgs_earthquake/context_pack/requirements.txt
+pip install -e usgs_earthquake/context_pack
 ```
 
 Sync the connector into its local DuckDB warehouse, from `usgs_earthquake/connector/`:
@@ -166,7 +166,7 @@ The production week filter is `date_trunc('week', timezone('UTC', now())) - inte
 ## Layout
 
 - `README.md` – This file.
-- `requirements.txt` – The pack's pinned dependencies.
+- `pyproject.toml` – The pack's pinned dependencies and Python compatibility metadata.
 - `context_pack.py` – Profiles the table, makes the one Claude call, and writes the draft and its checks (`generate`). Fills the reviewed drafts into `agent/` (`assemble`).
 - `render_lake_sql.py` – Renders the canonical string for a target and a week.
 - `agent/AGENTS.md` – The DuckDB agent's orientation: the data, the grain, the join path, the rules every query follows and how to answer the canonical question.

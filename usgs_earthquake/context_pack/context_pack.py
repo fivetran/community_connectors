@@ -4,7 +4,7 @@ AI proposes and deterministic code executes. This script profiles the synced tab
 structured outputs, and writes a draft for review. It never writes into dbt/ or lake_sql/, and it never rewrites the
 human-owned files: the region seed, _semantic.yml and the canonical SQL rendered by render_lake_sql.py.
 
-Two commands, run from this directory in a venv with this directory's requirements.txt installed:
+Two commands, run from this directory in a venv with this directory's pyproject.toml dependencies installed:
 
     # 1. Profile the connector's debug warehouse, call Claude once, write context_pack_draft/ and append to
     #    _ai_calls.jsonl

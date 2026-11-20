@@ -62,15 +62,17 @@ The configuration keys required for your connector are as follows:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector:
+The `pyproject.toml` file specifies the Python libraries required by the connector:
 
-```
-pika==1.3.2
+```toml
+dependencies = [
+  "pika==1.3.2",
+]
 ```
 
 The connector uses the `pika` library (version 1.3.2) for connecting to and consuming messages from RabbitMQ.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
