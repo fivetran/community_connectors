@@ -1,3 +1,4 @@
 [project]
 name = "clerk"
+version = "0.1.0"
 description = "This connector integrates with the Clerk API to synchronize user data into your destination."

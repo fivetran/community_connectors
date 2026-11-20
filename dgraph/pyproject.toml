@@ -1,3 +1,4 @@
 [project]
 name = "dgraph"
+version = "0.1.0"
 description = "This connector syncs e-commerce product catalog data from Dgraph graph databases into data warehouses via the GraphQL API."

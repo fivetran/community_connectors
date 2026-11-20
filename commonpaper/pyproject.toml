@@ -1,3 +1,4 @@
 [project]
 name = "commonpaper"
+version = "0.1.0"
 description = "This connector fetches and syncs agreement data from the Common Paper API."

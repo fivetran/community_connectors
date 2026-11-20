@@ -1,5 +1,6 @@
 [project]
 name = "apache-hbase"
+version = "0.1.0"
 description = "This connector shows how to sync data from Apache HBase databases using Fivetran Connector SDK."
 dependencies = [
     "happybase==1.2.0",

@@ -1,3 +1,4 @@
 [project]
 name = "callminer"
+version = "0.1.0"
 description = "The CallMiner connector for Fivetran uses the CallMiner Bulk Export API to create export jobs, poll job status, download completed export archives, extract nested compressed CSV files, and sync the exported records to your destination."
