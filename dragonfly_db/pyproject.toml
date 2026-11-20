@@ -1,6 +1,5 @@
 [project]
 name = "dragonfly-db"
-version = "0.1.0"
 description = "This connector syncs high-performance in-memory data from DragonflyDB to your Fivetran destination."
 dependencies = [
     "redis",  # For connecting to DragonflyDB using Redis-compatible protocol

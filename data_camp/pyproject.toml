@@ -1,4 +1,3 @@
 [project]
 name = "data-camp"
-version = "0.1.0"
 description = "The DataCamp custom connector for Fivetran fetches course catalog data from the DataCamp LMS Catalog API and syncs it to your destination."

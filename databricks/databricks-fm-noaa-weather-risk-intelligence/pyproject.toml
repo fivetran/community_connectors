@@ -1,4 +1,3 @@
 [project]
 name = "databricks-databricks-fm-noaa-weather-risk-intelligence"
-version = "0.1.0"
 description = "This connector syncs severe weather alerts from the NOAA Weather API and enriches them with AI-powered hybrid analysis using the Databricks ai_query() SQL function."
