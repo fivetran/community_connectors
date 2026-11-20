@@ -56,7 +56,7 @@ The connector expects a `configuration.json` file with the following structure:
 
 The `pyproject.toml` file specifies any additional Python libraries required by the connector. For this example, the following libraries are required:
 
-Example content of `pyproject.toml`:
+Example dependencies to declare under the existing `[project]` table in `pyproject.toml`:
 
 ```toml
 dependencies = [
