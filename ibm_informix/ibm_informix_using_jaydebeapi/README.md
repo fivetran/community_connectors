@@ -67,7 +67,7 @@ jaydebeapi
 
 The `JayDeBeApi` package is used to establish a connection to the IBM Informix database using JDBC drivers. The connector also requires the `jpype1` package, which is automatically installed when you install `JayDeBeApi`.
 
-Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+Note: The `fivetran_connector_sdk:latest` and `requests:latest` packages are pre-installed in the Fivetran environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## **Authentication**
 

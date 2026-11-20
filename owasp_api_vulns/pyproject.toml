@@ -1,0 +1,4 @@
+[project]
+name = "owasp-api-vulns"
+version = "0.1.0"
+description = "This connector retrieves API security vulnerability data from the National Vulnerability Database (NVD) 2.0 API."

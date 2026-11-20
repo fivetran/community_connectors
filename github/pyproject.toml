@@ -1,0 +1,8 @@
+[project]
+name = "github"
+version = "0.1.0"
+description = "This connector integrates with the GitHub REST API to synchronize repository data, commits, and pull requests into your destination."
+dependencies = [
+    "pyjwt==2.11.0",
+    "cryptography==36.0.1",  # Required by PyJWT for RS256 algorithm (RSA signature) support
+]

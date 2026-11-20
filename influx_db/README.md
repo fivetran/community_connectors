@@ -59,18 +59,20 @@ The connector requires the following configuration parameters:
 
 The connector requires the `influxdb3_python` package to connect to InfluxDB.
 
-The connector uses the following packages, which are specified in the `requirements.txt` file:
+The connector uses the following packages, which are specified in the `pyproject.toml` file:
 
-```
-influxdb3_python
-pandas
+```toml
+dependencies = [
+  "influxdb3_python",
+  "pandas",
+]
 ```
 
 `influxdb3_python` is a lightweight Python client for InfluxDB 3.x, which provides an easy way to interact with InfluxDB instances. It supports basic operations like querying and writing data.
 
 `pandas` is used for data manipulation and analysis, particularly for handling the nanosecond timestamps returned by InfluxDB. It is required in the production environment for safely converting microseconds to datetime.datetime.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

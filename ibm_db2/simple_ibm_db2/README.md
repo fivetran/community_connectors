@@ -68,13 +68,15 @@ The configuration parameters are:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. The content of `requirements.txt` required is:
+Declare the following dependencies under the existing `[project]` table in `pyproject.toml`, keeping the other project metadata:
 
-```
-ibm_db==3.2.6
+```toml
+dependencies = [
+  "ibm_db==3.2.6",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
