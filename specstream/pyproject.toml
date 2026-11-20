@@ -1,5 +1,6 @@
 [project]
 name = "specstream"
+version = "0.1.0"
 description = "This connector syncs your SpecStream data into your Fivetran destination."
 dependencies = [
     "ijson==3.6.0",

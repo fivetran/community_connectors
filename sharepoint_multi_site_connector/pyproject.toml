@@ -1,5 +1,6 @@
 [project]
 name = "sharepoint-multi-site-connector"
+version = "0.1.0"
 description = "This connector extracts structured data from CSV and Excel files stored across multiple SharePoint sites and loads it into destination tables."
 dependencies = [
     "openpyxl==3.1.5",

@@ -1,5 +1,6 @@
 [project]
 name = "tidb"
+version = "0.1.0"
 description = "This example demonstrates a source connector that reads rows from a TiDB database and upserts them into a Fivetran destination using the Connector SDK."
 dependencies = [
     "pytidb>=0.0.11",  # For connecting to TiDB database

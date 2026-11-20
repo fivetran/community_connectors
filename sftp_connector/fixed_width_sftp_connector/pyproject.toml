@@ -1,5 +1,6 @@
 [project]
 name = "sftp-connector-fixed-width-sftp-connector"
+version = "0.1.0"
 description = "Fivetran Connector SDK connector that reads 12 fixed-width files delivered daily to an SFTP server by three financial-data providers (ELAN, CUP, LPL/DFM) and syncs them to 12 destination tables."
 dependencies = [
     "paramiko==3.5.1",

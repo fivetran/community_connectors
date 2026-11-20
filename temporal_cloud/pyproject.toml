@@ -1,5 +1,6 @@
 [project]
 name = "temporal-cloud"
+version = "0.1.0"
 description = "This connector syncs workflow and schedule data from Temporal Cloud to Fivetran."
 dependencies = [
     "temporalio==1.22.0",

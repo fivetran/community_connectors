@@ -1,3 +1,4 @@
 [project]
 name = "rillet"
+version = "0.1.0"
 description = "This connector fetches core accounting data from the Rillet API and syncs it into Fivetran destination tables."

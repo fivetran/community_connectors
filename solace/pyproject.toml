@@ -1,5 +1,6 @@
 [project]
 name = "solace"
+version = "0.1.0"
 description = "This connector demonstrates how to sync data from a Solace queue using the Fivetran Connector SDK."
 dependencies = [
     "pandas==2.3.0",

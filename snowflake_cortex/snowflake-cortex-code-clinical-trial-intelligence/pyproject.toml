@@ -1,3 +1,4 @@
 [project]
 name = "snowflake-cortex-snowflake-cortex-code-clinical-trial-intelligence"
+version = "0.1.0"
 description = "This connector syncs clinical trial records from the ClinicalTrials.gov API v2.0 and enriches them with AI-powered analysis using Snowflake Cortex Agent."

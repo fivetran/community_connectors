@@ -13,6 +13,7 @@ py-modules = []
 
 [project]
 name = "usgs-earthquake-context-pack"
+version = "0.1.0"
 description = "This directory gives an AI agent governed context for the earthquake table that the usgs_earthquake connector syncs."
 dependencies = [
     "anthropic==1.1.0",

@@ -1,5 +1,6 @@
 [project]
 name = "sensor-tower"
+version = "0.1.0"
 description = "This example demonstrates how to build a Fivetran Connector SDK integration for Sensor Tower, a market intelligence and analytics platform that provides insights into mobile apps, app store trends, and digital advertising."
 dependencies = [
     "python_dateutil==2.9.0.post0",

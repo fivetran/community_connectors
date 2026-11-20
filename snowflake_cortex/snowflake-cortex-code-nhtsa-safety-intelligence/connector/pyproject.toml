@@ -1,3 +1,4 @@
 [project]
 name = "snowflake-cortex-snowflake-cortex-code-nhtsa-safety-intelligence-connector"
+version = "0.1.0"
 description = "This connector syncs vehicle recall campaigns, consumer safety complaints, and vehicle specifications from NHTSA (National Highway Traffic Safety Administration) public APIs, then uses Snowflake Cortex Agent to analyze the data and autonomously discover related vehicles to investigate."

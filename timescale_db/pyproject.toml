@@ -1,5 +1,6 @@
 [project]
 name = "timescale-db"
+version = "0.1.0"
 description = "The TimescaleDB connector allows you to extract time-series data and vector data from a TimescaleDB database and load it into your destination."
 dependencies = [
     "psycopg2_binary==2.9.10",

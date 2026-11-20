@@ -1,5 +1,6 @@
 [project]
 name = "sftp-connector-bai2-sftp-connector"
+version = "0.1.0"
 description = "Fivetran custom connector that fetches BAI2-format cash management files from an SFTP server and loads all transactions into a single bai2_transactions table in your destination."
 dependencies = [
     "paramiko==3.5.1",

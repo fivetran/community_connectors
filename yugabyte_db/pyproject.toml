@@ -1,5 +1,6 @@
 [project]
 name = "yugabyte-db"
+version = "0.1.0"
 description = "This connector fetches data from YugabyteDB database and syncs it to Fivetran destinations."
 dependencies = [
     "psycopg2_binary==2.9.11",
