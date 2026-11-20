@@ -1,6 +1,5 @@
 [project]
 name = "weights-and-biases"
-version = "0.1.0"
 description = "This connector syncs data from Weights & Biases (W&B), a machine learning experiment tracking platform, into your data warehouse via Fivetran."
 dependencies = [
     "wandb==0.25.0",

@@ -1,6 +1,5 @@
 [project]
 name = "sap-hana-sql"
-version = "0.1.0"
 description = "This connector extracts data from a SAP HANA database using the hdbcli."
 dependencies = [
     "hdbcli==2.25.29",

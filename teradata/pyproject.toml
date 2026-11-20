@@ -1,6 +1,5 @@
 [project]
 name = "teradata"
-version = "0.1.0"
 description = "This connector demonstrates how to use the Fivetran Connector SDK to extract data from a Teradata Vantage database using the teradatasql Python library."
 dependencies = [
     "teradatasql==20.0.0.33",

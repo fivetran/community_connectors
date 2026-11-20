@@ -1,6 +1,5 @@
 [project]
 name = "redis-connector"
-version = "0.1.0"
 description = "This connector syncs data from Redis to Fivetran for historical analytics."
 dependencies = [
     "redis",

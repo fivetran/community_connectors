@@ -1,4 +1,3 @@
 [project]
 name = "sam-gov"
-version = "0.1.0"
 description = "This connector fetches government contracting opportunities from the SAM.gov (System for Award Management) API."

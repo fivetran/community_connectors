@@ -1,6 +1,5 @@
 [project]
 name = "rethink-db"
-version = "0.1.0"
 description = "This example demonstrates how to use the Fivetran Connector SDK to sync data from RethinkDB, an open-source database designed for real-time applications."
 dependencies = [
     "rethinkdb==2.4.10.post1",

@@ -1,4 +1,3 @@
 [project]
 name = "talon-one"
-version = "0.1.0"
 description = "This connector fetches event data from Talon.one using the Management API."

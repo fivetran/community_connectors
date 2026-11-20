@@ -1,4 +1,3 @@
 [project]
 name = "status-cake"
-version = "0.1.0"
 description = "This connector fetches uptime monitoring data from StatusCake, a website monitoring service."

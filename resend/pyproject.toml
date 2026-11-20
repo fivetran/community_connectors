@@ -1,4 +1,3 @@
 [project]
 name = "resend"
-version = "0.1.0"
 description = "This connector demonstrates how to fetch email data from Resend and upsert it into your destination using the Fivetran Connector SDK."

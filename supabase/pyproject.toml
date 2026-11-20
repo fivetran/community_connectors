@@ -1,6 +1,5 @@
 [project]
 name = "supabase-connector"
-version = "0.1.0"
 description = "This connector demonstrates how to fetch employee data from a Supabase database and sync it to Fivetran using the Fivetran Connector SDK with advanced batch processing capabilities."
 dependencies = [
     "supabase",

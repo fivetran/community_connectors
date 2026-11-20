@@ -1,6 +1,5 @@
 [project]
 name = "sybase-iq"
-version = "0.1.0"
 description = "This connector extracts data from a Sybase IQ database using the FreeTDS driver and PyODBC."
 dependencies = [
     "pyodbc==5.2.0",
