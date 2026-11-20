@@ -1,3 +1,4 @@
 [project]
 name = "betterstack"
+version = "0.1.0"
 description = "This connector syncs uptime monitoring data from Better Stack's Uptime API."

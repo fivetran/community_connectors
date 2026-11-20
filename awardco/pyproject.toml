@@ -1,3 +1,4 @@
 [project]
 name = "awardco"
+version = "0.1.0"
 description = "Awardco is an employee recognition platform."

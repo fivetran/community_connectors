@@ -1,5 +1,6 @@
 [project]
 name = "amazon-video-central"
+version = "0.1.0"
 description = "This Fivetran connector extracts report data from Amazon Video Central API and syncs it to your destination warehouse."
 dependencies = [
     "cryptography==44.0.2",

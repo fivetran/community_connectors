@@ -1,3 +1,4 @@
 [project]
 name = "courier"
+version = "0.1.0"
 description = "This connector fetches data from the Courier API, a multi-channel notification platform that enables businesses to send notifications across email, SMS, push, and other channels."

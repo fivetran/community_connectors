@@ -1,5 +1,6 @@
 [project]
 name = "delta-sharing-connector"
+version = "0.1.0"
 description = "A Fivetran Connector SDK connector that syncs data from any Delta Sharing-compatible server into your Fivetran destination."
 dependencies = [
     "delta-sharing",

@@ -1,5 +1,6 @@
 [project]
 name = "apache-hive-using-pyhive"
+version = "0.1.0"
 description = "This connector shows how to fetch data from Apache Hive using the PyHive and fivetran-connector-sdk library."
 dependencies = [
     "PyHive==0.7.0",

@@ -1,3 +1,4 @@
 [project]
 name = "apache-druid-using-sql"
+version = "0.1.0"
 description = "This connector syncs data from Apache Druid datasources into Fivetran, allowing you to replicate event and analytics data into your destination."

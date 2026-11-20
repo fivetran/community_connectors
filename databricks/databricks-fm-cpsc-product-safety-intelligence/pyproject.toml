@@ -1,3 +1,4 @@
 [project]
 name = "databricks-databricks-fm-cpsc-product-safety-intelligence"
+version = "0.1.0"
 description = "This connector syncs consumer product recall data from the CPSC SaferProducts API and enriches each recall with AI-powered multi-agent debate analysis using the Databricks ai_query() SQL function."

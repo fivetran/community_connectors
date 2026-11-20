@@ -1,5 +1,6 @@
 [project]
 name = "apache-hive-using-sqlalchemy"
+version = "0.1.0"
 description = "This connector demonstrates how to fetch data from Apache Hive using SQLAlchemy with the PyHive dialect and fivetran-connector-sdk library."
 dependencies = [
     "SQLAlchemy==2.0.40",
