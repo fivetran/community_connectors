@@ -1,5 +1,6 @@
 [project]
 name = "ibm-informix-ibm-informix-using-jaydebeapi"
+version = "0.1.0"
 description = "This connector uses the JayDeBeApi package to connect to IBM Informix databases."
 dependencies = [
     "jaydebeapi==1.2.3",

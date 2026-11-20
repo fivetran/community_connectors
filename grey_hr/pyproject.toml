@@ -1,3 +1,4 @@
 [project]
 name = "grey-hr"
+version = "0.1.0"
 description = "This connector syncs Employee, Leave Transactions, and Attendance Insights data from the greytHR API to Fivetran destinations."

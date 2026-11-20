@@ -1,5 +1,6 @@
 [project]
 name = "google-trends"
+version = "0.1.0"
 description = "This connector syncs Google Trends interest-over-time data into Fivetran, allowing you to track search interest for specific keywords across different regions and time periods."
 dependencies = [
     "pytrends==4.9.2",

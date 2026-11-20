@@ -1,3 +1,4 @@
 [project]
 name = "github-traffic"
+version = "0.1.0"
 description = "This connector syncs GitHub repository traffic data using the GitHub REST API."

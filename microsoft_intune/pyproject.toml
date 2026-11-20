@@ -1,3 +1,4 @@
 [project]
 name = "microsoft-intune"
+version = "0.1.0"
 description = "This example demonstrates how to build a connector for Microsoft Intune with Fivetran Connector SDK, using the Microsoft Graph API to retrieve managed device data."
