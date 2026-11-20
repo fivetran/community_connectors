@@ -1,4 +1,3 @@
 [project]
 name = "gumroad"
-version = "0.1.0"
 description = "This connector fetches sales, products, and subscriber data from the Gumroad API and syncs it to your destination."

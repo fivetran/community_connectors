@@ -1,6 +1,5 @@
 [project]
 name = "planetscale"
-version = "0.1.0"
 description = "This connector replicates tables from a PlanetScale database to Fivetran destinations, including deletes, using the VStream change stream."
 dependencies = [
     "pymysql==1.2.3",

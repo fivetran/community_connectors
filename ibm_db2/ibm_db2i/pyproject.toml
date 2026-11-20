@@ -1,6 +1,5 @@
 [project]
 name = "ibm-db2-ibm-db2i"
-version = "0.1.0"
 description = "This connector allows you to sync data from an IBM Db2 for i (IBM i / AS400) database to a destination using the Fivetran Connector SDK."
 dependencies = [
     "pyodbc==5.2.0",

@@ -1,6 +1,5 @@
 [project]
 name = "janus-graph"
-version = "0.1.0"
 description = "This connector integrates JanusGraph graph database with Fivetran's data pipeline using the Gremlin Server API."
 dependencies = [
     "gremlinpython==3.8.0",

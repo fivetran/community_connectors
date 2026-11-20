@@ -1,6 +1,5 @@
 [project]
 name = "odata-api-odata-version-4"
-version = "0.1.0"
 description = "entity = { \"entity_set\": \"Products\", \"query_options\": { 'select': ['ProductID', 'ProductName', 'UnitPrice'], 'filter': \"UnitPrice gt 20.0\" }, \"table\": \"Products\" }"
 dependencies = [
     "requests_toolbelt==1.0.0",

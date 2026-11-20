@@ -1,4 +1,3 @@
 [project]
 name = "netlify"
-version = "0.1.0"
 description = "This connector demonstrates how to fetch data from the Netlify API, including sites, deploys, forms, and form submissions."
