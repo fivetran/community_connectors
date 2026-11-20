@@ -65,7 +65,7 @@ When a PR adds/modifies a connector, verify:
    - See `.github/instructions/readme-markdown.instructions.md` for detailed rules
 
 - Dependency file: use either `requirements.txt` or `pyproject.toml`. `pyproject.toml` is recommended. If using `pyproject.toml`, include `name`, `version`, `description` (matching the connector's purpose), and `dependencies` if the connector has any
-- If external dependencies are required, add them under `[project].dependencies` in `pyproject.toml`
+- If external dependencies are required, declare them in `requirements.txt` or, when using `pyproject.toml`, in `[project].dependencies`
    - Explicit versions: `pandas==2.0.3` not `pandas`
    - NEVER include `fivetran_connector_sdk` or `requests` (provided by runtime)
    - Prefer minimal dependencies; avoid heavyweight libraries for simple tasks
