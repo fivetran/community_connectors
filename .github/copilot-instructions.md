@@ -20,7 +20,7 @@ This file provides high-level guidance for reviewing connector Pull Requests. Fo
 ## Repository context
 
 ### Structure
-- `_template_connector/` - Canonical template: connector.py, configuration.json, requirements.txt, README_template.md
+- `_template_connector/` - Canonical template: connector.py, configuration.json, requirements.txt or pyproject.toml, README_template.md
 - `.github/instructions/` - Detailed review instructions for Python, JSON, and Markdown files
 - `<connector_name>/` (top-level folders) - Examples for Fivetran Connector SDK
 
@@ -32,8 +32,8 @@ As of SDK v2.0.0 (August 2025), yield is NO LONGER USED:
 - Backward compatible: old v1 connectors still work, but new code must not use `yield`
 
 ### Runtime and tooling
-- Python versions: 3.10-3.12 (3.13 experimental support)
-- Pre-installed packages: `fivetran_connector_sdk` (latest), `requests` (latest) - NEVER declare in requirements.txt
+- Python versions: >=3.11 <3.16
+- Pre-installed packages: `fivetran_connector_sdk` (latest), `requests` (latest) - NEVER declare in requirements.txt or pyproject.toml
 - Linting: `flake8` with `.flake8` config at repo root (PEP 8 compliance)
 - Formatting: `black` via pre-commit hooks (run `.github/scripts/setup-hooks.sh`)
 - Naming conventions: `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants
@@ -64,7 +64,8 @@ When a PR adds/modifies a connector, verify:
    - Required sections: Connector overview, Requirements, Getting started, Features, Data handling, Error handling, Tables created, Additional considerations
    - See `.github/instructions/readme-markdown.instructions.md` for detailed rules
 
-- requirements.txt (only if external dependencies needed):
+- Dependency file: use either `requirements.txt` or `pyproject.toml`. `pyproject.toml` is recommended. If using `pyproject.toml`, include `name`, `version`, `description` (matching the connector's purpose), and `dependencies` if the connector has any
+- If external dependencies are required, declare them in `requirements.txt` or, when using `pyproject.toml`, in `[project].dependencies`
    - Explicit versions: `pandas==2.0.3` not `pandas`
    - NEVER include `fivetran_connector_sdk` or `requests` (provided by runtime)
    - Prefer minimal dependencies; avoid heavyweight libraries for simple tasks

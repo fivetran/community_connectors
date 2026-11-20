@@ -44,7 +44,8 @@ For implementation guidance, refer to:
 Add each new connector in an appropriately named directory. A new connector must include:
 
 - The connector implementation
-- A `requirements.txt` or `pyproject.toml` file when the connector uses external dependencies
+- A dependency file: `pyproject.toml` (recommended) or `requirements.txt`. If using `pyproject.toml`, include `name`, `version`, `description` (matching the connector's purpose), and `dependencies` if the connector has any
+- The Python version the connector was tested with
 - A connector-level `README.md` based on the template connector, starting with the `name`, `description`, and `category` frontmatter shown in the template
 - Any other files required to configure or run the connector
 
