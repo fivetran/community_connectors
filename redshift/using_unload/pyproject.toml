@@ -2,7 +2,6 @@
 name = "redshift-using-unload"
 version = "0.1.0"
 description = "This example connector demonstrates how to efficiently sync large tables from Amazon Redshift by leveraging the native UNLOAD command to export data to S3 in Parquet format, then reading from S3 for ingestion into Fivetran."
-requires-python = ">=3.11,<3.16"
 dependencies = [
     "redshift_connector==2.1.8",
     "boto3==1.35.0",

@@ -2,4 +2,3 @@
 name = "snowflake-cortex-snowflake-cortex-livestock-weather-intelligence"
 version = "0.1.0"
 description = "This connector chains weather forecast APIs with Snowflake Cortex Agent to provide actionable livestock health intelligence based on predicted weather conditions."
-requires-python = ">=3.11,<3.16"
