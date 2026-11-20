@@ -1,4 +1,3 @@
 [project]
 name = "fred"
-version = "0.1.0"
 description = "This connector syncs economic data from the Federal Reserve Economic Data (FRED) API to your Fivetran destination."

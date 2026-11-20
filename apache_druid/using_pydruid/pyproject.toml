@@ -1,6 +1,5 @@
 [project]
 name = "apache-druid-using-pydruid"
-version = "0.1.0"
 description = "This connector syncs data from Apache Druid datasources into Fivetran using the PyDruid Python library, allowing you to replicate event and analytics data into your destination."
 dependencies = [
     "pydruid>0.6.5",

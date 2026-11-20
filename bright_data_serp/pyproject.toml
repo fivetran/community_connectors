@@ -1,4 +1,3 @@
 [project]
 name = "bright-data-serp"
-version = "0.1.0"
 description = "This connector syncs search engine results from Bright Data's SERP REST API to your Fivetran destination."

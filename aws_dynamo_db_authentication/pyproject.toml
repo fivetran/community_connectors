@@ -1,6 +1,5 @@
 [project]
 name = "aws-dynamo-db-authentication"
-version = "0.1.0"
 description = "This connector demonstrates how to sync data from Amazon DynamoDB using the Fivetran Connector SDK and AWS IAM role-based authentication."
 dependencies = [
     "aws_dynamodb_parallel_scan==1.1.0",

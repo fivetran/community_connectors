@@ -1,6 +1,5 @@
 [project]
 name = "aws-rds-oracle"
-version = "0.1.0"
 description = "This connector demonstrates how to sync records from an AWS RDS Oracle database using the Fivetran Connector SDK."
 dependencies = [
     "oracledb==3.3.0",

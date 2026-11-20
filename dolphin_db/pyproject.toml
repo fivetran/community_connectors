@@ -1,6 +1,5 @@
 [project]
 name = "dolphin-db"
-version = "0.1.0"
 description = "This connector syncs data from DolphinDB, a high-performance time series columnar database."
 dependencies = [
     "numpy==1.17.3",
