@@ -2,7 +2,6 @@
 name = "ehi-high-volume-ehi"
 version = "0.1.0"
 description = "This connector syncs high-volume tables from Microsoft SQL Server using the Fivetran Connector SDK."
-requires-python = ">=3.11,<3.16"
 dependencies = [
     "pyodbc==5.3.0",
 ]

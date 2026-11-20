@@ -2,4 +2,3 @@
 name = "discord"
 version = "0.1.0"
 description = "This Discord API connector enables you to extract comprehensive data from Discord servers (guilds) using the Discord API."
-requires-python = ">=3.11,<3.16"

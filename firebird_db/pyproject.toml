@@ -2,7 +2,6 @@
 name = "firebird-db"
 version = "0.1.0"
 description = "This connector fetches data from Firebird database tables using the firebirdsql library."
-requires-python = ">=3.11,<3.16"
 dependencies = [
     "firebirdsql==1.3.4",
 ]

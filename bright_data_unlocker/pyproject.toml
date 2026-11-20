@@ -2,4 +2,3 @@
 name = "bright-data-unlocker"
 version = "0.1.0"
 description = "This connector syncs web page content from Bright Data's Web Unlocker API to your Fivetran destination."
-requires-python = ">=3.11,<3.16"
