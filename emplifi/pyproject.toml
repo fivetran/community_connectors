@@ -1,0 +1,4 @@
+[project]
+name = "emplifi"
+version = "0.1.0"
+description = "This connector syncs social media profile, metrics, posts, and aggregated post-metrics data from the Emplifi social media management API."
