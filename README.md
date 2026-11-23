@@ -105,6 +105,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 
 ### SaaS & APIs
 
+- **ADP Workforce Now** ([adp_workforce_now](https://github.com/fivetran/community_connectors/tree/main/adp_workforce_now)) - Sync the departments validation table from the ADP Workforce Now HCM API
 - **Amazon Video Central** ([amazon_video_central](https://github.com/fivetran/community_connectors/tree/main/amazon_video_central)) - Sync report data from Amazon Video Central API
 - **Awardco** ([awardco](https://github.com/fivetran/community_connectors/tree/main/awardco)) - Sync data from Awardco rewards platform
 - **Beehiiv** ([beehiiv](https://github.com/fivetran/community_connectors/tree/main/beehiiv)) - Sync newsletter data from the beehiiv API, including publications, subscriptions, posts, email blasts, automations, and engagement metrics
@@ -123,6 +124,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Discord** ([discord](https://github.com/fivetran/community_connectors/tree/main/discord)) - Sync data from Discord
 - **Docusign eSignature** ([docusign](https://github.com/fivetran/community_connectors/tree/main/docusign)) - Sync data from Docusign eSignature API
 - **Elastic Email** ([elastic_email](https://github.com/fivetran/community_connectors/tree/main/elastic_email)) - Sync email marketing data from Elastic Email
+- **Emplifi** ([emplifi](https://github.com/fivetran/community_connectors/tree/main/emplifi)) - Sync social profiles, metrics, posts, and aggregated post metrics across nine networks from the Emplifi social media management API
 - **Federal Register** ([federal_register](https://github.com/fivetran/community_connectors/tree/main/federal_register)) - Sync rules, proposed rules, notices, and presidential documents from the Federal Register API
 - **Fleetio** ([fleetio](https://github.com/fivetran/community_connectors/tree/main/fleetio)) - Sync fleet management data from Fleetio
 - **FRED** ([fred](https://github.com/fivetran/community_connectors/tree/main/fred)) - Sync economic data from Federal Reserve Economic Data (FRED)
@@ -182,6 +184,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Similarweb** ([similarweb](https://github.com/fivetran/community_connectors/tree/main/similarweb)) - Sync website performance metrics from SimilarWeb
 - **Smartsheet** ([smartsheets](https://github.com/fivetran/community_connectors/tree/main/smartsheets)) - Sync sheets and reports from Smartsheets
 - **Snipe-IT** ([snipeitapp](https://github.com/fivetran/community_connectors/tree/main/snipeitapp)) - Sync IT asset management data from Snipe-IT
+- **Sopheon Accolade** ([sopheon_accolade](https://github.com/fivetran/community_connectors/tree/main/sopheon_accolade)) - Run Sopheon Accolade reports and load the results with paging
 - **SpecStream** ([specstream](https://github.com/fivetran/community_connectors/tree/main/specstream)) - Sync live web data from SpecStream (companies, local businesses, job posts, filings, tenders and grants), each value with the page it was read from
 - **StatusCake** ([status_cake](https://github.com/fivetran/community_connectors/tree/main/status_cake)) - Sync uptime monitoring from StatusCake
 - **SuiteDash** ([suitedash](https://github.com/fivetran/community_connectors/tree/main/suitedash)) - Sync CRM data from SuiteDash API
