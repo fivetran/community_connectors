@@ -1,0 +1,4 @@
+[project]
+name = "sopheon-accolade"
+version = "0.1.0"
+description = "This connector runs saved reports in Sopheon Accolade through its REST API and loads each report's result into its own destination table."
