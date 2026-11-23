@@ -4,7 +4,7 @@
 # Add your connector's dependencies under the `dependencies` array with explicit versions.
 # Keep dependencies in alphabetical order for easier maintenance.
 #
-# Example:
+# Example (append below the [project] metadata; do not uncomment here):
 # dependencies = [
 #     "pandas==2.0.3",
 # ]
