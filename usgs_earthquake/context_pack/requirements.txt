@@ -1,0 +1,8 @@
+# The context pack's own dependencies. The connector itself needs none beyond the Connector SDK.
+anthropic==1.1.0
+dbt-core==1.11.11
+dbt-duckdb==1.11.0
+dbt-metricflow==0.14.0
+duckdb==1.5.5
+metricflow==0.212.0
+PyYAML==6.0.3
