@@ -147,6 +147,44 @@ jobs:
           name: python-code-quality-report
           path: flake8_output.txt
 
+      - name: Check connector conventions (warning only)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Changed files (excluding removed ones), from the PR files API
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[] | select(.status != "removed") | .filename' > all_files.txt
+          grep '\.py$' all_files.txt > changed_py.txt || true
+
+          # Structure checks: only changed connector.py files
+          for f in $(grep '/connector\.py$' all_files.txt || true); do
+            python3 .github/scripts/check_connector_conventions.py "$f" || true
+          done > conventions_report.txt
+          # Getting started check: only changed READMEs in connector directories
+          # (skips index READMEs, which have no connector.py next to them)
+          for f in $(grep 'README\.md$' all_files.txt || true); do
+            [ -f "$(dirname "$f")/connector.py" ] || continue
+            python3 .github/scripts/check_connector_conventions.py "$f" || true
+          done >> conventions_report.txt
+          # Complexity: McCabe limit 15, same as the review instructions
+          if [ -s changed_py.txt ]; then
+            flake8 --isolated --select=C901 --max-complexity=15 -- $(cat changed_py.txt) >> conventions_report.txt || true
+          fi
+
+          # Show findings in the job log and the run summary
+          cat conventions_report.txt
+          {
+            echo "### Connector conventions (warning only)"
+            echo '```'
+            cat conventions_report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Show findings as warning annotations on the PR (path:line: message)
+          sed -E -n 's/^([^:]+):([0-9]+):([0-9]+:)? (.*)$/::warning file=\1,line=\2::\4/p' conventions_report.txt
+
       - name: Generate PR comment summary
         if: always()
         env:
