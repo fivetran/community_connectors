@@ -73,17 +73,16 @@ You can also define the search array as a constant in `config.py`. The connector
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. This connector requires the PyTrends library for accessing Google Trends data and Pandas for data processing.
+The `pyproject.toml` file specifies the Python libraries required by the connector. This connector requires the PyTrends library for accessing Google Trends data and Pandas for data processing.
 
+```toml
+dependencies = [
+  "pytrends==4.9.2", # Google Trends API client library
+  "pandas==3.0.0", # Pandas for data processing (required by PyTrends)
+]
 ```
-# Google Trends API client library
-pytrends==4.9.2
 
-# Pandas for data processing (required by PyTrends)
-pandas==3.0.0
-```
-
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

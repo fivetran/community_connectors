@@ -1,0 +1,4 @@
+[project]
+name = "investran-report-wizard"
+version = "0.1.0"
+description = "This connector runs saved Investran (FIS) Report Wizard reports through the Report Wizard REST API and loads each report's CSV result into its own destination table."

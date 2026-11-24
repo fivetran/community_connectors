@@ -1,0 +1,4 @@
+[project]
+name = "pindrop"
+version = "0.1.0"
+description = "The Pindrop connector for Fivetran fetches nightly reports from the Pindrop API and syncs them to your data warehouse."

@@ -1,0 +1,4 @@
+[project]
+name = "meta-lead-ads"
+version = "0.1.0"
+description = "This connector syncs Facebook (Meta) Lead Ads data into your destination using the Meta Graph API."

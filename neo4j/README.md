@@ -66,13 +66,14 @@ The connector requires the following configuration parameters:
 
 The connector requires the following Python packages:
 
-```
-neo4j==6.1.0
-neo4j-driver==5.28.3
+```toml
+dependencies = [
+  "neo4j==6.1.0",
+  "neo4j-driver==5.28.3",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
-
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

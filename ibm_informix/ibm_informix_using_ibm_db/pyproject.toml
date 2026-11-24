@@ -1,0 +1,7 @@
+[project]
+name = "ibm-informix-ibm-informix-using-ibm-db"
+version = "0.1.0"
+description = "This connector uses the native ibm_db Python package provided by IBM to connect to IBM Informix databases."
+dependencies = [
+    "ibm-db==3.2.6",
+]

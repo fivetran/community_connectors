@@ -1,0 +1,4 @@
+[project]
+name = "met-museum"
+version = "0.1.0"
+description = "This connector syncs public-domain objects from The Metropolitan Museum of Art Collection API into a Fivetran destination."

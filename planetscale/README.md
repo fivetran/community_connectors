@@ -71,17 +71,19 @@ The configuration parameters are:
 
 ## Requirements file
 
-The connector requires the `pymysql` package for the MySQL protocol connection that discovers shards, tables, and primary keys.
+The connector requires the `pymysql` package for the MySQL protocol connection that discovers shards, tables, and primary keys. Declare it under `[project].dependencies` in your `pyproject.toml` file:
 
-```
-pymysql==1.2.3
+```toml
+dependencies = [
+  "pymysql==1.2.3",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 The `grpcio` and `grpcio-tools` packages that VStream needs, and the `protobuf` package that `grpcio-tools` installs with them, are pre-installed in the Connector SDK runtime, so they are not listed. The `grpcio-tools` package also compiles the bundled Vitess protobuf definitions when the connector starts (refer to the [Additional files](#additional-files) section).
 
-> Note: `fivetran debug` runs in your local Python environment, and Connector SDK 3.0 does not install `grpcio` or `grpcio-tools` there. To debug locally, install them together with the packages in `requirements.txt`, for example with `pip install grpcio grpcio-tools`.
+> Note: `fivetran debug` runs in your local Python environment, and Connector SDK 3.0 does not install `grpcio` or `grpcio-tools` there. To debug locally, install them together with the packages in `pyproject.toml`, for example with `pip install grpcio grpcio-tools`.
 
 ## Authentication
 
