@@ -65,7 +65,7 @@ Apply these rules to every `README.md` file inside Connector SDK connector examp
   3. Getting started - this section is required.
   4. Features - this section is required.
   5. Configuration file - this section is optional and must be present if the `configuration.json` file is used by the connector. If this section is present, it must contain the JSON outlining the configuration parameters and that `configuration.json` should be not checked into version control to protect sensitive information.
-  6. Requirements file - this section is optional and must be present if the `reqirements.txt` file is used by the connector. If this section is present, it must contain the list of imported packages that the connector requires. 
+  6. Requirements file - this section is required only if the connector declares external dependencies in `requirements.txt` or `pyproject.toml`. If present, it must list those dependencies; omit it when the connector uses only the standard library and pre-installed packages.
   7. Authentication - this section is optional and must be present if the connector requires authentication. If this section is present, it must mention the authentication method used, the required credentials and how to obtain the credentials as a numbered list of user actions. 
   8. Pagination - this section is optional and must be present if the connector uses pagination.
   9. Data handling - this section is required.
@@ -123,7 +123,7 @@ If a section is irrelevant (e.g., no error handling), the empty stub should be n
   Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
   ```
   
-* **Requirements file** → Must explain role of `requirements.txt` and remind that `fivetran_connector_sdk` and `requests` are excluded, for example, as provided below:
+* **Requirements file** → Must explain role of `requirements.txt` or `pyproject.toml` and remind that `fivetran_connector_sdk` and `requests` are excluded, for example, as provided below:
   ```markdown
   ## Requirements file
   The connector requires the `redshift_connector` package to connect to Redshift databases.
@@ -132,7 +132,15 @@ If a section is irrelevant (e.g., no error handling), the empty stub should be n
   redshift_connector
   ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+  If using `pyproject.toml`, declare it under `[project].dependencies` instead:
+
+  ```toml
+  dependencies = [
+    "redshift_connector==2.1.0",
+  ]
+  ```
+
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt` or `pyproject.toml`.
 
 * **Authentication** → Must specify auth method (API key, OAuth2, etc). For example, as provided below:
   ```markdown
