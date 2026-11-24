@@ -72,6 +72,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **AWS Athena (SQLAlchemy with PyAthena)** ([aws_athena/using_sqlalchemy](https://github.com/fivetran/community_connectors/tree/main/aws_athena/using_sqlalchemy)) - Sync data from AWS Athena using SQLAlchemy with PyAthena
 - **AWS DynamoDB (IAM Role Authentication)** ([aws_dynamo_db_authentication](https://github.com/fivetran/community_connectors/tree/main/aws_dynamo_db_authentication)) - Connect and sync data from AWS DynamoDB
 - **AWS RDS Oracle** ([aws_rds_oracle](https://github.com/fivetran/community_connectors/tree/main/aws_rds_oracle)) - Connect and sync data from AWS Oracle
+- **BigQuery** ([bigquery](https://github.com/fivetran/community_connectors/tree/main/bigquery)) - Sync large BigQuery tables from one or more datasets and projects with the Storage Read API, using partitions for incremental syncs that pick up modified partitions, with schema change detection
 - **Redshift** ([redshift/simple_redshift_connector](https://github.com/fivetran/community_connectors/tree/main/redshift/simple_redshift_connector)) - Sync records from Redshift
 - **Redshift (Large Data Volume)** ([redshift/large_data_volume](https://github.com/fivetran/community_connectors/tree/main/redshift/large_data_volume)) - Sync large data volumes from Redshift
 - **Redshift (Using UNLOAD)** ([redshift/using_unload](https://github.com/fivetran/community_connectors/tree/main/redshift/using_unload)) - Sync data from Redshift using UNLOAD to S3

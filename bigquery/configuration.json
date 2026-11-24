@@ -1,0 +1,4 @@
+{
+  "service_account_key": "<YOUR_GOOGLE_SERVICE_ACCOUNT_KEY_JSON>",
+  "project_id": "<YOUR_GOOGLE_CLOUD_PROJECT_ID>"
+}
