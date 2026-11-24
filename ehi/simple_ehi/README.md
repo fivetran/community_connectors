@@ -68,14 +68,15 @@ The connector requires minimal configuration with only essential connection para
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector:
+The `pyproject.toml` file specifies the Python libraries required by the connector:
 
-```txt
-python-tds==1.17.1
+```toml
+dependencies = [
+  "python-tds==1.17.1",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
-
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

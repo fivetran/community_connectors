@@ -55,18 +55,20 @@ This connector requires the following configuration parameters to establish a co
 
 ## Requirements file
 
-Include the following dependencies in your `requirements.txt` file:
+Include the following dependencies in your `pyproject.toml` file:
 
-```
-SQLAlchemy==2.0.40
-PyHive==0.7.0
-thrift_sasl
-sasl
+```toml
+dependencies = [
+  "SQLAlchemy==2.0.40",
+  "PyHive==0.7.0",
+  "thrift_sasl",
+  "sasl",
+]
 ```
 
 `PyHive` is required for actual dialect implementation for Hive along with the `SQLAlchemy` ORM. The `thrift_sasl` and `sasl` packages are necessary for SASL authentication, which is commonly used with Hive.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

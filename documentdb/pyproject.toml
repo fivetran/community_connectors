@@ -1,0 +1,8 @@
+[project]
+name = "documentdb"
+version = "0.1.0"
+description = "This connector integrates AWS DocumentDB with Fivetran, syncing data from DocumentDB collections to your destination."
+dependencies = [
+    "pymongo",
+    "python-dateutil",
+]

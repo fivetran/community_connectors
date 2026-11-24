@@ -1,0 +1,4 @@
+[project]
+name = "empty-project"
+version = "0.1.0"
+description = "A blank starting point for building a Fivetran connector from scratch using the Fivetran Connector SDK."

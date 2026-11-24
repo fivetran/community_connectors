@@ -1,0 +1,7 @@
+[project]
+name = "couchbase-capella"
+version = "0.1.0"
+description = "This connector example demonstrates how to sync data from Couchbase Capella using the Connector SDK."
+dependencies = [
+    "couchbase==4.3.6",
+]

@@ -1,0 +1,4 @@
+[project]
+name = "customer-thermometer"
+version = "0.1.0"
+description = "The Customer Thermometer custom Fivetran connector fetches customer feedback data from the Customer Thermometer API and syncs it to your destination."
