@@ -195,15 +195,17 @@ def process_child(parent, table_name, id_field_name, id_field):
                 # FK (id_field_name/id_field) instead of renaming the FK to table_name + '_id',
                 # and stamp each child with the immediate parent's guid for hierarchy.
                 self_referential = len(relationship) > 2
-                if len(p.get(child_key, [])) > 0:  # Use .get() to handle missing keys gracefully
+                # Toast can send this field missing, [], or explicitly null (not just
+                # omitted) for a leaf entity with no children - normalize all three to an
+                # empty list so a null value here can't crash the sync.
+                children = p.get(child_key) or []
+                if children:
                     if self_referential:
-                        for child in p[child_key]:
+                        for child in children:
                             child["parent_modifier_id"] = p["guid"]
-                        process_child(p[child_key], child_table_name, relationship[2], id_field)
+                        process_child(children, child_table_name, relationship[2], id_field)
                     else:
-                        process_child(
-                            p[child_key], child_table_name, table_name + "_id", p["guid"]
-                        )
+                        process_child(children, child_table_name, table_name + "_id", p["guid"])
                 p.pop(child_key, None)
         if table_name in fields_to_flatten:
             # log.debug(f"flattening fields in {table_name}")

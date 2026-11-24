@@ -114,6 +114,7 @@ def update(configuration: dict, state: dict):
 
         log.debug(state)
 
+        sync_succeeded = False
         try:
             # start the sync
             sync_items(
@@ -125,18 +126,18 @@ def update(configuration: dict, state: dict):
                 state,
                 endpoints_previously_synced,
             )
+            sync_succeeded = True
         finally:
             # Push any refreshed Toast token to this connection's own Fivetran configuration
             # only now, after all of this sync's Toast data has already been upserted/
             # checkpointed - runs whether sync_items() succeeded or raised, so a broken
             # fivetran_system_key never costs a sync its Toast data. push_token_to_fivetran()
             # never raises itself, so it can't mask an exception from sync_items() above.
-            # Checkpoint again afterward so last_token_refresh_time (set only on a successful
-            # push, after sync_items()'s own last checkpoint has already run) is actually
-            # persisted - otherwise the platform never sees it, and every sync re-authenticates
-            # against Toast from scratch instead of reusing a still-fresh token.
+            # op.checkpoint() flushes every buffered op since the last checkpoint to the
+            # destination (not just state) - only call it here if sync_items() actually
+            # completed, so a mid-pass failure can never get flushed as if it were done.
             if state.pop("_needs_token_push", False):
-                if push_token_to_fivetran(configuration, state):
+                if push_token_to_fivetran(configuration, state) and sync_succeeded:
                     op.checkpoint(state)
 
         # If this line is missing from a sync's logs, the sync did not reach the end of
@@ -179,11 +180,14 @@ def sync_items(
     # config_endpoints is a list of tuples ("endpoint", "destination_table_name")
     config_endpoints = [
         ("/config/v2/alternatePaymentTypes", "alternate_payment_types"),
+        ("/config/v2/breakTypes", "break_types"),
         ("/config/v2/diningOptions", "dining_option"),
         ("/config/v2/discounts", "discounts"),
         ("/config/v2/menus", "menu"),
         ("/config/v2/menuGroups", "menu_group"),
         ("/config/v2/menuItems", "menu_item"),
+        ("/config/v2/menuOptionGroups", "menu_option_group"),
+        ("/config/v2/printers", "printers"),
         ("/config/v2/restaurantServices", "restaurant_service"),
         ("/config/v2/revenueCenters", "revenue_center"),
         ("/config/v2/salesCategories", "sale_category"),
