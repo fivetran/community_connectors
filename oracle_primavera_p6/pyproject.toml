@@ -1,0 +1,4 @@
+[project]
+name = "oracle-primavera-p6"
+version = "0.1.0"
+description = "This connector syncs data from the Oracle Primavera P6 EPPM Data Service REST API."

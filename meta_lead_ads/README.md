@@ -1,0 +1,114 @@
+---
+name: Meta Lead Ads
+description: Connect and sync Facebook (Meta) Lead Ads leads from the Meta Graph API
+category: SaaS & APIs
+---
+
+# Meta Lead Ads Connector Example
+
+## Connector overview
+This connector syncs Facebook (Meta) Lead Ads data into your destination using the Meta Graph API. It discovers the pages and lead-generation forms configured (or all pages/forms accessible to the provided token) and syncs each lead into a single `leads` table, with the raw form field data preserved as JSON for downstream modeling.
+
+Incremental sync uses a per-form cursor on `created_time`. The Graph leadgen endpoint returns newest leads first, so the cursor is advanced only after a form's pagination has fully completed; periodic checkpoints during pagination leave it unchanged. If a sync fails mid-form, the next sync replays that form from its last completed cursor with a 1-second overlap, and leads are upserted by `lead_id`, so no lead is skipped or duplicated.
+
+## Requirements
+- [Supported Python versions](https://github.com/fivetran/community_connectors/blob/main/README.md#requirements)
+- Operating system:
+  - Windows: 10 or later (64-bit only)
+  - macOS: 13 (Ventura) or later (Apple Silicon [arm64] or Intel [x86_64])
+  - Linux: Distributions such as Ubuntu 20.04 or later, Debian 10 or later, or Amazon Linux 2 or later (arm64 or x86_64)
+
+## Getting started
+Refer to the [Connector SDK Setup Guide](https://fivetran.com/docs/connectors/connector-sdk/setup-guide) to get started.
+
+To initialize a new Connector SDK project using this connector as a starting point, run:
+
+```bash
+fivetran init --template meta_lead_ads
+```
+
+`fivetran init` initializes a new Connector SDK project by setting up the project structure, configuration files, and a connector you can run immediately with `fivetran debug`. For more information on `fivetran init`, refer to the [Connector SDK `init` documentation](https://fivetran.com/docs/connector-sdk/connector-development-and-configuration/connector-sdk-commands#fivetraninit).
+
+> Note: Ensure you have updated the `configuration.json` file with the necessary parameters before running `fivetran debug`. See the [Configuration file](#configuration-file) section for details on the required configuration parameters.
+
+## Features
+- Discovers pages and lead-generation forms automatically, or restricts the sync to explicit `page_ids` / `form_ids`.
+- Single `leads` table with an explicit schema; the raw `field_data` array is preserved as a JSON string column for flexible downstream parsing.
+- Cursor advanced only after a form's pagination completes (newest-first ordering), with a 1-second query overlap and idempotent lead_id upserts.
+- Retries transient HTTP errors (429, 5xx) and HTTP 400 responses carrying Graph API throttling error codes (4, 17, 32, 341, 613) with exponential backoff, and fails the sync on unrecoverable request errors instead of silently truncating data.
+
+## Configuration file
+```json
+{
+  "system_user_access_token": "<YOUR_META_SYSTEM_USER_ACCESS_TOKEN>",
+  "page_ids": "<ALL_OR_COMMA_SEPARATED_PAGE_IDS>",
+  "form_ids": "<ALL_OR_COMMA_SEPARATED_FORM_IDS>",
+  "initial_start_time": "<OPTIONAL_ISO8601_START_TIME_EG_2023-01-01T00:00:00Z>",
+  "graph_version": "<GRAPH_API_VERSION_EG_v26.0>",
+  "include_archived_forms": "<TRUE_OR_FALSE_DEFAULT_FALSE>",
+  "request_timeout_seconds": "<REQUEST_TIMEOUT_SECONDS_DEFAULT_30>",
+  "fetch_limit": "<LEADS_PAGE_SIZE_DEFAULT_1000>",
+  "check_point_limit": "<ROWS_PER_CHECKPOINT_DEFAULT_1000>"
+}
+```
+
+- `system_user_access_token` (required) - a Meta system user access token with the `pages_show_list`, `ads_management`, and `leads_retrieval` permissions to list pages and read lead-gen forms and leads.
+- `page_ids` (required) - comma-separated page IDs to sync, or `ALL` to auto-discover every page the token can access.
+- `form_ids` (required) - comma-separated form IDs to sync, or `ALL` to sync every (non-archived, unless `include_archived_forms` is `true`) form on each page. If an explicit ID is not found on any selected page, the sync fails with an error instead of silently completing with missing data.
+- `initial_start_time` (optional) - `YYYY-MM-DD` or full ISO8601 timestamp with a timezone offset; used as the starting cursor only when no prior state exists. If omitted, the first sync starts from the earliest available leads.
+- `graph_version` (optional) - the Graph API version to call; defaults to `v26.0`.
+- `include_archived_forms` (optional) - `true` or `false`; whether archived forms are included when `form_ids` is `ALL`; defaults to `false`.
+- `request_timeout_seconds` (optional) - HTTP request timeout, in seconds; defaults to `30`.
+- `fetch_limit` (optional) - page size when requesting leads; defaults to `1000` (maximum `1000`); lower this if you observe timeouts.
+- `check_point_limit` (optional) - number of rows accumulated per form before a checkpoint is written; defaults to `1000`.
+
+Note: Ensure that the `configuration.json` file is not checked into version control to protect sensitive information.
+
+## Authentication
+This connector authenticates to the Meta Graph API using a system user access token, passed as `system_user_access_token`. Refer to `discover_pages` in `meta_helpers.py`.
+
+To set up authentication:
+
+1. In Meta Business Manager, create or open a system user under Business settings > Users > System users.
+2. Assign the system user access to every page whose lead ads you want to sync.
+3. Generate a system user access token with the `pages_show_list`, `ads_management`, and `leads_retrieval` permissions.
+4. Provide the generated token as `system_user_access_token` in `configuration.json`.
+
+## Pagination
+Page and form listings are paginated using the Graph API's `paging.next` cursor. Refer to `def _paginate_graph_collection` in `meta_helpers.py`. Lead listings are paginated using the `after` cursor returned in `paging.cursors`; pagination for a form stops once `paging.next` is absent, even if `paging.cursors.after` is present. Refer to `def iterate_leads_for_form` in `meta_helpers.py`.
+
+## Data handling
+Each lead is transformed into a single row with page and form metadata, `ad_id`, `created_time`, and a `field_data` column containing the raw list of field objects from the source, serialized as JSON. Refer to `def _process_leads` in `connector.py`. Parsing individual form fields into columns is left to downstream transformation (for example, in a warehouse view or dbt model), since new fields may be added to forms without requiring a connector change.
+
+## Error handling
+Refer to `def request_with_retries` in `http_helpers.py`. Transient HTTP errors (429 and 5xx), and HTTP 400 responses carrying Graph API throttling error codes 4, 17, 32, 341, and 613, are retried with exponential backoff. A request that exhausts its retries, receives a non-retryable non-2xx status, or returns an invalid JSON body raises a `RuntimeError`, which fails the sync instead of silently treating the failure as the end of pagination. Sensitive query-string values such as `access_token` are redacted before any URL is logged, and a network exception is logged and re-raised by its type name only, since the exception itself (and its chained traceback) can otherwise embed the request URL.
+
+## Tables created
+The connector creates a single table named `leads` with the following schema (refer to the `schema()` function in `connector.py`):
+
+```json
+{
+  "table": "leads",
+  "primary_key": ["lead_id"],
+  "columns": {
+    "lead_id": "STRING",
+    "page_id": "STRING",
+    "page_name": "STRING",
+    "form_id": "STRING",
+    "form_name": "STRING",
+    "created_time": "UTC_DATETIME",
+    "ad_id": "STRING",
+    "field_data": "STRING"
+  }
+}
+```
+
+`field_data` holds a JSON array of `{"name": <str>, "values": [<str>, ...]}` objects serialized as a string.
+
+## Additional files
+- **`http_helpers.py`** - HTTP request helper with retry/backoff and URL redaction for Graph API calls.
+- **`meta_helpers.py`** - page/form/lead discovery and pagination helpers for the Graph API.
+- **`validator.py`** - configuration validation and parsing.
+
+## Additional considerations
+The examples provided are intended to help you effectively use Fivetran's Connector SDK. While we've tested the code, Fivetran cannot be held responsible for any unexpected or negative consequences that may arise from using these examples. For inquiries, please reach out to our Support team.

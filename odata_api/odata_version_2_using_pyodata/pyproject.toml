@@ -1,0 +1,7 @@
+[project]
+name = "odata-api-odata-version-2-using-pyodata"
+version = "0.1.0"
+description = "This connector allows you to sync data from OData version 2 APIs to your chosen destination through Fivetran."
+dependencies = [
+    "pyodata==1.11.1",
+]

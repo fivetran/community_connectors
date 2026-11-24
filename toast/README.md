@@ -75,9 +75,9 @@ Optional parameters:
 
 ## Requirements file
 
-This connector uses only the `requests` package and the Python standard library, so no `requirements.txt` file is needed.
+This connector uses only the `requests` package and the Python standard library, so `pyproject.toml` omits `dependencies` entirely.
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

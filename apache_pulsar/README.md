@@ -68,13 +68,15 @@ Configuration parameters:
 
 ## Requirements file
 
-The `requirements.txt` file specifies the Python libraries required by the connector. For this Apache Pulsar connector, the following library is required:
+The `pyproject.toml` file specifies the Python libraries required by the connector. For this Apache Pulsar connector, the following library is required:
 
-```
-pulsar-client>=3.4.0
+```toml
+dependencies = [
+  "pulsar-client>=3.4.0",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

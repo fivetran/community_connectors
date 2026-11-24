@@ -1,0 +1,7 @@
+[project]
+name = "oauth2-and-accelo-api-connector-multithreading-enabled"
+version = "0.1.0"
+description = "This connector demonstrates how to sync data from the Accelo API using the Fivetran Connector SDK."
+dependencies = [
+    "python-dateutil==2.9.0.post0",
+]

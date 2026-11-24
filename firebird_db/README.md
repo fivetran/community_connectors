@@ -65,11 +65,13 @@ The connector requires configuration with your Firebird database credentials:
 
 The connector requires the `firebirdsql` package for database connectivity:
 
-```
-firebirdsql==1.3.4
+```toml
+dependencies = [
+  "firebirdsql==1.3.4",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 

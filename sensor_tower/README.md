@@ -54,16 +54,18 @@ The connector expects a `configuration.json` file with the following structure:
 
 ## Requirements file
 
-The `requirements.txt` file specifies any additional Python libraries required by the connector. For this example, no extra dependencies are required beyond the Fivetran environment defaults.
+The `pyproject.toml` file specifies any additional Python libraries required by the connector. For this example, no extra dependencies are required beyond the Fivetran environment defaults.
 
-Example content of `requirements.txt`:
+Example content of `pyproject.toml`:
 
+```toml
+dependencies = [
+  "python_dateutil==2.9.0.post0",
+  "pytz==2024.2",
+]
 ```
-python_dateutil==2.9.0.post0
-pytz==2024.2
-```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
