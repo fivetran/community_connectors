@@ -1,0 +1,7 @@
+[project]
+name = "sybase-ase"
+version = "0.1.0"
+description = "This connector uses the Fivetran Connector SDK to replicate data from a Sybase ASE database to any Fivetran-supported destination."
+dependencies = [
+    "pyodbc==5.3.0",
+]

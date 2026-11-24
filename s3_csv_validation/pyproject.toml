@@ -1,0 +1,8 @@
+[project]
+name = "s3-csv-validation"
+version = "0.1.0"
+description = "This connector demonstrates how to retrieve a CSV file from an Amazon S3 bucket, validate its contents, and sync the records into a destination table using the Fivetran Connector SDK."
+dependencies = [
+    "boto3==1.35.97",
+    "pandas==2.2.3",
+]

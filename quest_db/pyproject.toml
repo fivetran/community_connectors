@@ -1,0 +1,4 @@
+[project]
+name = "quest-db"
+version = "0.1.0"
+description = "This connector syncs high-performance time series data from QuestDB to your Fivetran destination."

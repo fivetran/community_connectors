@@ -1,0 +1,4 @@
+[project]
+name = "usda-boxed-beef"
+version = "0.1.0"
+description = "This connector syncs wholesale boxed beef prices published by the USDA Agricultural Marketing Service under Livestock Mandatory Reporting."

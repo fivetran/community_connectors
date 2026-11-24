@@ -1,0 +1,7 @@
+[project]
+name = "redshift-large-data-volume"
+version = "0.1.0"
+description = "This example connector demonstrates how to sync large tables from Amazon Redshift efficiently by using the Connector SDK."
+dependencies = [
+    "redshift_connector==2.1.8",
+]
