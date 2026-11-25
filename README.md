@@ -200,6 +200,7 @@ For SDK installation and setup, visit the main [Fivetran Connector SDK repositor
 - **Oracle WMS** ([wms_oracle](https://github.com/fivetran/community_connectors/tree/main/wms_oracle)) - Sync warehouse management data from Oracle WMS REST API with incremental sync, historical backfill, and pre-cursor drift detection across 26 entities.
 - **Weights & Biases** ([weights_and_biases](https://github.com/fivetran/community_connectors/tree/main/weights_and_biases)) - Sync machine learning experiment tracking data from Weights & Biases, including projects, runs, and artifacts.
 - **Zigpoll** ([zigpoll](https://github.com/fivetran/community_connectors/tree/main/zigpoll)) - Sync polling data from Zigpoll
+- **ZoomInfo** ([zoominfo](https://github.com/fivetran/community_connectors/tree/main/zoominfo)) - Sync contacts, companies, scoops, intent, news, and enrichments from ZoomInfo.
 
 </details>
 
