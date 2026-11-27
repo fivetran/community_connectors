@@ -179,7 +179,7 @@ Apply the rules below only to README files this PR adds or changes. For a new RE
   }
   ```
   ``` 
-* **Additional files** → Required when the connector has any file besides `connector.py`, `configuration.json`, `requirements.txt`, `README.md`, `__init__.py`, and image files; omit the section otherwise. List every extra Python module (helpers, `constants.py`, API clients) and any data or resource file the connector reads, one line each: file name, an en dash, and its purpose. Apply this only to files the PR adds or changes: flag a file the PR adds or renames that is missing from the section, or an entry for a file the PR deletes. Do not flag extra files that already existed and are untouched by the PR. For example, as provided below:
+* **Additional files** → Required when the connector has any file besides `connector.py`, `configuration.json`, `requirements.txt`, `pyproject.toml`, `README.md`, `__init__.py`, and image files; omit the section otherwise. List every extra Python module (helpers, `constants.py`, API clients) and any data or resource file the connector reads, one line each: file name, an en dash, and its purpose. Apply this only to files the PR adds or changes: flag a file the PR adds or renames that is missing from the section, or an entry for a file the PR deletes. Do not flag extra files that already existed and are untouched by the PR. For example, as provided below:
   ```markdown
   ## Additional files
   The connector uses the following additional files:
