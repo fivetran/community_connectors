@@ -162,9 +162,9 @@ Spend review effort on what the tools cannot check: memory safety, pagination, s
 
 ## Dependencies and imports (REQUEST_CHANGES if violated)
 - **Minimal dependencies**: Only include what's actually needed
-  - Remove unused packages from `requirements.txt`
+  - Remove unused packages from `requirements.txt` or `pyproject.toml`
   - Avoid heavyweight libraries for simple tasks
-- **NO forbidden imports**: Never include these in `requirements.txt`:
+- **NO forbidden imports**: Never include these in `requirements.txt` or `pyproject.toml`:
   - `fivetran_connector_sdk` (provided by runtime)
   - `requests` (provided by runtime)
 - **Every import needs a comment**: Explain why each import is needed

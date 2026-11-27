@@ -1,0 +1,7 @@
+[project]
+name = "ehi-simple-ehi"
+version = "0.1.0"
+description = "This connector demonstrates how to fetch data from a Microsoft SQL Server database such as Caboodle and sync it to your Fivetran destination using the Fivetran Connector SDK."
+dependencies = [
+    "python-tds==1.17.1",
+]

@@ -1,0 +1,4 @@
+[project]
+name = "cms-hospital-compare-connector"
+version = "0.1.0"
+description = "This connector syncs five hospital datasets from the public CMS Provider Data Catalog."

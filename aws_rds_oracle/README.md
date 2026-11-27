@@ -59,11 +59,13 @@ The connector requires the following configuration parameters in `configuration.
 
 The connector requires the `oracledb` package to connect to Oracle databases.
 
-```
-oracledb==3.3.0
+```toml
+dependencies = [
+  "oracledb==3.3.0",
+]
 ```
 
-> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `requirements.txt`.
+> Note: [Some packages](https://fivetran.com/docs/connector-sdk/technical-reference#preinstalledpackages) are pre-installed in the Connector SDK runtime environment. To avoid dependency conflicts, do not declare them in your `pyproject.toml`.
 
 ## Authentication
 
@@ -122,7 +124,7 @@ This connector doesn't require any additional files, apart from the standard one
 
 - **connector.py** - Contains the `update()` and `schema()` implementations for this example.
 - **configuration.json** - Provides a placeholder configuration you can copy and fill with your Oracle credentials.
-- **requirements.txt** - Declares the Oracle driver dependency used at runtime.
+- **pyproject.toml** - Declares the Oracle driver dependency used at runtime.
 
 ## Additional considerations
 

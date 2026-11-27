@@ -1,0 +1,4 @@
+[project]
+name = "adp-workforce-now"
+version = "0.1.0"
+description = "This connector syncs the departments validation table from the ADP Workforce Now HCM API."

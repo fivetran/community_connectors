@@ -1,0 +1,4 @@
+[project]
+name = "linkly"
+version = "0.1.0"
+description = "This connector syncs data from Linkly, a URL shortener and click tracker, into your destination using the Fivetran Connector SDK."

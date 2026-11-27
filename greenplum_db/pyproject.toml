@@ -1,0 +1,7 @@
+[project]
+name = "greenplum-db"
+version = "0.1.0"
+description = "This connector example demonstrates how to fetch data from a Greenplum database and upsert it into destination table using Fivetran Connector SDK."
+dependencies = [
+    "psycopg2_binary==2.9.10",
+]
